@@ -3,6 +3,7 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -49,6 +50,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/discovery/scan", s.handleDiscoveryScan)
 	mux.HandleFunc("/api/semester/start", s.handleSemesterStart)
 	mux.HandleFunc("/api/semester/status", s.handleSemesterStatus)
+	mux.HandleFunc("/api/settings/backup", s.handleBackupDB)
+	mux.HandleFunc("/api/settings/restore", s.handleRestoreDB)
 
 	webRoot := os.Getenv("WEB_ROOT")
 	if webRoot == "" {
@@ -212,6 +215,59 @@ func (s *Server) handleSemesterStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Controller.GetSemesterStatus(w, r)
+}
+
+func (s *Server) handleBackupDB(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	w.Header().Set("Content-Disposition", "attachment; filename=controller.db")
+	http.ServeFile(w, r, s.DB.Path)
+}
+
+func (s *Server) handleRestoreDB(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+
+	file, _, err := r.FormFile("db_file")
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "failed to get file")
+		return
+	}
+	defer file.Close()
+
+	// Close current DB connection to release lock
+	if err := s.DB.SQL.Close(); err != nil {
+		log.Printf("failed to close db: %v", err)
+	}
+
+	// Create new file (overwrite)
+	out, err := os.Create(s.DB.Path)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to create file")
+		return
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, file); err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to write file")
+		return
+	}
+
+	// Re-open DB
+	newDB, err := db.Open(s.DB.Path)
+	if err != nil {
+		log.Printf("failed to reopen db: %v", err)
+		os.Exit(1) // Fatal error, let container restart
+	}
+
+	// Update the reference
+	s.DB.SQL = newDB.SQL
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "restored"})
 }
 
 func methodNotAllowed(w http.ResponseWriter) {

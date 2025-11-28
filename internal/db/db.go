@@ -13,7 +13,8 @@ import (
 )
 
 type DB struct {
-	SQL *sql.DB
+	SQL  *sql.DB
+	Path string
 }
 
 type Robot struct {
@@ -80,7 +81,7 @@ func Open(path string) (*DB, error) {
 	if err := migrate(db); err != nil {
 		return nil, err
 	}
-	return &DB{SQL: db}, nil
+	return &DB{SQL: db, Path: path}, nil
 }
 
 func migrate(db *sql.DB) error {

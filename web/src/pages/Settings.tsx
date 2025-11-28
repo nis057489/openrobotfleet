@@ -1,5 +1,5 @@
-import { Save, Loader2, Power, RefreshCw, AlertTriangle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Save, Loader2, Power, RefreshCw, AlertTriangle, Download, Upload, Database } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
 import { getInstallDefaults, updateInstallDefaults, broadcastCommand } from "../api";
 import { InstallConfig } from "../types";
 
@@ -13,6 +13,7 @@ export function Settings() {
     const [saving, setSaving] = useState(false);
     const [broadcasting, setBroadcasting] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         getInstallDefaults()
@@ -49,6 +50,39 @@ export function Settings() {
             setMessage({ type: 'error', text: 'Failed to send broadcast command' });
         } finally {
             setBroadcasting(false);
+        }
+    };
+
+    const handleBackup = () => {
+        window.location.href = '/api/settings/backup';
+    };
+
+    const handleRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        
+        if (!confirm("WARNING: This will overwrite the current database and restart the controller. All current data will be replaced. Are you sure?")) {
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('db_file', file);
+
+        setSaving(true);
+        try {
+            const res = await fetch('/api/settings/restore', {
+                method: 'POST',
+                body: formData,
+            });
+            if (!res.ok) throw new Error("Restore failed");
+            alert("Database restored successfully. The page will now reload.");
+            window.location.reload();
+        } catch (err) {
+            setMessage({ type: 'error', text: 'Failed to restore database' });
+        } finally {
+            setSaving(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
@@ -106,6 +140,49 @@ export function Settings() {
                         {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
                         Save Defaults
                     </button>
+                </div>
+            </div>
+
+            {/* Database Management */}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div className="p-6 border-b border-gray-100">
+                    <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                        <Database size={20} className="text-blue-500" />
+                        Database Management
+                    </h2>
+                    <p className="text-sm text-gray-500 mt-1">
+                        Backup and restore the controller database.
+                    </p>
+                </div>
+                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button
+                        onClick={handleBackup}
+                        className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                    >
+                        <div>
+                            <div className="font-medium text-gray-900">Backup Database</div>
+                            <div className="text-xs text-gray-500">Download current .db file</div>
+                        </div>
+                        <Download size={20} className="text-gray-400" />
+                    </button>
+
+                    <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                    >
+                        <div>
+                            <div className="font-medium text-gray-900">Restore Database</div>
+                            <div className="text-xs text-gray-500">Upload .db file to replace current</div>
+                        </div>
+                        <Upload size={20} className="text-gray-400" />
+                    </button>
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleRestore}
+                        className="hidden"
+                        accept=".db"
+                    />
                 </div>
             </div>
 
