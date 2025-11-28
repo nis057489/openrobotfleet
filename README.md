@@ -33,7 +33,7 @@ A dedicated tool for teaching assistants and instructors to batch-reset the flee
 
 ### 💻 Laptop Support
 
-Manage student or lab laptops just like robots. Push code updates and manage WiFi profiles on Ubuntu-based development machines.
+Manage lab laptops just like robots. Push code updates and manage WiFi profiles on Ubuntu-based development machines.
 
 ## Getting Started
 
