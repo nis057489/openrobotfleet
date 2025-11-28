@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Layout } from "./Layout";
 import { Dashboard } from "./pages/Dashboard";
 import { Robots } from "./pages/Robots";
+import { Laptops } from "./pages/Laptops";
 import { RobotDetail } from "./pages/RobotDetail";
 import { Scenarios } from "./pages/Scenarios";
 import { Settings } from "./pages/Settings";
@@ -17,6 +18,7 @@ export default function App() {
         <Route path="/" element={<Layout />}>
           <Route index element={<Dashboard />} />
           <Route path="robots" element={<Robots />} />
+          <Route path="laptops" element={<Laptops />} />
           <Route path="robots/:id" element={<RobotDetail />} />
           <Route path="discovery" element={<Discovery />} />
           <Route path="semester-wizard" element={<SemesterWizard />} />

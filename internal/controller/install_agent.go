@@ -17,6 +17,7 @@ import (
 
 type installAgentRequest struct {
 	Name    string `json:"name"`
+	Type    string `json:"type"`
 	Address string `json:"address"`
 	User    string `json:"user"`
 	SSHKey  string `json:"ssh_key"`
@@ -33,6 +34,10 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 	if req.Name == "" || req.Address == "" || req.User == "" || req.SSHKey == "" {
 		respondError(w, http.StatusBadRequest, "name, address, user, and ssh_key required")
 		return
+	}
+	rType := req.Type
+	if rType == "" {
+		rType = "robot"
 	}
 	binaryPath := os.Getenv("AGENT_BINARY_PATH")
 	if binaryPath == "" {
@@ -92,7 +97,7 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 	if hostIP, _, err := net.SplitHostPort(addr); err == nil {
 		robotIP = hostIP
 	}
-	if err := c.DB.UpsertRobotStatus(r.Context(), cfg.AgentID, req.Name, robotIP, "installed"); err != nil {
+	if err := c.DB.UpsertRobotWithType(r.Context(), cfg.AgentID, req.Name, robotIP, "installed", rType); err != nil {
 		log.Printf("install agent: upsert robot: %v", err)
 		respondError(w, http.StatusInternalServerError, "failed to update robot")
 		return

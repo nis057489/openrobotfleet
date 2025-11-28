@@ -19,3 +19,9 @@ type UpdateRepoData struct {
 type ResetLogsData struct {
 	Paths []string `json:"paths"`
 }
+
+// WifiProfileData describes a wifi connection profile.
+type WifiProfileData struct {
+	SSID     string `json:"ssid"`
+	Password string `json:"password"`
+}

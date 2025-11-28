@@ -1,6 +1,7 @@
 export interface Robot {
   id: number;
   name: string;
+  type: string;
   agent_id: string;
   ip?: string;
   last_seen?: string;
@@ -40,6 +41,7 @@ export interface CommandRequest {
 
 export interface InstallAgentPayload {
   name: string;
+  type: string;
   address: string;
   user: string;
   ssh_key: string;

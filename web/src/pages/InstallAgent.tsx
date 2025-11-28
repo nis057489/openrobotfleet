@@ -10,6 +10,7 @@ export function InstallAgent() {
     const [error, setError] = useState<string | null>(null);
     const [formData, setFormData] = useState({
         name: "",
+        type: "robot",
         address: "",
         user: "ubuntu",
         ssh_key: "",
@@ -18,13 +19,19 @@ export function InstallAgent() {
     });
 
     useEffect(() => {
+        const query = new URLSearchParams(location.search);
+        const type = query.get("type") || "robot";
+
         getInstallDefaults().then((data) => {
             if (data.install_config) {
                 setFormData(prev => ({
                     ...prev,
+                    type,
                     user: data.install_config?.user || prev.user,
                     ssh_key: data.install_config?.ssh_key || prev.ssh_key,
                 }));
+            } else {
+                setFormData(prev => ({ ...prev, type }));
             }
         });
 
@@ -45,7 +52,7 @@ export function InstallAgent() {
 
         try {
             await installAgent(formData);
-            navigate("/robots");
+            navigate(formData.type === 'laptop' ? "/laptops" : "/robots");
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to install agent");
         } finally {
@@ -56,7 +63,7 @@ export function InstallAgent() {
     return (
         <div className="max-w-2xl mx-auto">
             <div className="mb-8">
-                <h1 className="text-2xl font-bold text-gray-900">Add New Robot</h1>
+                <h1 className="text-2xl font-bold text-gray-900">Add New {formData.type === 'laptop' ? 'Laptop' : 'Robot'}</h1>
                 <p className="text-gray-500">Install the agent on a remote machine via SSH</p>
             </div>
 

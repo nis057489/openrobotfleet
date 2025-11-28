@@ -99,6 +99,25 @@ func HandleRestartROS(cfg Config) error {
 	return nil
 }
 
+// HandleWifiProfile adds a new wifi connection profile using nmcli.
+func HandleWifiProfile(data WifiProfileData) error {
+	if data.SSID == "" {
+		return errors.New("ssid is required")
+	}
+	// nmcli device wifi connect <SSID> password <PASSWORD>
+	args := []string{"device", "wifi", "connect", data.SSID}
+	if data.Password != "" {
+		args = append(args, "password", data.Password)
+	}
+	cmd := exec.Command("nmcli", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("nmcli failed: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	log.Printf("[agent] connected to wifi %s", data.SSID)
+	return nil
+}
+
 func destinationPath(workspace, provided, repo string) string {
 	switch {
 	case provided != "" && filepath.IsAbs(provided):

@@ -74,6 +74,17 @@ func main() {
 				return
 			}
 			log.Printf("restart_ros succeeded")
+		case "wifi_profile":
+			var payload agent.WifiProfileData
+			if err := json.Unmarshal(cmd.Data, &payload); err != nil {
+				log.Printf("wifi_profile payload error: %v", err)
+				return
+			}
+			if err := agent.HandleWifiProfile(payload); err != nil {
+				log.Printf("wifi_profile failed: %v", err)
+				return
+			}
+			log.Printf("wifi_profile succeeded for ssid %s", payload.SSID)
 		default:
 			log.Printf("unknown command type: %s", cmd.Type)
 		}

@@ -19,6 +19,7 @@ type DB struct {
 type Robot struct {
 	ID            int64          `json:"id"`
 	Name          string         `json:"name"`
+	Type          string         `json:"type"`
 	AgentID       string         `json:"agent_id"`
 	IP            string         `json:"ip"`
 	Status        string         `json:"status"`
@@ -96,7 +97,8 @@ func migrate(db *sql.DB) error {
 			last_scenario_id INTEGER,
 			ssh_address TEXT,
 			ssh_user TEXT,
-			ssh_key TEXT
+			ssh_key TEXT,
+			type TEXT DEFAULT 'robot'
 		);`,
 		`CREATE TABLE IF NOT EXISTS scenarios (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,6 +159,11 @@ func ensureRobotSchema(db *sql.DB) error {
 			return err
 		}
 	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE robots ADD COLUMN type TEXT DEFAULT 'robot'`); err != nil {
+		if !isDuplicateColumnError(err) {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -185,7 +192,7 @@ func buildInstallConfig(addr, user, key sql.NullString) *InstallConfig {
 }
 
 func (d *DB) ListRobots(ctx context.Context) ([]Robot, error) {
-	stmt, err := d.SQL.PrepareContext(ctx, `SELECT r.id, r.name, r.agent_id, r.ip, r.last_seen, r.status, r.notes, s.id, s.name, r.ssh_address, r.ssh_user, r.ssh_key, r.tags
+	stmt, err := d.SQL.PrepareContext(ctx, `SELECT r.id, r.name, r.agent_id, r.ip, r.last_seen, r.status, r.notes, s.id, s.name, r.ssh_address, r.ssh_user, r.ssh_key, r.tags, r.type
 FROM robots r
 LEFT JOIN scenarios s ON s.id = r.last_scenario_id
 ORDER BY r.name`)
@@ -207,7 +214,8 @@ ORDER BY r.name`)
 		var scenarioName sql.NullString
 		var sshAddr, sshUser, sshKey sql.NullString
 		var tags sql.NullString
-		if err := rows.Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes, &scenarioID, &scenarioName, &sshAddr, &sshUser, &sshKey, &tags); err != nil {
+		var rType sql.NullString
+		if err := rows.Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes, &scenarioID, &scenarioName, &sshAddr, &sshUser, &sshKey, &tags, &rType); err != nil {
 			return nil, err
 		}
 		if lastSeen.Valid {
@@ -223,6 +231,11 @@ ORDER BY r.name`)
 			r.Tags = strings.Split(tags.String, ",")
 		} else {
 			r.Tags = []string{}
+		}
+		if rType.Valid {
+			r.Type = rType.String
+		} else {
+			r.Type = "robot"
 		}
 		r.InstallConfig = buildInstallConfig(sshAddr, sshUser, sshKey)
 		robots = append(robots, r)
@@ -251,8 +264,27 @@ ON CONFLICT(name) DO UPDATE SET
 	return err
 }
 
+func (d *DB) UpsertRobotWithType(ctx context.Context, agentID, name, ip, status, rType string) error {
+	if name == "" {
+		return errors.New("robot name required")
+	}
+	stmt, err := d.SQL.PrepareContext(ctx, `INSERT INTO robots (name, agent_id, ip, last_seen, status, type) VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(name) DO UPDATE SET
+	agent_id=excluded.agent_id,
+	ip=excluded.ip,
+	status=excluded.status,
+	last_seen=excluded.last_seen,
+	type=excluded.type`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.ExecContext(ctx, name, agentID, ip, time.Now().UTC(), status, rType)
+	return err
+}
+
 func (d *DB) GetRobotByID(ctx context.Context, id int64) (Robot, error) {
-	stmt, err := d.SQL.PrepareContext(ctx, `SELECT r.id, r.name, r.agent_id, r.ip, r.last_seen, r.status, r.notes, s.id, s.name, r.ssh_address, r.ssh_user, r.ssh_key, r.tags
+	stmt, err := d.SQL.PrepareContext(ctx, `SELECT r.id, r.name, r.agent_id, r.ip, r.last_seen, r.status, r.notes, s.id, s.name, r.ssh_address, r.ssh_user, r.ssh_key, r.tags, r.type
 FROM robots r
 LEFT JOIN scenarios s ON s.id = r.last_scenario_id
 WHERE r.id = ?`)
@@ -267,7 +299,8 @@ WHERE r.id = ?`)
 	var scenarioName sql.NullString
 	var sshAddr, sshUser, sshKey sql.NullString
 	var tags sql.NullString
-	if err := stmt.QueryRowContext(ctx, id).Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes, &scenarioID, &scenarioName, &sshAddr, &sshUser, &sshKey, &tags); err != nil {
+	var rType sql.NullString
+	if err := stmt.QueryRowContext(ctx, id).Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes, &scenarioID, &scenarioName, &sshAddr, &sshUser, &sshKey, &tags, &rType); err != nil {
 		return Robot{}, err
 	}
 	if lastSeen.Valid {
@@ -284,12 +317,17 @@ WHERE r.id = ?`)
 	} else {
 		r.Tags = []string{}
 	}
+	if rType.Valid {
+		r.Type = rType.String
+	} else {
+		r.Type = "robot"
+	}
 	r.InstallConfig = buildInstallConfig(sshAddr, sshUser, sshKey)
 	return r, nil
 }
 
 func (d *DB) GetRobotByName(ctx context.Context, name string) (Robot, error) {
-	stmt, err := d.SQL.PrepareContext(ctx, `SELECT r.id, r.name, r.agent_id, r.ip, r.last_seen, r.status, r.notes, s.id, s.name, r.ssh_address, r.ssh_user, r.ssh_key, r.tags
+	stmt, err := d.SQL.PrepareContext(ctx, `SELECT r.id, r.name, r.agent_id, r.ip, r.last_seen, r.status, r.notes, s.id, s.name, r.ssh_address, r.ssh_user, r.ssh_key, r.tags, r.type
 FROM robots r
 LEFT JOIN scenarios s ON s.id = r.last_scenario_id
 WHERE r.name = ?`)
@@ -304,7 +342,8 @@ WHERE r.name = ?`)
 	var scenarioName sql.NullString
 	var sshAddr, sshUser, sshKey sql.NullString
 	var tags sql.NullString
-	if err := stmt.QueryRowContext(ctx, name).Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes, &scenarioID, &scenarioName, &sshAddr, &sshUser, &sshKey, &tags); err != nil {
+	var rType sql.NullString
+	if err := stmt.QueryRowContext(ctx, name).Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes, &scenarioID, &scenarioName, &sshAddr, &sshUser, &sshKey, &tags, &rType); err != nil {
 		return Robot{}, err
 	}
 	if lastSeen.Valid {
@@ -320,6 +359,11 @@ WHERE r.name = ?`)
 		r.Tags = strings.Split(tags.String, ",")
 	} else {
 		r.Tags = []string{}
+	}
+	if rType.Valid {
+		r.Type = rType.String
+	} else {
+		r.Type = "robot"
 	}
 	r.InstallConfig = buildInstallConfig(sshAddr, sshUser, sshKey)
 	return r, nil
