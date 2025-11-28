@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"log"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -15,13 +16,19 @@ type DB struct {
 }
 
 type Robot struct {
-	ID       int64     `json:"id"`
-	Name     string    `json:"name"`
-	AgentID  string    `json:"agent_id"`
-	IP       string    `json:"ip"`
-	Status   string    `json:"status"`
-	Notes    string    `json:"notes"`
-	LastSeen time.Time `json:"last_seen"`
+	ID           int64        `json:"id"`
+	Name         string       `json:"name"`
+	AgentID      string       `json:"agent_id"`
+	IP           string       `json:"ip"`
+	Status       string       `json:"status"`
+	Notes        string       `json:"notes"`
+	LastSeen     time.Time    `json:"last_seen"`
+	LastScenario *ScenarioRef `json:"last_scenario,omitempty"`
+}
+
+type ScenarioRef struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
 }
 
 type Scenario struct {
@@ -74,7 +81,8 @@ func migrate(db *sql.DB) error {
 			ip TEXT,
 			last_seen TIMESTAMP,
 			status TEXT,
-			notes TEXT
+			notes TEXT,
+			last_scenario_id INTEGER
 		);`,
 		`CREATE TABLE IF NOT EXISTS scenarios (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,11 +106,31 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if err := ensureRobotSchema(db); err != nil {
+		return err
+	}
 	return nil
 }
 
+func ensureRobotSchema(db *sql.DB) error {
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, `ALTER TABLE robots ADD COLUMN last_scenario_id INTEGER`); err != nil {
+		if !isDuplicateColumnError(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func isDuplicateColumnError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "duplicate column name")
+}
+
 func (d *DB) ListRobots(ctx context.Context) ([]Robot, error) {
-	stmt, err := d.SQL.PrepareContext(ctx, `SELECT id, name, agent_id, ip, last_seen, status, notes FROM robots ORDER BY name`)
+	stmt, err := d.SQL.PrepareContext(ctx, `SELECT r.id, r.name, r.agent_id, r.ip, r.last_seen, r.status, r.notes, s.id, s.name
+FROM robots r
+LEFT JOIN scenarios s ON s.id = r.last_scenario_id
+ORDER BY r.name`)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +145,9 @@ func (d *DB) ListRobots(ctx context.Context) ([]Robot, error) {
 		var r Robot
 		var lastSeen sql.NullTime
 		var notes sql.NullString
-		if err := rows.Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes); err != nil {
+		var scenarioID sql.NullInt64
+		var scenarioName sql.NullString
+		if err := rows.Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes, &scenarioID, &scenarioName); err != nil {
 			return nil, err
 		}
 		if lastSeen.Valid {
@@ -125,6 +155,9 @@ func (d *DB) ListRobots(ctx context.Context) ([]Robot, error) {
 		}
 		if notes.Valid {
 			r.Notes = notes.String
+		}
+		if scenarioID.Valid {
+			r.LastScenario = &ScenarioRef{ID: scenarioID.Int64, Name: scenarioName.String}
 		}
 		robots = append(robots, r)
 	}
@@ -153,7 +186,10 @@ ON CONFLICT(name) DO UPDATE SET
 }
 
 func (d *DB) GetRobotByID(ctx context.Context, id int64) (Robot, error) {
-	stmt, err := d.SQL.PrepareContext(ctx, `SELECT id, name, agent_id, ip, last_seen, status, notes FROM robots WHERE id = ?`)
+	stmt, err := d.SQL.PrepareContext(ctx, `SELECT r.id, r.name, r.agent_id, r.ip, r.last_seen, r.status, r.notes, s.id, s.name
+FROM robots r
+LEFT JOIN scenarios s ON s.id = r.last_scenario_id
+WHERE r.id = ?`)
 	if err != nil {
 		return Robot{}, err
 	}
@@ -161,7 +197,9 @@ func (d *DB) GetRobotByID(ctx context.Context, id int64) (Robot, error) {
 	var r Robot
 	var lastSeen sql.NullTime
 	var notes sql.NullString
-	if err := stmt.QueryRowContext(ctx, id).Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes); err != nil {
+	var scenarioID sql.NullInt64
+	var scenarioName sql.NullString
+	if err := stmt.QueryRowContext(ctx, id).Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes, &scenarioID, &scenarioName); err != nil {
 		return Robot{}, err
 	}
 	if lastSeen.Valid {
@@ -169,12 +207,18 @@ func (d *DB) GetRobotByID(ctx context.Context, id int64) (Robot, error) {
 	}
 	if notes.Valid {
 		r.Notes = notes.String
+	}
+	if scenarioID.Valid {
+		r.LastScenario = &ScenarioRef{ID: scenarioID.Int64, Name: scenarioName.String}
 	}
 	return r, nil
 }
 
 func (d *DB) GetRobotByName(ctx context.Context, name string) (Robot, error) {
-	stmt, err := d.SQL.PrepareContext(ctx, `SELECT id, name, agent_id, ip, last_seen, status, notes FROM robots WHERE name = ?`)
+	stmt, err := d.SQL.PrepareContext(ctx, `SELECT r.id, r.name, r.agent_id, r.ip, r.last_seen, r.status, r.notes, s.id, s.name
+FROM robots r
+LEFT JOIN scenarios s ON s.id = r.last_scenario_id
+WHERE r.name = ?`)
 	if err != nil {
 		return Robot{}, err
 	}
@@ -182,7 +226,9 @@ func (d *DB) GetRobotByName(ctx context.Context, name string) (Robot, error) {
 	var r Robot
 	var lastSeen sql.NullTime
 	var notes sql.NullString
-	if err := stmt.QueryRowContext(ctx, name).Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes); err != nil {
+	var scenarioID sql.NullInt64
+	var scenarioName sql.NullString
+	if err := stmt.QueryRowContext(ctx, name).Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes, &scenarioID, &scenarioName); err != nil {
 		return Robot{}, err
 	}
 	if lastSeen.Valid {
@@ -191,7 +237,24 @@ func (d *DB) GetRobotByName(ctx context.Context, name string) (Robot, error) {
 	if notes.Valid {
 		r.Notes = notes.String
 	}
+	if scenarioID.Valid {
+		r.LastScenario = &ScenarioRef{ID: scenarioID.Int64, Name: scenarioName.String}
+	}
 	return r, nil
+}
+
+func (d *DB) UpdateRobotScenario(ctx context.Context, robotID, scenarioID int64) error {
+	stmt, err := d.SQL.PrepareContext(ctx, `UPDATE robots SET last_scenario_id = ? WHERE id = ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	var val interface{}
+	if scenarioID > 0 {
+		val = scenarioID
+	}
+	_, err = stmt.ExecContext(ctx, val, robotID)
+	return err
 }
 
 func (d *DB) ListScenarios(ctx context.Context) ([]Scenario, error) {

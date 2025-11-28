@@ -174,6 +174,11 @@ func (c *Controller) ApplyScenario(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusInternalServerError, "failed to queue command")
 			return
 		}
+		if err := c.DB.UpdateRobotScenario(r.Context(), robotID, scenarioID); err != nil {
+			log.Printf("apply scenario update robot: %v", err)
+			respondError(w, http.StatusInternalServerError, "failed to tag robot scenario")
+			return
+		}
 		jobs = append(jobs, job)
 	}
 	respondJSON(w, http.StatusCreated, applyScenarioResponse{Jobs: jobs})

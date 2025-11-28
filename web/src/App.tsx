@@ -189,6 +189,7 @@ function RobotTable({ onSelect, selectedRobotId, onRobotsChange }: RobotTablePro
                         <th style={{ textAlign: "left", padding: "0.5rem" }}>Status</th>
                         <th style={{ textAlign: "left", padding: "0.5rem" }}>Last Seen</th>
                         <th style={{ textAlign: "left", padding: "0.5rem" }}>IP</th>
+                        <th style={{ textAlign: "left", padding: "0.5rem" }}>Scenario</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -205,6 +206,7 @@ function RobotTable({ onSelect, selectedRobotId, onRobotsChange }: RobotTablePro
                             <td style={{ padding: "0.5rem", borderTop: "1px solid #eee" }}>{robot.status ?? "unknown"}</td>
                             <td style={{ padding: "0.5rem", borderTop: "1px solid #eee" }}>{robot.last_seen ?? "—"}</td>
                             <td style={{ padding: "0.5rem", borderTop: "1px solid #eee" }}>{robot.ip ?? "—"}</td>
+                            <td style={{ padding: "0.5rem", borderTop: "1px solid #eee" }}>{robot.last_scenario?.name ?? "—"}</td>
                         </tr>
                     ))}
                 </tbody>
@@ -272,6 +274,7 @@ function RobotDetail({ robot }: RobotDetailProps) {
             <p><strong>Status:</strong> {robot.status ?? "unknown"}</p>
             <p><strong>Last Seen:</strong> {robot.last_seen ?? "—"}</p>
             <p><strong>IP:</strong> {robot.ip ?? "—"}</p>
+            <p><strong>Scenario:</strong> {robot.last_scenario?.name ?? "—"}</p>
 
             <h3>Update Repo</h3>
             <form onSubmit={handleUpdateSubmit}>
@@ -464,6 +467,8 @@ function ScenarioEditor() {
             const result = await applyScenario(selected.id, { robot_ids: selectedRobotIds });
             const count = result.jobs.length;
             setStatus(`Scenario queued for ${count} robot${count === 1 ? "" : "s"}`);
+            const refreshed = await getRobots();
+            setRobots(refreshed);
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to apply scenario");
         } finally {

@@ -6,6 +6,12 @@ export interface Robot {
   last_seen?: string;
   status?: string;
   notes?: string;
+  last_scenario?: ScenarioRef;
+}
+
+export interface ScenarioRef {
+  id: number;
+  name: string;
 }
 
 export interface Scenario {
