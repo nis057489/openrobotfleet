@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"example.com/turtlebot-fleet/internal/controller"
@@ -272,7 +273,77 @@ func (s *Server) handleDiscoveryScan(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "scan failed")
 		return
 	}
-	respondJSON(w, http.StatusOK, candidates)
+
+	// Enrich with enrollment status
+	robots, err := s.DB.ListRobots(r.Context())
+	if err != nil {
+		log.Printf("failed to list robots for discovery: %v", err)
+		// Continue without enrollment info
+	}
+
+	knownIPs := make(map[string]bool)
+	for _, r := range robots {
+		if r.IP != "" {
+			knownIPs[r.IP] = true
+		}
+	}
+
+	type EnrichedCandidate struct {
+		scan.Candidate
+		Status string `json:"status"` // "enrolled", "unenrolled"
+	}
+
+	enriched := make([]EnrichedCandidate, len(candidates))
+	for i, c := range candidates {
+		status := "unenrolled"
+		if knownIPs[c.IP] {
+			status = "enrolled"
+		}
+		enriched[i] = EnrichedCandidate{
+			Candidate: c,
+			Status:    status,
+		}
+	}
+
+	// Sort: Unenrolled Pi > Enrolled Pi > Unenrolled Other > Enrolled Other
+	// Actually user req:
+	// 1. Unenrolled highly likely (Pi)
+	// 2. Enrolled (outdated?)
+	// 3. All others
+
+	sort.Slice(enriched, func(i, j int) bool {
+		a, b := enriched[i], enriched[j]
+
+		aIsPi := a.Manufacturer == "Raspberry Pi"
+		bIsPi := b.Manufacturer == "Raspberry Pi"
+		aEnrolled := a.Status == "enrolled"
+		bEnrolled := b.Status == "enrolled"
+
+		// Priority 1: Unenrolled Pi
+		if aIsPi && !aEnrolled {
+			if !(bIsPi && !bEnrolled) {
+				return true
+			}
+		} else if bIsPi && !bEnrolled {
+			return false
+		}
+
+		// Priority 2: Enrolled (any)
+		if aEnrolled {
+			if !bEnrolled {
+				return true
+			}
+		} else if bEnrolled {
+			return false
+		}
+
+		// Priority 3: Others (Unenrolled non-Pi)
+		// (Implicitly handled by falling through)
+
+		return a.IP < b.IP
+	})
+
+	respondJSON(w, http.StatusOK, enriched)
 }
 
 func respondJSON(w http.ResponseWriter, status int, v interface{}) {

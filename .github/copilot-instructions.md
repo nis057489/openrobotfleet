@@ -40,6 +40,6 @@
 ## Local workflows
 - Backend: `MQTT_BROKER=tcp://localhost:1883 DB_PATH=controller.db go run ./cmd/controller`.
 - Agent: `AGENT_CONFIG_PATH=$PWD/agent.local.yaml go run ./cmd/agent`.
-- Web dev: `cd web && npm install && npm run dev -- --host 0.0.0.0 --port 5173`; point `WEB_ROOT` at `http://localhost:5173` (or use a Vite proxy) for hot reloads.
+- Web dev: `cd web && npm install && npm run dev -- --host 0.0.0.0 --port 5173`; point `WEB_ROOT` at `http://localhost:5173` (or use a Vite proxy) for hot reloads (only inside the container.)
 - Tests: `go test ./...` exercises both controller and agent packages; frontend lint/build via `npm --prefix web run build`.
 - End-to-end smoke: `docker compose up --build` to run Mosquitto + controller + static UI, with controller data persisted in the `controller-data` volume.

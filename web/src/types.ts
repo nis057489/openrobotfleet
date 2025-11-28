@@ -60,6 +60,9 @@ export interface InstallDefaultsResponse {
 export interface DiscoveryCandidate {
   ip: string;
   port: number;
+  mac?: string;
+  manufacturer?: string;
+  status?: string;
 }
 
 export interface SemesterStatus {

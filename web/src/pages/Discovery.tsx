@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { scanNetwork } from "../api";
 import { DiscoveryCandidate } from "../types";
-import { Search, Wifi, ArrowRight, Loader2 } from "lucide-react";
+import { Search, Wifi, ArrowRight, Loader2, Turtle } from "lucide-react";
 
 export function Discovery() {
     const navigate = useNavigate();
@@ -60,22 +60,46 @@ export function Discovery() {
                     <h3 className="font-semibold text-gray-900">Discovered Devices</h3>
                     <div className="grid gap-4">
                         {candidates.map((c) => (
-                            <div key={c.ip} className="bg-white p-4 rounded-xl border border-gray-200 flex items-center justify-between">
+                            <div key={c.ip} className={`bg-white p-4 rounded-xl border flex items-center justify-between ${c.status === 'enrolled' ? 'border-green-200 bg-green-50' : 'border-gray-200'}`}>
                                 <div className="flex items-center gap-4">
-                                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                                        <Wifi size={20} className="text-gray-600" />
+                                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${c.manufacturer === 'Raspberry Pi' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'}`}>
+                                        {c.manufacturer === 'Raspberry Pi' ? <Turtle size={20} /> : <Wifi size={20} />}
                                     </div>
                                     <div>
-                                        <p className="font-medium text-gray-900">{c.ip}</p>
-                                        <p className="text-xs text-gray-500">Port {c.port} Open</p>
+                                        <div className="flex items-center gap-2">
+                                            <p className="font-medium text-gray-900">{c.ip}</p>
+                                            {c.manufacturer && (
+                                                <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
+                                                    {c.manufacturer}
+                                                </span>
+                                            )}
+                                            {c.status === 'enrolled' && (
+                                                <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">
+                                                    Enrolled
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
+                                            <span>Port {c.port} Open</span>
+                                            {c.mac && <span>MAC: {c.mac}</span>}
+                                        </div>
                                     </div>
                                 </div>
-                                <button
-                                    onClick={() => handleInstall(c.ip)}
-                                    className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium text-sm px-3 py-2 hover:bg-blue-50 rounded-lg transition-colors"
-                                >
-                                    Setup Robot <ArrowRight size={16} />
-                                </button>
+                                {c.status !== 'enrolled' ? (
+                                    <button
+                                        onClick={() => handleInstall(c.ip)}
+                                        className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium text-sm px-3 py-2 hover:bg-blue-50 rounded-lg transition-colors"
+                                    >
+                                        Setup Robot <ArrowRight size={16} />
+                                    </button>
+                                ) : (
+                                    <button
+                                        disabled
+                                        className="text-green-600 font-medium text-sm px-3 py-2 cursor-default"
+                                    >
+                                        Already Managed
+                                    </button>
+                                )}
                             </div>
                         ))}
                     </div>

@@ -18,6 +18,8 @@ services:
       - MQTT_BROKER=tcp://mqtt:1883
       - AGENT_MQTT_BROKER=tcp://192.168.100.122:1883
       - DB_PATH=/data/controller.db
+      # Optional: Manually specify subnets to scan if Docker hides host interfaces
+      - SCAN_SUBNETS=192.168.1.0/24,192.168.100.0/24
     volumes:
       - controller-data:/data
     ports:
