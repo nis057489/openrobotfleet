@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"example.com/turtlebot-fleet/internal/controller"
@@ -50,7 +51,17 @@ func (s *Server) routes() http.Handler {
 	if webRoot == "" {
 		webRoot = "./web/dist"
 	}
-	mux.Handle("/", http.FileServer(http.Dir(webRoot)))
+	
+	fs := http.FileServer(http.Dir(webRoot))
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		path := filepath.Join(webRoot, r.URL.Path)
+		_, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			http.ServeFile(w, r, filepath.Join(webRoot, "index.html"))
+			return
+		}
+		fs.ServeHTTP(w, r)
+	})
 	return mux
 }
 
@@ -103,6 +114,10 @@ func (s *Server) handleRobotSubroutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.Controller.UpdateRobotTags(w, r)
+		return
+	}
+	if strings.HasSuffix(trimmed, "/terminal") {
+		s.Controller.HandleTerminal(w, r)
 		return
 	}
 	if r.Method == http.MethodGet {

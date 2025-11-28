@@ -4,6 +4,7 @@ go 1.23.0
 
 require (
 	github.com/eclipse/paho.mqtt.golang v1.4.3
+	github.com/gorilla/websocket v1.5.0
 	github.com/pkg/sftp v1.13.10
 	golang.org/x/crypto v0.41.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -13,7 +14,6 @@ require (
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.3.0 // indirect
-	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/mattn/go-isatty v0.0.16 // indirect

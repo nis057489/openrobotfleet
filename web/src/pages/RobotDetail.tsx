@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { getRobot, sendCommand, updateRobotTags } from "../api";
 import { Robot } from "../types";
 import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Tag, Plus, X } from "lucide-react";
+import { Terminal as TerminalView } from "../components/Terminal";
 
 export function RobotDetail() {
     const { id } = useParams();
@@ -10,7 +11,7 @@ export function RobotDetail() {
     const location = useLocation();
     const [robot, setRobot] = useState<Robot | null>(null);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<"overview" | "logs">("overview");
+    const [activeTab, setActiveTab] = useState<"overview" | "logs" | "terminal">("overview");
 
     // Command state
     const [repoUrl, setRepoUrl] = useState("");
@@ -140,6 +141,13 @@ export function RobotDetail() {
                 >
                     Logs
                 </button>
+                <button
+                    onClick={() => setActiveTab("terminal")}
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "terminal" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                        }`}
+                >
+                    Terminal
+                </button>
             </div>
 
             {activeTab === "overview" ? (
@@ -233,7 +241,7 @@ export function RobotDetail() {
                         </div>
                     )}
                 </div>
-            ) : (
+            ) : activeTab === "logs" ? (
                 <div className="bg-black rounded-xl p-6 font-mono text-sm text-gray-300 min-h-[400px]">
                     <div className="flex items-center gap-2 text-gray-500 mb-4 border-b border-gray-800 pb-2">
                         <Terminal size={16} />
@@ -244,6 +252,10 @@ export function RobotDetail() {
                         To view logs, you would typically need a log aggregation service or an API endpoint
                         that streams logs from the agent via MQTT or HTTP.
                     </p>
+                </div>
+            ) : (
+                <div className="h-[600px] bg-black rounded-xl overflow-hidden border border-gray-800">
+                    <TerminalView robotId={robot.id} />
                 </div>
             )}
         </div>
