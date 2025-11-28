@@ -88,13 +88,13 @@ function RobotCard({ robot }: { robot: Robot }) {
             </div>
 
             <div className="bg-gray-50 px-6 py-3 border-t border-gray-100 flex justify-end gap-2">
-                <button 
+                <button
                     onClick={() => navigate(`/robots/${robot.id}`, { state: { tab: 'logs' } })}
                     className="text-sm font-medium text-gray-600 hover:text-gray-900 px-3 py-1.5 rounded-md hover:bg-gray-200 transition-colors"
                 >
                     Logs
                 </button>
-                <button 
+                <button
                     onClick={() => navigate(`/robots/${robot.id}`)}
                     className="text-sm font-medium text-blue-600 hover:text-blue-700 px-3 py-1.5 rounded-md hover:bg-blue-50 transition-colors"
                 >

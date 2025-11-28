@@ -94,9 +94,9 @@ export function Settings() {
                         />
                     </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            {/* WiFi settings removed as they are not supported by the backend yet */}
-          </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        {/* WiFi settings removed as they are not supported by the backend yet */}
+                    </div>
                     {message && (
                         <div className={`p-3 rounded-lg text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                             {message.text}
