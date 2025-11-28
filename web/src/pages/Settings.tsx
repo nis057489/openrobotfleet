@@ -60,7 +60,7 @@ export function Settings() {
     const handleRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        
+
         if (!confirm("WARNING: This will overwrite the current database and restart the controller. All current data will be replaced. Are you sure?")) {
             if (fileInputRef.current) fileInputRef.current.value = '';
             return;
