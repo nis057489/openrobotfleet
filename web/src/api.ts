@@ -49,6 +49,11 @@ export function sendCommand(
   });
 }
 
+export function getJobs(robotId?: number | string): Promise<Job[]> {
+  const query = robotId ? `?robot=${robotId}` : '';
+  return request<Job[]>(`/api/jobs${query}`);
+}
+
 export function getScenarios(): Promise<Scenario[]> {
   return request<Scenario[]>('/api/scenarios');
 }
