@@ -41,7 +41,7 @@ func ScanSubnet() ([]Candidate, error) {
 	ipv4 := localIP.To4()
 	baseIP := net.IPv4(ipv4[0], ipv4[1], ipv4[2], 0)
 
-	var candidates []Candidate
+	candidates := []Candidate{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 

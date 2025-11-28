@@ -16,7 +16,7 @@ export function Discovery() {
         setCandidates([]);
         try {
             const results = await scanNetwork();
-            setCandidates(results);
+            setCandidates(results || []);
         } catch (err) {
             setError(err instanceof Error ? err.message : "Scan failed");
         } finally {
@@ -41,7 +41,7 @@ export function Discovery() {
                 </div>
                 <h2 className="text-lg font-semibold text-gray-900 mb-2">Find Robots</h2>
                 <p className="text-gray-500 mb-6 max-w-md mx-auto">
-                    Scan the local subnet for devices with SSH (port 22) open. 
+                    Scan the local subnet for devices with SSH (port 22) open.
                     This helps find robots that have acquired new IP addresses.
                 </p>
                 <button

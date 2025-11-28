@@ -194,7 +194,7 @@ func (c *Controller) UpdateRobotTags(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "failed to update tags")
 		return
 	}
-	
+
 	// Return updated robot
 	robot, err := c.DB.GetRobotByID(r.Context(), id)
 	if err != nil {

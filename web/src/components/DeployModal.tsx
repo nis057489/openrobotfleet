@@ -90,8 +90,8 @@ export function DeployModal({ scenarioId, scenarioName, onClose, onSuccess }: De
                                             key={tag}
                                             onClick={() => selectByTag(tag)}
                                             className={`px-2 py-1 text-xs rounded-full border transition-colors ${filterTag === tag
-                                                    ? "bg-blue-100 border-blue-200 text-blue-700"
-                                                    : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
+                                                ? "bg-blue-100 border-blue-200 text-blue-700"
+                                                : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
                                                 }`}
                                         >
                                             {tag}
@@ -108,8 +108,8 @@ export function DeployModal({ scenarioId, scenarioName, onClose, onSuccess }: De
                                         key={robot.id}
                                         onClick={() => toggleRobot(robot.id)}
                                         className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all ${isSelected
-                                                ? "border-blue-500 bg-blue-50"
-                                                : "border-gray-200 hover:border-blue-300"
+                                            ? "border-blue-500 bg-blue-50"
+                                            : "border-gray-200 hover:border-blue-300"
                                             }`}
                                     >
                                         <div className="flex items-center gap-3">

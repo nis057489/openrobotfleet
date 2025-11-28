@@ -10,8 +10,8 @@ import (
 
 	"example.com/turtlebot-fleet/internal/controller"
 	"example.com/turtlebot-fleet/internal/db"
-	"example.com/turtlebot-fleet/internal/scan"
 	mqttc "example.com/turtlebot-fleet/internal/mqtt"
+	"example.com/turtlebot-fleet/internal/scan"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 

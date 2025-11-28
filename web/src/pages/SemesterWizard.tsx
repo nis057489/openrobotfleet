@@ -48,7 +48,7 @@ export function SemesterWizard() {
         setResults({});
 
         const ids = Array.from(selectedIds);
-        
+
         for (const id of ids) {
             setResults(prev => ({ ...prev, [id]: "pending" }));
         }
@@ -57,11 +57,11 @@ export function SemesterWizard() {
         for (const id of ids) {
             try {
                 setResults(prev => ({ ...prev, [id]: "running" }));
-                
+
                 if (doResetLogs) {
                     await sendCommand(id, { type: "reset_logs", data: {} });
                 }
-                
+
                 if (doUpdateRepo) {
                     await sendCommand(id, { type: "update_repo", data: { url: repoUrl } });
                 }
@@ -89,17 +89,17 @@ export function SemesterWizard() {
                 <div className="space-y-4">
                     <div className="flex items-center justify-between">
                         <h2 className="text-lg font-semibold">1. Select Robots</h2>
-                        <button 
+                        <button
                             onClick={toggleSelectAll}
                             className="text-sm text-blue-600 hover:underline"
                         >
                             {selectedIds.size === robots.length ? "Deselect All" : "Select All"}
                         </button>
                     </div>
-                    
+
                     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden max-h-[500px] overflow-y-auto">
                         {robots.map(robot => (
-                            <div 
+                            <div
                                 key={robot.id}
                                 className={`flex items-center p-3 border-b border-gray-100 last:border-0 cursor-pointer hover:bg-gray-50 ${selectedIds.has(robot.id) ? "bg-blue-50" : ""}`}
                                 onClick={() => toggleSelect(robot.id)}
@@ -134,16 +134,16 @@ export function SemesterWizard() {
                     <div>
                         <h2 className="text-lg font-semibold mb-4">2. Configure Actions</h2>
                         <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
-                            
+
                             {/* Reset Logs */}
                             <label className="flex items-start gap-3 cursor-pointer">
                                 <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doResetLogs ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
                                     {doResetLogs && <Check size={14} />}
-                                    <input 
-                                        type="checkbox" 
-                                        className="hidden" 
-                                        checked={doResetLogs} 
-                                        onChange={e => setDoResetLogs(e.target.checked)} 
+                                    <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={doResetLogs}
+                                        onChange={e => setDoResetLogs(e.target.checked)}
                                     />
                                 </div>
                                 <div>
@@ -160,11 +160,11 @@ export function SemesterWizard() {
                             <label className="flex items-start gap-3 cursor-pointer">
                                 <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doUpdateRepo ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
                                     {doUpdateRepo && <Check size={14} />}
-                                    <input 
-                                        type="checkbox" 
-                                        className="hidden" 
-                                        checked={doUpdateRepo} 
-                                        onChange={e => setDoUpdateRepo(e.target.checked)} 
+                                    <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={doUpdateRepo}
+                                        onChange={e => setDoUpdateRepo(e.target.checked)}
                                     />
                                 </div>
                                 <div className="flex-1">
@@ -173,8 +173,8 @@ export function SemesterWizard() {
                                     </div>
                                     <p className="text-sm text-gray-500 mb-2">Pull the latest code from a remote git repository.</p>
                                     {doUpdateRepo && (
-                                        <input 
-                                            type="text" 
+                                        <input
+                                            type="text"
                                             value={repoUrl}
                                             onChange={e => setRepoUrl(e.target.value)}
                                             className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
@@ -189,11 +189,10 @@ export function SemesterWizard() {
                     <button
                         onClick={handleExecute}
                         disabled={executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo)}
-                        className={`w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 ${
-                            executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo)
+                        className={`w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 ${executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo)
                                 ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                                 : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
-                        }`}
+                            }`}
                     >
                         {executing ? (
                             <>
