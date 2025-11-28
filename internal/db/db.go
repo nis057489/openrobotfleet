@@ -1,0 +1,344 @@
+package db
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"log"
+	"time"
+
+	_ "modernc.org/sqlite"
+)
+
+type DB struct {
+	SQL *sql.DB
+}
+
+type Robot struct {
+	ID       int64     `json:"id"`
+	Name     string    `json:"name"`
+	AgentID  string    `json:"agent_id"`
+	IP       string    `json:"ip"`
+	Status   string    `json:"status"`
+	Notes    string    `json:"notes"`
+	LastSeen time.Time `json:"last_seen"`
+}
+
+type Scenario struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	ConfigYAML  string `json:"config_yaml"`
+}
+
+type Job struct {
+	ID          int64     `json:"id"`
+	Type        string    `json:"type"`
+	TargetRobot string    `json:"target_robot"`
+	PayloadJSON string    `json:"payload_json"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+func Open(path string) (*DB, error) {
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := db.Exec("PRAGMA busy_timeout = 5000"); err != nil {
+		return nil, err
+	}
+	if _, err := db.Exec("PRAGMA journal_mode = WAL"); err != nil {
+		return nil, err
+	}
+	// modernc SQLite creates new connections per goroutine unless capped; keep it at 1
+	// to avoid unexpected SQLITE_BUSY errors since we don't need parallel writers yet.
+	db.SetMaxOpenConns(1)
+	if err := db.Ping(); err != nil {
+		return nil, err
+	}
+	if err := migrate(db); err != nil {
+		return nil, err
+	}
+	return &DB{SQL: db}, nil
+}
+
+func migrate(db *sql.DB) error {
+	ctx := context.Background()
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS robots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			agent_id TEXT,
+			ip TEXT,
+			last_seen TIMESTAMP,
+			status TEXT,
+			notes TEXT
+		);`,
+		`CREATE TABLE IF NOT EXISTS scenarios (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			description TEXT,
+			config_yaml TEXT
+		);`,
+		`CREATE TABLE IF NOT EXISTS jobs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			type TEXT NOT NULL,
+			target_robot TEXT,
+			payload_json TEXT,
+			status TEXT,
+			created_at TIMESTAMP,
+			updated_at TIMESTAMP
+		);`,
+	}
+	for _, s := range stmts {
+		if _, err := db.ExecContext(ctx, s); err != nil {
+			log.Printf("migration failed: %v", err)
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *DB) ListRobots(ctx context.Context) ([]Robot, error) {
+	stmt, err := d.SQL.PrepareContext(ctx, `SELECT id, name, agent_id, ip, last_seen, status, notes FROM robots ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+	rows, err := stmt.QueryContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var robots []Robot
+	for rows.Next() {
+		var r Robot
+		var lastSeen sql.NullTime
+		var notes sql.NullString
+		if err := rows.Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes); err != nil {
+			return nil, err
+		}
+		if lastSeen.Valid {
+			r.LastSeen = lastSeen.Time
+		}
+		if notes.Valid {
+			r.Notes = notes.String
+		}
+		robots = append(robots, r)
+	}
+	if robots == nil {
+		robots = []Robot{}
+	}
+	return robots, rows.Err()
+}
+
+func (d *DB) UpsertRobotStatus(ctx context.Context, agentID, name, ip, status string) error {
+	if name == "" {
+		return errors.New("robot name required")
+	}
+	stmt, err := d.SQL.PrepareContext(ctx, `INSERT INTO robots (name, agent_id, ip, last_seen, status) VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(name) DO UPDATE SET
+	agent_id=excluded.agent_id,
+	ip=excluded.ip,
+	status=excluded.status,
+	last_seen=excluded.last_seen`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.ExecContext(ctx, name, agentID, ip, time.Now().UTC(), status)
+	return err
+}
+
+func (d *DB) GetRobotByID(ctx context.Context, id int64) (Robot, error) {
+	stmt, err := d.SQL.PrepareContext(ctx, `SELECT id, name, agent_id, ip, last_seen, status, notes FROM robots WHERE id = ?`)
+	if err != nil {
+		return Robot{}, err
+	}
+	defer stmt.Close()
+	var r Robot
+	var lastSeen sql.NullTime
+	var notes sql.NullString
+	if err := stmt.QueryRowContext(ctx, id).Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes); err != nil {
+		return Robot{}, err
+	}
+	if lastSeen.Valid {
+		r.LastSeen = lastSeen.Time
+	}
+	if notes.Valid {
+		r.Notes = notes.String
+	}
+	return r, nil
+}
+
+func (d *DB) GetRobotByName(ctx context.Context, name string) (Robot, error) {
+	stmt, err := d.SQL.PrepareContext(ctx, `SELECT id, name, agent_id, ip, last_seen, status, notes FROM robots WHERE name = ?`)
+	if err != nil {
+		return Robot{}, err
+	}
+	defer stmt.Close()
+	var r Robot
+	var lastSeen sql.NullTime
+	var notes sql.NullString
+	if err := stmt.QueryRowContext(ctx, name).Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes); err != nil {
+		return Robot{}, err
+	}
+	if lastSeen.Valid {
+		r.LastSeen = lastSeen.Time
+	}
+	if notes.Valid {
+		r.Notes = notes.String
+	}
+	return r, nil
+}
+
+func (d *DB) ListScenarios(ctx context.Context) ([]Scenario, error) {
+	stmt, err := d.SQL.PrepareContext(ctx, `SELECT id, name, description, config_yaml FROM scenarios ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+	rows, err := stmt.QueryContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var scenarios []Scenario
+	for rows.Next() {
+		var s Scenario
+		if err := rows.Scan(&s.ID, &s.Name, &s.Description, &s.ConfigYAML); err != nil {
+			return nil, err
+		}
+		scenarios = append(scenarios, s)
+	}
+	if scenarios == nil {
+		scenarios = []Scenario{}
+	}
+	return scenarios, rows.Err()
+}
+
+func (d *DB) GetScenarioByID(ctx context.Context, id int64) (Scenario, error) {
+	stmt, err := d.SQL.PrepareContext(ctx, `SELECT id, name, description, config_yaml FROM scenarios WHERE id = ?`)
+	if err != nil {
+		return Scenario{}, err
+	}
+	defer stmt.Close()
+	var s Scenario
+	if err := stmt.QueryRowContext(ctx, id).Scan(&s.ID, &s.Name, &s.Description, &s.ConfigYAML); err != nil {
+		return Scenario{}, err
+	}
+	return s, nil
+}
+
+func (d *DB) CreateScenario(ctx context.Context, s Scenario) (int64, error) {
+	stmt, err := d.SQL.PrepareContext(ctx, `INSERT INTO scenarios (name, description, config_yaml) VALUES (?, ?, ?)`)
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+	res, err := stmt.ExecContext(ctx, s.Name, s.Description, s.ConfigYAML)
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+func (d *DB) UpdateScenario(ctx context.Context, s Scenario) error {
+	stmt, err := d.SQL.PrepareContext(ctx, `UPDATE scenarios SET name = ?, description = ?, config_yaml = ? WHERE id = ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.ExecContext(ctx, s.Name, s.Description, s.ConfigYAML, s.ID)
+	return err
+}
+
+func (d *DB) DeleteScenario(ctx context.Context, id int64) error {
+	stmt, err := d.SQL.PrepareContext(ctx, `DELETE FROM scenarios WHERE id = ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.ExecContext(ctx, id)
+	return err
+}
+
+func (d *DB) CreateJob(ctx context.Context, j Job) (int64, error) {
+	if j.CreatedAt.IsZero() {
+		j.CreatedAt = time.Now().UTC()
+	}
+	if j.UpdatedAt.IsZero() {
+		j.UpdatedAt = j.CreatedAt
+	}
+	stmt, err := d.SQL.PrepareContext(ctx, `INSERT INTO jobs (type, target_robot, payload_json, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+	res, err := stmt.ExecContext(ctx, j.Type, j.TargetRobot, j.PayloadJSON, j.Status, j.CreatedAt, j.UpdatedAt)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (d *DB) UpdateJobStatus(ctx context.Context, id int64, status string) error {
+	stmt, err := d.SQL.PrepareContext(ctx, `UPDATE jobs SET status = ?, updated_at = ? WHERE id = ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.ExecContext(ctx, status, time.Now().UTC(), id)
+	return err
+}
+
+func (d *DB) ListJobs(ctx context.Context, target string) ([]Job, error) {
+	var (
+		stmt *sql.Stmt
+		err  error
+	)
+	if target != "" {
+		stmt, err = d.SQL.PrepareContext(ctx, `SELECT id, type, target_robot, payload_json, status, created_at, updated_at FROM jobs WHERE target_robot = ? ORDER BY created_at DESC`)
+	} else {
+		stmt, err = d.SQL.PrepareContext(ctx, `SELECT id, type, target_robot, payload_json, status, created_at, updated_at FROM jobs ORDER BY created_at DESC`)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+	var rows *sql.Rows
+	if target != "" {
+		rows, err = stmt.QueryContext(ctx, target)
+	} else {
+		rows, err = stmt.QueryContext(ctx)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var jobs []Job
+	for rows.Next() {
+		var j Job
+		var createdAt, updatedAt sql.NullTime
+		if err := rows.Scan(&j.ID, &j.Type, &j.TargetRobot, &j.PayloadJSON, &j.Status, &createdAt, &updatedAt); err != nil {
+			return nil, err
+		}
+		if createdAt.Valid {
+			j.CreatedAt = createdAt.Time
+		}
+		if updatedAt.Valid {
+			j.UpdatedAt = updatedAt.Time
+		}
+		jobs = append(jobs, j)
+	}
+	if jobs == nil {
+		jobs = []Job{}
+	}
+	return jobs, rows.Err()
+}

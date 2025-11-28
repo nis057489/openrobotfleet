@@ -1,0 +1,12 @@
+FROM golang:1.23 as build
+
+WORKDIR /app
+COPY go.mod ./
+RUN go mod download
+COPY . .
+RUN go build -o agent ./cmd/agent
+
+FROM debian:stable-slim
+WORKDIR /app
+COPY --from=build /app/agent /app/agent
+CMD ["/app/agent"]
