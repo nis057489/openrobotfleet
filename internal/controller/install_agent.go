@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"example.com/turtlebot-fleet/internal/agent"
+	"example.com/turtlebot-fleet/internal/db"
 	sshc "example.com/turtlebot-fleet/internal/ssh"
 )
 
@@ -83,12 +84,26 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	robotIP := req.Address
+	if err := c.DB.UpdateRobotInstallConfigByName(r.Context(), req.Name, db.InstallConfig{Address: req.Address, User: req.User, SSHKey: req.SSHKey}); err != nil {
+		log.Printf("install agent: save install config: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to save robot install config")
+		return
+	}
 	if hostIP, _, err := net.SplitHostPort(addr); err == nil {
 		robotIP = hostIP
 	}
 	if err := c.DB.UpsertRobotStatus(r.Context(), cfg.AgentID, req.Name, robotIP, "installed"); err != nil {
 		log.Printf("install agent: upsert robot: %v", err)
 		respondError(w, http.StatusInternalServerError, "failed to update robot")
+		return
+	}
+	if err := c.DB.UpdateRobotInstallConfigByName(r.Context(), req.Name, db.InstallConfig{
+		Address: req.Address,
+		User:    req.User,
+		SSHKey:  req.SSHKey,
+	}); err != nil {
+		log.Printf("install agent: persist install config: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to save install settings")
 		return
 	}
 	robot, err := c.DB.GetRobotByName(r.Context(), req.Name)

@@ -7,6 +7,7 @@ export interface Robot {
   status?: string;
   notes?: string;
   last_scenario?: ScenarioRef;
+  install_config?: InstallConfig;
 }
 
 export interface ScenarioRef {
@@ -41,4 +42,14 @@ export interface InstallAgentPayload {
   address: string;
   user: string;
   ssh_key: string;
+}
+
+export interface InstallConfig {
+  address: string;
+  user: string;
+  ssh_key: string;
+}
+
+export interface InstallDefaultsResponse {
+  install_config?: InstallConfig | null;
 }

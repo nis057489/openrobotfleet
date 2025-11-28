@@ -36,6 +36,7 @@ func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/api/install-agent", s.handleInstallAgent)
+	mux.HandleFunc("/api/settings/install-defaults", s.handleInstallDefaults)
 	mux.HandleFunc("/api/robots", s.handleListRobots)
 	mux.HandleFunc("/api/robots/command/broadcast", s.handleRobotCommandBroadcast)
 	mux.HandleFunc("/api/robots/", s.handleRobotSubroutes)
@@ -78,6 +79,14 @@ func (s *Server) handleListRobots(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRobotSubroutes(w http.ResponseWriter, r *http.Request) {
 	trimmed := strings.TrimSuffix(r.URL.Path, "/")
+	if strings.HasSuffix(trimmed, "/install-config") {
+		if r.Method != http.MethodPut {
+			methodNotAllowed(w)
+			return
+		}
+		s.Controller.UpdateInstallConfig(w, r)
+		return
+	}
 	if strings.HasSuffix(trimmed, "/command") {
 		if r.Method != http.MethodPost {
 			methodNotAllowed(w)
@@ -140,6 +149,17 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Controller.ListJobs(w, r)
+}
+
+func (s *Server) handleInstallDefaults(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.Controller.GetInstallDefaults(w, r)
+	case http.MethodPut:
+		s.Controller.UpdateInstallDefaults(w, r)
+	default:
+		methodNotAllowed(w)
+	}
 }
 
 func (s *Server) handleInstallAgent(w http.ResponseWriter, r *http.Request) {

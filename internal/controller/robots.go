@@ -124,6 +124,40 @@ func (c *Controller) BroadcastCommand(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, job)
 }
 
+func (c *Controller) UpdateInstallConfig(w http.ResponseWriter, r *http.Request) {
+	robotID, err := parseInstallConfigRobotID(r.URL.Path)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var req installConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid install config")
+		return
+	}
+	if err := req.validate(); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	cfg := req.toInstallConfig()
+	if err := c.DB.UpdateRobotInstallConfigByID(r.Context(), robotID, cfg); err != nil {
+		log.Printf("update install config: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to save install config")
+		return
+	}
+	robot, err := c.DB.GetRobotByID(r.Context(), robotID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			respondError(w, http.StatusNotFound, "robot not found")
+			return
+		}
+		log.Printf("fetch robot after install config update: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to fetch robot")
+		return
+	}
+	respondJSON(w, http.StatusOK, robot)
+}
+
 func (c *Controller) queueRobotCommand(ctx context.Context, robot db.Robot, cmd agent.Command) (db.Job, error) {
 	payload, err := json.Marshal(cmd)
 	if err != nil {

@@ -3,14 +3,17 @@ import {
     applyScenario,
     createScenario,
     deleteScenario,
+    getInstallDefaults,
     getRobots,
     getScenarios,
     installAgent,
+    saveInstallConfig,
     ScenarioPayload,
     sendCommand,
     updateScenario,
+    updateInstallDefaults,
 } from "./api";
-import { InstallAgentPayload, Robot, Scenario } from "./types";
+import { InstallAgentPayload, InstallConfig, Robot, Scenario } from "./types";
 
 type Tab = "robots" | "scenarios" | "install";
 
@@ -101,6 +104,7 @@ export function App() {
                         { id: "robots", label: "Robots" },
                         { id: "scenarios", label: "Scenarios" },
                         { id: "install", label: "Install Agent" },
+                        { id: "settings", label: "Settings" },
                     ].map((tab) => (
                         <button
                             key={tab.id}
@@ -135,6 +139,11 @@ export function App() {
                 {activeTab === "install" && (
                     <div style={{ ...styles.card, maxWidth: 600 }}>
                         <InstallAgentForm />
+                    </div>
+                )}
+                {activeTab === "settings" && (
+                    <div style={{ ...styles.card, maxWidth: 600 }}>
+                        <SettingsPage />
                     </div>
                 )}
             </div>
@@ -605,6 +614,64 @@ function InstallAgentForm() {
     const [status, setStatus] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
+    const [robots, setRobots] = useState<Robot[]>([]);
+    const [selectedRobotId, setSelectedRobotId] = useState<string>("");
+    const [defaults, setDefaults] = useState<InstallConfig | null>(null);
+    const [loadingRobots, setLoadingRobots] = useState(true);
+
+    useEffect(() => {
+        let mounted = true;
+        const loadDefaults = async () => {
+            try {
+                const resp = await getInstallDefaults();
+                if (!mounted) return;
+                setDefaults(resp.install_config ?? null);
+            } catch (err) {
+                console.error("failed to load install defaults", err);
+            }
+        };
+        const loadRobots = async () => {
+            setLoadingRobots(true);
+            try {
+                const data = await getRobots();
+                if (!mounted) return;
+                setRobots(data);
+            } catch (err) {
+                if (!mounted) return;
+                setError(err instanceof Error ? err.message : "Failed to load robots");
+            } finally {
+                if (mounted) {
+                    setLoadingRobots(false);
+                }
+            }
+        };
+        loadDefaults();
+        loadRobots();
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!defaults) return;
+        setForm((prev) => ({
+            ...prev,
+            address: prev.address || defaults.address || "",
+            user: prev.user || defaults.user || "",
+            ssh_key: prev.ssh_key || defaults.ssh_key || "",
+        }));
+    }, [defaults]);
+
+    const refreshRobots = useCallback(async () => {
+        try {
+            const data = await getRobots();
+            setRobots(data);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to load robots");
+        }
+    }, []);
+
+    const selectedRobot = selectedRobotId ? robots.find((r) => r.id === Number(selectedRobotId)) : undefined;
 
     const handleSubmit = async (event: FormEvent) => {
         event.preventDefault();
@@ -614,7 +681,13 @@ function InstallAgentForm() {
         try {
             await installAgent(form);
             setStatus("Install request submitted");
-            setForm({ name: "", address: "", user: "", ssh_key: "" });
+            setForm({
+                name: "",
+                address: defaults?.address ?? "",
+                user: defaults?.user ?? "",
+                ssh_key: defaults?.ssh_key ?? "",
+            });
+            await refreshRobots();
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to install agent");
         } finally {
@@ -622,20 +695,212 @@ function InstallAgentForm() {
         }
     };
 
+    const requireRobotSelection = (): Robot | null => {
+        if (!selectedRobot) {
+            setError("Select a robot first");
+            return null;
+        }
+        return selectedRobot;
+    };
+
+    const requireInstallFields = () => {
+        if (!form.address.trim() || !form.user.trim() || !form.ssh_key.trim()) {
+            setError("Address, user, and SSH key are required");
+            return false;
+        }
+        return true;
+    };
+
+    const handleLoadRobotConfig = () => {
+        setStatus(null);
+        setError(null);
+        const robot = requireRobotSelection();
+        if (!robot) return;
+        if (!robot.install_config) {
+            setError("No saved credentials for this robot yet");
+            return;
+        }
+        setForm({
+            name: robot.name,
+            address: robot.install_config.address || robot.ip || "",
+            user: robot.install_config.user,
+            ssh_key: robot.install_config.ssh_key || defaults?.ssh_key || "",
+        });
+        setStatus(`Loaded saved settings for ${robot.name}`);
+    };
+
+    const handleSaveRobotConfig = async () => {
+        setStatus(null);
+        setError(null);
+        const robot = requireRobotSelection();
+        if (!robot) return;
+        if (!requireInstallFields()) return;
+        try {
+            await saveInstallConfig(robot.id, {
+                address: form.address,
+                user: form.user,
+                ssh_key: form.ssh_key,
+            });
+            setStatus(`Saved settings for ${robot.name}`);
+            await refreshRobots();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to save robot settings");
+        }
+    };
+
+    const handleReinstall = async () => {
+        setStatus(null);
+        setError(null);
+        const robot = requireRobotSelection();
+        if (!robot) return;
+        if (!requireInstallFields()) return;
+        setSubmitting(true);
+        try {
+            await installAgent({ ...form, name: robot.name });
+            setStatus(`Reinstall requested for ${robot.name}`);
+            await refreshRobots();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to reinstall agent");
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    return (
+        <div>
+            <form onSubmit={handleSubmit}>
+                <h2>Install Agent</h2>
+                <label style={styles.label}>
+                    Robot Name
+                    <input
+                        style={styles.input}
+                        value={form.name}
+                        onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                        required
+                    />
+                </label>
+                <label style={styles.label}>
+                    Address
+                    <input
+                        style={styles.input}
+                        value={form.address}
+                        onChange={(e) => setForm((prev) => ({ ...prev, address: e.target.value }))}
+                        required
+                    />
+                </label>
+                <label style={styles.label}>
+                    User
+                    <input
+                        style={styles.input}
+                        value={form.user}
+                        onChange={(e) => setForm((prev) => ({ ...prev, user: e.target.value }))}
+                        required
+                    />
+                </label>
+                <label style={styles.label}>
+                    SSH Key
+                    <textarea
+                        style={styles.textarea}
+                        value={form.ssh_key}
+                        onChange={(e) => setForm((prev) => ({ ...prev, ssh_key: e.target.value }))}
+                        required
+                    />
+                </label>
+                <button type="submit" disabled={submitting}>
+                    Submit
+                </button>
+            </form>
+            <div style={{ marginTop: "1.5rem" }}>
+                <h3>Reinstall Existing Robot</h3>
+                {loadingRobots ? (
+                    <p>Loading robots…</p>
+                ) : (
+                    <label style={{ ...styles.label, maxWidth: "100%" }}>
+                        Target Robot
+                        <select
+                            style={styles.input}
+                            value={selectedRobotId}
+                            onChange={(e) => setSelectedRobotId(e.target.value)}
+                        >
+                            <option value="">Select robot…</option>
+                            {robots.map((robot) => (
+                                <option key={robot.id} value={robot.id.toString()}>
+                                    {robot.name}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                )}
+                <div style={styles.buttonRow}>
+                    <button type="button" onClick={handleLoadRobotConfig} disabled={!selectedRobotId}>
+                        Load Saved Settings
+                    </button>
+                    <button type="button" onClick={handleSaveRobotConfig} disabled={!selectedRobotId || submitting}>
+                        Save Settings to Robot
+                    </button>
+                    <button type="button" onClick={handleReinstall} disabled={!selectedRobotId || submitting}>
+                        Reinstall Agent
+                    </button>
+                </div>
+            </div>
+            {status && <p style={{ color: "green" }}>{status}</p>}
+            {error && <p style={{ color: "red" }}>{error}</p>}
+        </div>
+    );
+}
+
+function SettingsPage() {
+    const [form, setForm] = useState<InstallConfig>({ address: "", user: "", ssh_key: "" });
+    const [loading, setLoading] = useState(true);
+    const [status, setStatus] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let mounted = true;
+        const load = async () => {
+            setError(null);
+            try {
+                const resp = await getInstallDefaults();
+                if (!mounted) return;
+                if (resp.install_config) {
+                    setForm(resp.install_config);
+                }
+            } catch (err) {
+                if (!mounted) return;
+                setError(err instanceof Error ? err.message : "Failed to load defaults");
+            } finally {
+                if (mounted) {
+                    setLoading(false);
+                }
+            }
+        };
+        load();
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
+    const handleSubmit = async (event: FormEvent) => {
+        event.preventDefault();
+        setStatus(null);
+        setError(null);
+        try {
+            await updateInstallDefaults(form);
+            setStatus("Defaults saved");
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to save defaults");
+        }
+    };
+
+    if (loading) {
+        return <p>Loading settings…</p>;
+    }
+
     return (
         <form onSubmit={handleSubmit}>
-            <h2>Install Agent</h2>
+            <h2>Install Defaults</h2>
             <label style={styles.label}>
-                Robot Name
-                <input
-                    style={styles.input}
-                    value={form.name}
-                    onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-                    required
-                />
-            </label>
-            <label style={styles.label}>
-                Address
+                Default Address
                 <input
                     style={styles.input}
                     value={form.address}
@@ -644,7 +909,7 @@ function InstallAgentForm() {
                 />
             </label>
             <label style={styles.label}>
-                User
+                Default User
                 <input
                     style={styles.input}
                     value={form.user}
@@ -653,7 +918,7 @@ function InstallAgentForm() {
                 />
             </label>
             <label style={styles.label}>
-                SSH Key
+                Default SSH Key
                 <textarea
                     style={styles.textarea}
                     value={form.ssh_key}
@@ -661,9 +926,7 @@ function InstallAgentForm() {
                     required
                 />
             </label>
-            <button type="submit" disabled={submitting}>
-                Submit
-            </button>
+            <button type="submit">Save Defaults</button>
             {status && <p style={{ color: "green" }}>{status}</p>}
             {error && <p style={{ color: "red" }}>{error}</p>}
         </form>

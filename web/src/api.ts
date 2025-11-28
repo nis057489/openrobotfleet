@@ -4,6 +4,8 @@ import {
   CommandRequest,
   InstallAgentPayload,
   Job,
+  InstallConfig,
+  InstallDefaultsResponse,
 } from './types';
 
 const JSON_HEADERS = {
@@ -101,9 +103,34 @@ export function applyScenario(
   });
 }
 
-export function installAgent(payload: InstallAgentPayload): Promise<void> {
-  return request<void>('/api/install-agent', {
+export function installAgent(payload: InstallAgentPayload): Promise<Robot> {
+  return request<Robot>('/api/install-agent', {
     method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(payload),
+  });
+}
+
+export function saveInstallConfig(
+  robotId: number | string,
+  payload: InstallConfig,
+): Promise<Robot> {
+  return request<Robot>(`/api/robots/${robotId}/install-config`, {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getInstallDefaults(): Promise<InstallDefaultsResponse> {
+  return request<InstallDefaultsResponse>('/api/settings/install-defaults');
+}
+
+export function updateInstallDefaults(
+  payload: InstallConfig,
+): Promise<InstallDefaultsResponse> {
+  return request<InstallDefaultsResponse>('/api/settings/install-defaults', {
+    method: 'PUT',
     headers: JSON_HEADERS,
     body: JSON.stringify(payload),
   });

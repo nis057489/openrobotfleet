@@ -67,3 +67,17 @@ func parseCommandRobotID(path string) (int64, error) {
 	}
 	return strconv.ParseInt(trimmed, 10, 64)
 }
+
+func parseInstallConfigRobotID(path string) (int64, error) {
+	if !strings.HasPrefix(path, "/api/robots/") || !strings.HasSuffix(path, "/install-config") {
+		return 0, fmt.Errorf("invalid install config path")
+	}
+	trimmed := strings.TrimSuffix(path, "/install-config")
+	trimmed = strings.TrimSuffix(trimmed, "/")
+	trimmed = strings.TrimPrefix(trimmed, "/api/robots/")
+	trimmed = strings.Trim(trimmed, "/")
+	if trimmed == "" {
+		return 0, fmt.Errorf("missing robot id")
+	}
+	return strconv.ParseInt(trimmed, 10, 64)
+}
