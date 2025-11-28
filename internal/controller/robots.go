@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"example.com/turtlebot-fleet/internal/agent"
@@ -153,6 +155,50 @@ func (c *Controller) UpdateInstallConfig(w http.ResponseWriter, r *http.Request)
 		}
 		log.Printf("fetch robot after install config update: %v", err)
 		respondError(w, http.StatusInternalServerError, "failed to fetch robot")
+		return
+	}
+	respondJSON(w, http.StatusOK, robot)
+}
+
+func (c *Controller) UpdateRobotTags(w http.ResponseWriter, r *http.Request) {
+	id, err := parseIDFromPath(r.URL.Path, "/api/robots/")
+	if err != nil {
+		// Try parsing with /tags suffix removed if needed, but parseIDFromPath expects prefix
+		// The path is likely /api/robots/123/tags
+		// Let's manually parse since the helper is strict
+		parts := strings.Split(r.URL.Path, "/")
+		if len(parts) < 4 {
+			respondError(w, http.StatusBadRequest, "invalid path")
+			return
+		}
+		// parts: ["", "api", "robots", "123", "tags"]
+		idStr := parts[3]
+		var parseErr error
+		id, parseErr = strconv.ParseInt(idStr, 10, 64)
+		if parseErr != nil {
+			respondError(w, http.StatusBadRequest, "invalid robot id")
+			return
+		}
+	}
+
+	var req struct {
+		Tags []string `json:"tags"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid payload")
+		return
+	}
+
+	if err := c.DB.UpdateRobotTags(r.Context(), id, req.Tags); err != nil {
+		log.Printf("update tags: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to update tags")
+		return
+	}
+	
+	// Return updated robot
+	robot, err := c.DB.GetRobotByID(r.Context(), id)
+	if err != nil {
+		respondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 		return
 	}
 	respondJSON(w, http.StatusOK, robot)

@@ -10,6 +10,7 @@ import (
 
 	"example.com/turtlebot-fleet/internal/controller"
 	"example.com/turtlebot-fleet/internal/db"
+	"example.com/turtlebot-fleet/internal/scan"
 	mqttc "example.com/turtlebot-fleet/internal/mqtt"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
@@ -43,6 +44,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/scenarios", s.handleScenariosCollection)
 	mux.HandleFunc("/api/scenarios/", s.handleScenarioItem)
 	mux.HandleFunc("/api/jobs", s.handleListJobs)
+	mux.HandleFunc("/api/discovery/scan", s.handleDiscoveryScan)
 
 	webRoot := os.Getenv("WEB_ROOT")
 	if webRoot == "" {
@@ -93,6 +95,14 @@ func (s *Server) handleRobotSubroutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.Controller.RobotCommand(w, r)
+		return
+	}
+	if strings.HasSuffix(trimmed, "/tags") {
+		if r.Method != http.MethodPut {
+			methodNotAllowed(w)
+			return
+		}
+		s.Controller.UpdateRobotTags(w, r)
 		return
 	}
 	if r.Method == http.MethodGet {
@@ -216,4 +226,30 @@ func parseAgentIDFromTopic(topic string) string {
 		return ""
 	}
 	return strings.TrimPrefix(topic, prefix)
+}
+
+func (s *Server) handleDiscoveryScan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	candidates, err := scan.ScanSubnet()
+	if err != nil {
+		log.Printf("scan failed: %v", err)
+		respondError(w, http.StatusInternalServerError, "scan failed")
+		return
+	}
+	respondJSON(w, http.StatusOK, candidates)
+}
+
+func respondJSON(w http.ResponseWriter, status int, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if v != nil {
+		_ = json.NewEncoder(w).Encode(v)
+	}
+}
+
+func respondError(w http.ResponseWriter, status int, msg string) {
+	respondJSON(w, status, map[string]string{"error": msg})
 }

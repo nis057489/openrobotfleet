@@ -1,4 +1,4 @@
-import { LayoutDashboard, Bot, FileCode, Settings, Menu } from "lucide-react";
+import { LayoutDashboard, Bot, FileCode, Settings, Menu, GraduationCap } from "lucide-react";
 import { useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { clsx, type ClassValue } from "clsx";
@@ -16,6 +16,7 @@ export function Layout() {
         { icon: LayoutDashboard, label: "Dashboard", path: "/" },
         { icon: Bot, label: "Robots", path: "/robots" },
         { icon: FileCode, label: "Scenarios", path: "/scenarios" },
+        { icon: GraduationCap, label: "Semester Wizard", path: "/semester-wizard" },
         { icon: Settings, label: "Settings", path: "/settings" },
     ];
 

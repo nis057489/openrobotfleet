@@ -16,6 +16,7 @@ export function DeployModal({ scenarioId, scenarioName, onClose, onSuccess }: De
     const [loading, setLoading] = useState(true);
     const [deploying, setDeploying] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [filterTag, setFilterTag] = useState<string | null>(null);
 
     useEffect(() => {
         getRobots()
@@ -27,10 +28,23 @@ export function DeployModal({ scenarioId, scenarioName, onClose, onSuccess }: De
             .finally(() => setLoading(false));
     }, []);
 
+    const uniqueTags = Array.from(new Set(robots.flatMap(r => r.tags || []))).sort();
+
     const toggleRobot = (id: number) => {
         setSelectedIds((prev) =>
             prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
         );
+    };
+
+    const selectByTag = (tag: string) => {
+        if (filterTag === tag) {
+            setFilterTag(null);
+            setSelectedIds([]);
+        } else {
+            setFilterTag(tag);
+            const ids = robots.filter(r => r.tags?.includes(tag)).map(r => r.id);
+            setSelectedIds(ids);
+        }
     };
 
     const handleDeploy = async () => {
@@ -69,6 +83,22 @@ export function DeployModal({ scenarioId, scenarioName, onClose, onSuccess }: De
                         <div className="text-center py-8 text-gray-500">No robots available.</div>
                     ) : (
                         <div className="space-y-3">
+                            {uniqueTags.length > 0 && (
+                                <div className="mb-4 flex flex-wrap gap-2">
+                                    {uniqueTags.map(tag => (
+                                        <button
+                                            key={tag}
+                                            onClick={() => selectByTag(tag)}
+                                            className={`px-2 py-1 text-xs rounded-full border transition-colors ${filterTag === tag
+                                                    ? "bg-blue-100 border-blue-200 text-blue-700"
+                                                    : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
+                                                }`}
+                                        >
+                                            {tag}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                             <p className="text-sm font-medium text-gray-700 mb-2">Select Target Robots:</p>
                             {robots.map((robot) => {
                                 const isSelected = selectedIds.includes(robot.id);

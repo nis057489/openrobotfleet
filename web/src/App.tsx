@@ -7,6 +7,8 @@ import { Scenarios } from "./pages/Scenarios";
 import { Settings } from "./pages/Settings";
 import { InstallAgent } from "./pages/InstallAgent";
 import { ScenarioEditor } from "./pages/ScenarioEditor";
+import { Discovery } from "./pages/Discovery";
+import { SemesterWizard } from "./pages/SemesterWizard";
 
 export default function App() {
   return (
@@ -16,6 +18,8 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="robots" element={<Robots />} />
           <Route path="robots/:id" element={<RobotDetail />} />
+          <Route path="discovery" element={<Discovery />} />
+          <Route path="semester-wizard" element={<SemesterWizard />} />
           <Route path="install" element={<InstallAgent />} />
           <Route path="scenarios" element={<Scenarios />} />
           <Route path="scenarios/new" element={<ScenarioEditor />} />

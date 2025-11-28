@@ -6,6 +6,7 @@ import {
   Job,
   InstallConfig,
   InstallDefaultsResponse,
+  DiscoveryCandidate,
 } from './types';
 
 const JSON_HEADERS = {
@@ -43,6 +44,14 @@ export function sendCommand(
   command: CommandRequest,
 ): Promise<void> {
   return request<void>(`/api/robots/${robotId}/command`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(command),
+  });
+}
+
+export function broadcastCommand(command: CommandRequest): Promise<void> {
+  return request<void>('/api/robots/command/broadcast', {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify(command),
@@ -138,5 +147,22 @@ export function updateInstallDefaults(
     method: 'PUT',
     headers: JSON_HEADERS,
     body: JSON.stringify(payload),
+  });
+}
+
+export function updateRobotTags(
+  robotId: number | string,
+  tags: string[],
+): Promise<Robot> {
+  return request<Robot>(`/api/robots/${robotId}/tags`, {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ tags }),
+  });
+}
+
+export function scanNetwork(): Promise<DiscoveryCandidate[]> {
+  return request<DiscoveryCandidate[]>('/api/discovery/scan', {
+    method: 'POST',
   });
 }

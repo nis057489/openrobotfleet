@@ -28,12 +28,20 @@ export function Robots() {
                     <h1 className="text-2xl font-bold text-gray-900">Robots</h1>
                     <p className="text-gray-500">Manage your autonomous fleet</p>
                 </div>
-                <button
-                    onClick={() => navigate("/install")}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                >
-                    Add Robot
-                </button>
+                <div className="flex gap-3">
+                    <button
+                        onClick={() => navigate("/discovery")}
+                        className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                    >
+                        Scan Network
+                    </button>
+                    <button
+                        onClick={() => navigate("/install")}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                    >
+                        Add Robot
+                    </button>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

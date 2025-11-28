@@ -8,6 +8,7 @@ export interface Robot {
   notes?: string;
   last_scenario?: ScenarioRef;
   install_config?: InstallConfig;
+  tags?: string[];
 }
 
 export interface ScenarioRef {
@@ -52,4 +53,9 @@ export interface InstallConfig {
 
 export interface InstallDefaultsResponse {
   install_config?: InstallConfig | null;
+}
+
+export interface DiscoveryCandidate {
+  ip: string;
+  port: number;
 }

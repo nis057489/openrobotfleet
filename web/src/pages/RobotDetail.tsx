@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { getRobot, sendCommand } from "../api";
+import { getRobot, sendCommand, updateRobotTags } from "../api";
 import { Robot } from "../types";
-import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity } from "lucide-react";
+import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Tag, Plus, X } from "lucide-react";
 
 export function RobotDetail() {
     const { id } = useParams();
@@ -18,6 +18,10 @@ export function RobotDetail() {
     const [path, setPath] = useState("");
     const [cmdLoading, setCmdLoading] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+    // Tag state
+    const [newTag, setNewTag] = useState("");
+    const [isAddingTag, setIsAddingTag] = useState(false);
 
     useEffect(() => {
         if (location.state && (location.state as any).tab === 'logs') {
@@ -48,6 +52,30 @@ export function RobotDetail() {
         }
     };
 
+    const handleAddTag = async () => {
+        if (!robot || !newTag.trim()) return;
+        const updatedTags = [...(robot.tags || []), newTag.trim()];
+        try {
+            const updated = await updateRobotTags(robot.id, updatedTags);
+            setRobot(updated);
+            setNewTag("");
+            setIsAddingTag(false);
+        } catch (err) {
+            console.error("Failed to add tag", err);
+        }
+    };
+
+    const handleRemoveTag = async (tagToRemove: string) => {
+        if (!robot) return;
+        const updatedTags = (robot.tags || []).filter(t => t !== tagToRemove);
+        try {
+            const updated = await updateRobotTags(robot.id, updatedTags);
+            setRobot(updated);
+        } catch (err) {
+            console.error("Failed to remove tag", err);
+        }
+    };
+
     if (loading) return <div className="p-8 text-gray-500">Loading robot...</div>;
     if (!robot) return <div className="p-8 text-red-500">Robot not found</div>;
 
@@ -58,9 +86,36 @@ export function RobotDetail() {
                 <button onClick={() => navigate("/robots")} className="p-2 hover:bg-gray-100 rounded-lg">
                     <ArrowLeft size={20} />
                 </button>
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">{robot.name}</h1>
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                        <h1 className="text-2xl font-bold text-gray-900">{robot.name}</h1>
+                        <div className="flex items-center gap-2">
+                            {robot.tags?.map(tag => (
+                                <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-medium border border-blue-100">
+                                    {tag}
+                                    <button onClick={() => handleRemoveTag(tag)} className="hover:text-blue-900"><X size={12} /></button>
+                                </span>
+                            ))}
+                            {isAddingTag ? (
+                                <div className="flex items-center gap-1">
+                                    <input
+                                        autoFocus
+                                        value={newTag}
+                                        onChange={e => setNewTag(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && handleAddTag()}
+                                        onBlur={() => setIsAddingTag(false)}
+                                        className="w-24 px-2 py-1 text-xs border border-gray-300 rounded-md"
+                                        placeholder="New tag..."
+                                    />
+                                </div>
+                            ) : (
+                                <button onClick={() => setIsAddingTag(true)} className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full">
+                                    <Plus size={16} />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
                         <span className={`w-2 h-2 rounded-full ${robot.status !== 'offline' ? 'bg-green-500' : 'bg-gray-300'}`} />
                         <span className="capitalize">{robot.status || "Unknown"}</span>
                         <span>•</span>

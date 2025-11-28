@@ -1,10 +1,11 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { installAgent } from "../api";
 import { Loader2, Terminal } from "lucide-react";
 
 export function InstallAgent() {
     const navigate = useNavigate();
+    const location = useLocation();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [formData, setFormData] = useState({
@@ -15,6 +16,15 @@ export function InstallAgent() {
         sudo: true,
         sudo_password: "",
     });
+
+    useEffect(() => {
+        if (location.state && (location.state as any).ip) {
+            setFormData(prev => ({
+                ...prev,
+                address: (location.state as any).ip
+            }));
+        }
+    }, [location]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
