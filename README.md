@@ -80,4 +80,4 @@ Under the hood, this system uses:
 * **SQLite**: For simple, self-contained data storage.
 
 ---
-*Built for the Turtlebot 4, but compatible with most Ubuntu-based ROS 2 systems.*
+*Built for the Turtlebot 3 and 4, but compatible with most Ubuntu-based ROS 2 systems.*
