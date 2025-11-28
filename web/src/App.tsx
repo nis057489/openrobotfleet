@@ -1,16 +1,12 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
 import {
     applyScenario,
-    createScenario,
-    deleteScenario,
     getInstallDefaults,
     getRobots,
     getScenarios,
     installAgent,
     saveInstallConfig,
-    ScenarioPayload,
     sendCommand,
-    updateScenario,
     updateInstallDefaults,
 } from "./api";
 import { InstallAgentPayload, InstallConfig, Robot, Scenario } from "./types";
@@ -131,11 +127,7 @@ export function App() {
                         )}
                     </div>
                 )}
-                {activeTab === "scenarios" && (
-                    <div style={styles.card}>
-                        <ScenarioEditor />
-                    </div>
-                )}
+                {activeTab === "scenarios" && <ScenarioDeployer />}
                 {activeTab === "install" && (
                     <div style={{ ...styles.card, maxWidth: 600 }}>
                         <InstallAgentForm />
@@ -335,133 +327,95 @@ function RobotDetail({ robot }: RobotDetailProps) {
     );
 }
 
-function ScenarioEditor() {
+function ScenarioDeployer() {
     const [scenarios, setScenarios] = useState<Scenario[]>([]);
-    const [selected, setSelected] = useState<Scenario | null>(null);
-    const [form, setForm] = useState({ name: "", description: "", config_yaml: "" });
+    const [scenariosLoading, setScenariosLoading] = useState(true);
+    const [scenariosError, setScenariosError] = useState<string | null>(null);
+    const [selectedScenarioId, setSelectedScenarioId] = useState<number | null>(null);
+    const [robots, setRobots] = useState<Robot[]>([]);
+    const [robotsLoading, setRobotsLoading] = useState(true);
+    const [robotsError, setRobotsError] = useState<string | null>(null);
+    const [robotFilter, setRobotFilter] = useState("");
+    const [selectedRobotIds, setSelectedRobotIds] = useState<number[]>([]);
     const [status, setStatus] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [robots, setRobots] = useState<Robot[]>([]);
-    const [robotsError, setRobotsError] = useState<string | null>(null);
-    const [selectedRobotIds, setSelectedRobotIds] = useState<number[]>([]);
     const [applying, setApplying] = useState(false);
 
     const loadScenarios = useCallback(async () => {
-        setLoading(true);
-        setError(null);
+        setScenariosLoading(true);
+        setScenariosError(null);
         try {
             const data = await getScenarios();
             setScenarios(data);
-            if (selected) {
-                const updated = data.find((s) => s.id === selected.id);
-                if (updated) {
-                    setSelected(updated);
-                    setForm({
-                        name: updated.name,
-                        description: updated.description ?? "",
-                        config_yaml: updated.config_yaml,
-                    });
-                }
+            if (!data.length) {
+                setSelectedScenarioId(null);
+            } else if (!selectedScenarioId || !data.some((scenario: Scenario) => scenario.id === selectedScenarioId)) {
+                setSelectedScenarioId(data[0].id);
             }
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to load scenarios");
+            setScenariosError(err instanceof Error ? err.message : "Failed to load scenarios");
         } finally {
-            setLoading(false);
+            setScenariosLoading(false);
         }
-    }, [selected]);
+    }, [selectedScenarioId]);
 
     useEffect(() => {
-        loadScenarios();
+        void loadScenarios();
     }, [loadScenarios]);
 
-    useEffect(() => {
-        let mounted = true;
-        const loadRobots = async () => {
-            try {
-                const data = await getRobots();
-                if (!mounted) return;
-                setRobots(data);
-                setRobotsError(null);
-            } catch (err) {
-                if (!mounted) return;
-                setRobotsError(err instanceof Error ? err.message : "Failed to load robots");
-            }
-        };
-        loadRobots();
-        return () => {
-            mounted = false;
-        };
+    const loadRobots = useCallback(async () => {
+        setRobotsLoading(true);
+        setRobotsError(null);
+        try {
+            const data = await getRobots();
+            setRobots(data);
+        } catch (err) {
+            setRobotsError(err instanceof Error ? err.message : "Failed to load robots");
+        } finally {
+            setRobotsLoading(false);
+        }
     }, []);
 
-    const handleSelect = (scenario: Scenario) => {
-        setSelected(scenario);
-        setForm({
-            name: scenario.name,
-            description: scenario.description ?? "",
-            config_yaml: scenario.config_yaml,
+    useEffect(() => {
+        void loadRobots();
+    }, [loadRobots]);
+
+    const selectedScenario = selectedScenarioId
+        ? scenarios.find((scenario: Scenario) => scenario.id === selectedScenarioId) ?? null
+        : null;
+
+    const handleRobotFilterChange = (event: ChangeEvent<HTMLInputElement>) => {
+        setRobotFilter(event.target.value);
+    };
+
+    const filteredRobots = robots.filter((robot: Robot) => {
+        if (!robotFilter.trim()) return true;
+        const needle = robotFilter.trim().toLowerCase();
+        return (
+            robot.name.toLowerCase().includes(needle) ||
+            (robot.status ?? "").toLowerCase().includes(needle) ||
+            (robot.ip ?? "").toLowerCase().includes(needle)
+        );
+    });
+
+    const toggleRobotSelection = (robotId: number) => {
+        setSelectedRobotIds((prev: number[]) =>
+            prev.includes(robotId) ? prev.filter((id: number) => id !== robotId) : [...prev, robotId],
+        );
+    };
+
+    const selectAllFiltered = () => {
+        setSelectedRobotIds((prev: number[]) => {
+            const combined = new Set<number>(prev);
+            filteredRobots.forEach((robot: Robot) => combined.add(robot.id));
+            return Array.from(combined);
         });
-        setStatus(null);
-        setError(null);
-        setSelectedRobotIds([]);
     };
 
-    const handleNew = () => {
-        setSelected(null);
-        setForm({ name: "", description: "", config_yaml: "" });
-        setStatus(null);
-        setError(null);
-        setSelectedRobotIds([]);
-    };
-
-    const buildPayload = (): ScenarioPayload => {
-        const base: ScenarioPayload = {
-            name: form.name,
-            config_yaml: form.config_yaml,
-        };
-        if (form.description.trim()) {
-            return { ...base, description: form.description };
-        }
-        return base;
-    };
-
-    const handleSave = async () => {
-        if (!form.name.trim()) {
-            setError("Name is required");
-            return;
-        }
-        setStatus(null);
-        setError(null);
-        try {
-            if (selected) {
-                const updated = await updateScenario(selected.id, buildPayload());
-                setSelected(updated);
-                setStatus("Scenario updated");
-            } else {
-                const created = await createScenario(buildPayload());
-                setSelected(created);
-                setStatus("Scenario created");
-            }
-            await loadScenarios();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to save scenario");
-        }
-    };
-
-    const handleRobotSelectionChange = (event: ChangeEvent<HTMLSelectElement>) => {
-        const selectedValues: number[] = [];
-        const options = event.target.selectedOptions;
-        for (let i = 0; i < options.length; i += 1) {
-            const option = options.item(i);
-            if (option) {
-                selectedValues.push(Number(option.value));
-            }
-        }
-        setSelectedRobotIds(selectedValues);
-    };
+    const clearRobotSelection = () => setSelectedRobotIds([]);
 
     const handleApplyScenario = async () => {
-        if (!selected) {
+        if (!selectedScenario) {
             setError("Select a scenario first");
             return;
         }
@@ -473,130 +427,216 @@ function ScenarioEditor() {
         setStatus(null);
         setError(null);
         try {
-            const result = await applyScenario(selected.id, { robot_ids: selectedRobotIds });
+            const result = await applyScenario(selectedScenario.id, { robot_ids: selectedRobotIds });
             const count = result.jobs.length;
-            setStatus(`Scenario queued for ${count} robot${count === 1 ? "" : "s"}`);
-            const refreshed = await getRobots();
-            setRobots(refreshed);
+            setStatus(`Scenario "${selectedScenario.name}" queued for ${count} robot${count === 1 ? "" : "s"}.`);
+            await loadRobots();
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to apply scenario");
+            setError(err instanceof Error ? err.message : "Failed to deploy scenario");
         } finally {
             setApplying(false);
         }
     };
 
-    const handleDelete = async () => {
-        if (!selected) return;
+    const handleScenarioSelect = (scenarioId: number) => {
+        setSelectedScenarioId(scenarioId);
         setStatus(null);
         setError(null);
-        try {
-            await deleteScenario(selected.id);
-            handleNew();
-            await loadScenarios();
-            setStatus("Scenario deleted");
-        } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to delete scenario");
-        }
     };
 
     return (
         <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-            <div style={{ flex: "0 0 220px" }}>
-                <h2>Scenarios</h2>
-                {loading ? (
+            <div style={{ ...styles.card, flex: "0 0 260px" }}>
+                <div
+                    style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: "0.5rem",
+                        gap: "0.5rem",
+                    }}
+                >
+                    <h2 style={{ margin: 0 }}>Scenario Library</h2>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            void loadScenarios();
+                        }}
+                        disabled={scenariosLoading}
+                    >
+                        Refresh
+                    </button>
+                </div>
+                {scenariosLoading ? (
                     <p>Loading scenarios…</p>
-                ) : (
+                ) : scenariosError ? (
+                    <p style={{ color: "red" }}>{scenariosError}</p>
+                ) : scenarios.length ? (
                     <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                        {scenarios.map((scenario) => (
-                            <li key={scenario.id}>
+                        {scenarios.map((scenario: Scenario) => (
+                            <li key={scenario.id} style={{ marginBottom: "0.35rem" }}>
                                 <button
+                                    type="button"
                                     style={{
                                         width: "100%",
                                         textAlign: "left",
-                                        padding: "0.5rem",
-                                        marginBottom: "0.25rem",
-                                        borderRadius: "4px",
+                                        padding: "0.5rem 0.75rem",
+                                        borderRadius: "6px",
                                         border: "1px solid #ccc",
                                         backgroundColor:
-                                            selected?.id === scenario.id ? "#e6f0ff" : "#fff",
+                                            selectedScenarioId === scenario.id ? "#e6f0ff" : "#fff",
+                                        fontWeight: selectedScenarioId === scenario.id ? 600 : 500,
                                     }}
-                                    onClick={() => handleSelect(scenario)}
-                                    type="button"
+                                    onClick={() => handleScenarioSelect(scenario.id)}
                                 >
-                                    {scenario.name}
+                                    <span>{scenario.name}</span>
+                                    {scenario.description && (
+                                        <span
+                                            style={{
+                                                display: "block",
+                                                fontSize: "0.8rem",
+                                                color: "#555",
+                                                marginTop: "0.15rem",
+                                            }}
+                                        >
+                                            {scenario.description}
+                                        </span>
+                                    )}
                                 </button>
                             </li>
                         ))}
-                        {!scenarios.length && <li>No scenarios yet.</li>}
                     </ul>
+                ) : (
+                    <p>No scenarios yet.</p>
                 )}
-                <button style={{ marginTop: "0.5rem" }} onClick={handleNew} type="button">
-                    New
-                </button>
             </div>
-            <div style={{ flex: "1 1 300px" }}>
-                <h2>{selected ? "Edit Scenario" : "New Scenario"}</h2>
-                <label style={styles.label}>
-                    Name
-                    <input
-                        style={styles.input}
-                        value={form.name}
-                        onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-                        required
-                    />
-                </label>
-                <label style={styles.label}>
-                    Description
-                    <input
-                        style={styles.input}
-                        value={form.description}
-                        onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-                    />
-                </label>
-                <label style={styles.label}>
-                    Config YAML
-                    <textarea
-                        style={styles.textarea}
-                        value={form.config_yaml}
-                        onChange={(e) => setForm((prev) => ({ ...prev, config_yaml: e.target.value }))}
-                    />
-                </label>
-                <div style={{ marginTop: "1rem" }}>
-                    <h3>Apply Scenario</h3>
-                    <label style={styles.label}>
-                        Target Robots
-                        <select
-                            multiple
-                            size={Math.min(Math.max(robots.length, 1), 8)}
-                            value={selectedRobotIds.map((id: number) => id.toString())}
-                            onChange={handleRobotSelectionChange}
-                            style={{ ...styles.input, minHeight: "8rem" }}
+            <div style={{ ...styles.card, flex: "1 1 420px", minWidth: 320 }}>
+                {selectedScenario ? (
+                    <>
+                        <div
+                            style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                flexWrap: "wrap",
+                                gap: "0.5rem",
+                                alignItems: "center",
+                            }}
                         >
-                            {robots.map((robot: Robot) => (
-                                <option key={robot.id} value={robot.id.toString()}>
-                                    {robot.name} {robot.status ? `(${robot.status})` : ""}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    {robotsError && <p style={{ color: "red" }}>{robotsError}</p>}
-                    {!robotsError && !robots.length && <p>No robots available.</p>}
-                    <button
-                        type="button"
-                        onClick={handleApplyScenario}
-                        disabled={!selected || !selectedRobotIds.length || applying}
-                    >
-                        Apply to Selected Robots
-                    </button>
-                </div>
-                <div style={styles.buttonRow}>
-                    <button onClick={handleSave} type="button">
-                        Save
-                    </button>
-                    <button onClick={handleDelete} disabled={!selected} type="button">
-                        Delete
-                    </button>
-                </div>
+                            <div>
+                                <h2 style={{ marginBottom: "0.25rem" }}>{selectedScenario.name}</h2>
+                                {selectedScenario.description && (
+                                    <p style={{ marginTop: 0 }}>{selectedScenario.description}</p>
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    void loadScenarios();
+                                }}
+                                style={{ height: "fit-content" }}
+                            >
+                                Refresh Scenarios
+                            </button>
+                        </div>
+                        <h3>Configuration</h3>
+                        <pre
+                            style={{
+                                background: "#f5f5f5",
+                                padding: "0.75rem",
+                                borderRadius: "6px",
+                                fontSize: "0.85rem",
+                                whiteSpace: "pre-wrap",
+                                maxHeight: "260px",
+                                overflow: "auto",
+                                border: "1px solid #e0e0e0",
+                            }}
+                        >
+                            {selectedScenario.config_yaml}
+                        </pre>
+                        <h3 style={{ marginTop: "1.25rem" }}>Target Robots</h3>
+                        {robotsLoading ? (
+                            <p>Loading robots…</p>
+                        ) : robotsError ? (
+                            <p style={{ color: "red" }}>{robotsError}</p>
+                        ) : (
+                            <>
+                                <input
+                                    style={{ ...styles.input, marginBottom: "0.5rem" }}
+                                    placeholder="Filter by name, status, or IP"
+                                    value={robotFilter}
+                                    onChange={handleRobotFilterChange}
+                                    type="search"
+                                />
+                                <div
+                                    style={{
+                                        border: "1px solid #ddd",
+                                        borderRadius: "6px",
+                                        maxHeight: "260px",
+                                        overflowY: "auto",
+                                        padding: "0.5rem",
+                                    }}
+                                >
+                                    {filteredRobots.length ? (
+                                        filteredRobots.map((robot: Robot) => (
+                                            <label
+                                                key={robot.id}
+                                                style={{
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    gap: "0.5rem",
+                                                    padding: "0.25rem 0",
+                                                    borderBottom: "1px solid #f0f0f0",
+                                                }}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedRobotIds.includes(robot.id)}
+                                                    onChange={() => toggleRobotSelection(robot.id)}
+                                                />
+                                                <div>
+                                                    <div style={{ fontWeight: 600 }}>{robot.name}</div>
+                                                    <div style={{ fontSize: "0.85rem", color: "#555" }}>
+                                                        {robot.status ?? "status unknown"} · {robot.ip ?? "no IP"}
+                                                    </div>
+                                                </div>
+                                            </label>
+                                        ))
+                                    ) : (
+                                        <p style={{ margin: 0 }}>No robots match that filter.</p>
+                                    )}
+                                </div>
+                                <div style={{ ...styles.buttonRow, marginTop: "0.75rem" }}>
+                                    <button type="button" onClick={selectAllFiltered} disabled={!filteredRobots.length}>
+                                        Select All Shown
+                                    </button>
+                                    <button type="button" onClick={clearRobotSelection} disabled={!selectedRobotIds.length}>
+                                        Clear Selection
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            void loadRobots();
+                                        }}
+                                    >
+                                        Refresh Robots
+                                    </button>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleApplyScenario}
+                                    disabled={!selectedRobotIds.length || applying}
+                                    style={{ marginTop: "1rem" }}
+                                >
+                                    {applying ? "Deploying\u2026" : "Deploy Scenario"}
+                                </button>
+                            </>
+                        )}
+                    </>
+                ) : scenariosLoading ? (
+                    <p>Loading scenarios…</p>
+                ) : (
+                    <p>Select a scenario to start deploying.</p>
+                )}
                 {status && <p style={{ color: "green" }}>{status}</p>}
                 {error && <p style={{ color: "red" }}>{error}</p>}
             </div>
