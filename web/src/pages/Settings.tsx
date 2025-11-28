@@ -84,15 +84,17 @@ export function Settings() {
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Default SSH Key Path
+                            Default SSH Private Key
                         </label>
-                        <input
-                            type="text"
+                        <textarea
                             value={config.ssh_key}
                             onChange={(e) => setConfig({ ...config, ssh_key: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="~/.ssh/id_rsa"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-xs h-32"
+                            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..."
                         />
+                        <p className="mt-1 text-xs text-gray-500">
+                            Paste the private key content directly.
+                        </p>
                     </div>
                 </div>
                 <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">

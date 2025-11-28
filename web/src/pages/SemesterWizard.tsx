@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { getRobots, sendCommand } from "../api";
-import { Robot } from "../types";
-import { Check, RefreshCw, GitBranch, Trash2, AlertTriangle, ArrowRight } from "lucide-react";
+import { getRobots, sendCommand, installAgent, getInstallDefaults } from "../api";
+import { Robot, InstallConfig } from "../types";
+import { Check, RefreshCw, GitBranch, Trash2, AlertTriangle, ArrowRight, Clock, Terminal } from "lucide-react";
 
 export function SemesterWizard() {
     const [robots, setRobots] = useState<Robot[]>([]);
@@ -13,14 +13,20 @@ export function SemesterWizard() {
     // Actions
     const [doResetLogs, setDoResetLogs] = useState(false);
     const [doUpdateRepo, setDoUpdateRepo] = useState(false);
+    const [doReinstall, setDoReinstall] = useState(false);
     const [repoUrl, setRepoUrl] = useState("https://github.com/turtlebot/turtlebot-agent.git");
 
+    // Global install defaults
+    const [installDefaults, setInstallDefaults] = useState<InstallConfig | null>(null);
+
     useEffect(() => {
-        getRobots()
-            .then((data) => {
-                setRobots(data);
-                // Default select all
-                setSelectedIds(new Set(data.map(r => r.id)));
+        Promise.all([getRobots(), getInstallDefaults()])
+            .then(([robotsData, defaultsData]) => {
+                setRobots(robotsData);
+                setSelectedIds(new Set(robotsData.map(r => r.id)));
+                if (defaultsData.install_config) {
+                    setInstallDefaults(defaultsData.install_config);
+                }
             })
             .finally(() => setLoading(false));
     }, []);
@@ -42,21 +48,25 @@ export function SemesterWizard() {
 
     const handleExecute = async () => {
         if (selectedIds.size === 0) return;
-        if (!doResetLogs && !doUpdateRepo) return;
+        if (!doResetLogs && !doUpdateRepo && !doReinstall) return;
 
         setExecuting(true);
-        setResults({});
 
+        // Initialize all to pending
+        const initialResults: Record<number, string> = {};
         const ids = Array.from(selectedIds);
+        ids.forEach(id => {
+            initialResults[id] = "pending";
+        });
+        setResults(initialResults);
 
-        for (const id of ids) {
-            setResults(prev => ({ ...prev, [id]: "pending" }));
-        }
-
-        // Execute sequentially to avoid overwhelming (though parallel is probably fine)
+        // Execute sequentially
         for (const id of ids) {
             try {
                 setResults(prev => ({ ...prev, [id]: "running" }));
+
+                const robot = robots.find(r => r.id === id);
+                if (!robot) throw new Error("Robot not found");
 
                 if (doResetLogs) {
                     await sendCommand(id, { type: "reset_logs", data: {} });
@@ -66,18 +76,34 @@ export function SemesterWizard() {
                     await sendCommand(id, { type: "update_repo", data: { url: repoUrl } });
                 }
 
+                if (doReinstall) {
+                    // Use robot's specific config if available, otherwise global defaults
+                    const config = robot.install_config || installDefaults;
+                    if (!config || !robot.ip) {
+                        throw new Error("Missing install config or IP");
+                    }
+
+                    await installAgent({
+                        name: robot.name,
+                        address: robot.ip,
+                        user: config.user,
+                        ssh_key: config.ssh_key
+                    });
+                }
+
+                // Small delay to ensure UI updates are visible
+                await new Promise(r => setTimeout(r, 500));
+
                 setResults(prev => ({ ...prev, [id]: "success" }));
             } catch (err) {
-                console.error(err);
+                console.error(`Error processing robot ${id}:`, err);
                 setResults(prev => ({ ...prev, [id]: "error" }));
             }
         }
         setExecuting(false);
     };
 
-    if (loading) return <div className="p-8">Loading...</div>;
-
-    return (
+    if (loading) return <div className="p-8">Loading...</div>; return (
         <div className="max-w-4xl mx-auto space-y-8">
             <div>
                 <h1 className="text-2xl font-bold text-gray-900">Semester Start Wizard</h1>
@@ -120,6 +146,7 @@ export function SemesterWizard() {
                                     {results[robot.id] === "success" && <Check className="text-green-500" size={18} />}
                                     {results[robot.id] === "error" && <AlertTriangle className="text-red-500" size={18} />}
                                     {results[robot.id] === "running" && <RefreshCw className="text-blue-500 animate-spin" size={18} />}
+                                    {results[robot.id] === "pending" && <Clock className="text-gray-400" size={18} />}
                                 </div>
                             </div>
                         ))}
@@ -183,15 +210,36 @@ export function SemesterWizard() {
                                     )}
                                 </div>
                             </label>
+
+                            <hr className="border-gray-100" />
+
+                            {/* Reinstall Agent */}
+                            <label className="flex items-start gap-3 cursor-pointer">
+                                <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doReinstall ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
+                                    {doReinstall && <Check size={14} />}
+                                    <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={doReinstall}
+                                        onChange={e => setDoReinstall(e.target.checked)}
+                                    />
+                                </div>
+                                <div>
+                                    <div className="font-medium text-gray-900 flex items-center gap-2">
+                                        <Terminal size={16} /> Reinstall Agent
+                                    </div>
+                                    <p className="text-sm text-gray-500">Re-run the installation script via SSH using stored credentials.</p>
+                                </div>
+                            </label>
                         </div>
                     </div>
 
                     <button
                         onClick={handleExecute}
-                        disabled={executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo)}
-                        className={`w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 ${executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo)
-                                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                                : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+                        disabled={executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo && !doReinstall)}
+                        className={`w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 ${executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo && !doReinstall)
+                            ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                            : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
                             }`}
                     >
                         {executing ? (

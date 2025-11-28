@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { installAgent } from "../api";
+import { installAgent, getInstallDefaults } from "../api";
 import { Loader2, Terminal } from "lucide-react";
 
 export function InstallAgent() {
@@ -18,10 +18,22 @@ export function InstallAgent() {
     });
 
     useEffect(() => {
-        if (location.state && (location.state as any).ip) {
+        getInstallDefaults().then((data) => {
+            if (data.install_config) {
+                setFormData(prev => ({
+                    ...prev,
+                    user: data.install_config?.user || prev.user,
+                    ssh_key: data.install_config?.ssh_key || prev.ssh_key,
+                }));
+            }
+        });
+
+        if (location.state) {
+            const state = location.state as any;
             setFormData(prev => ({
                 ...prev,
-                address: (location.state as any).ip
+                address: state.ip || prev.address,
+                name: state.name || prev.name
             }));
         }
     }, [location]);
