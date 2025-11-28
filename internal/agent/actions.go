@@ -35,7 +35,7 @@ func HandleUpdateRepo(cfg Config, data UpdateRepoData) error {
 	if err != nil {
 		return fmt.Errorf("git clone failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}
-	if err := ensureOwnership(target, cfg.WorkspacePath); err != nil {
+	if err := ensureOwnership(target, cfg); err != nil {
 		return err
 	}
 	log.Printf("[agent] cloned %s (branch %s) into %s", data.Repo, branch, target)
@@ -151,17 +151,16 @@ func customRestartCommand() []string {
 	return []string{"systemctl", "restart", service}
 }
 
-func ensureOwnership(target, workspace string) error {
+func ensureOwnership(target string, cfg Config) error {
 	if os.Geteuid() != 0 {
 		return nil
 	}
-	ref := workspace
-	if ref == "" {
-		ref = filepath.Dir(target)
+	owner := strings.TrimSpace(cfg.WorkspaceOwner)
+	if owner == "" {
+		owner = detectOwnerFromPath(cfg.WorkspacePath)
 	}
-	owner, err := ownerFromPath(ref)
-	if err != nil {
-		return err
+	if owner == "" {
+		owner = detectOwnerFromPath(filepath.Dir(target))
 	}
 	if owner == "" {
 		return nil
@@ -173,14 +172,21 @@ func ensureOwnership(target, workspace string) error {
 	return nil
 }
 
-func ownerFromPath(path string) (string, error) {
+func detectOwnerFromPath(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return ""
+	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return "", fmt.Errorf("stat %s: %w", path, err)
+		if errors.Is(err, os.ErrNotExist) {
+			return ""
+		}
+		log.Printf("owner detect stat %s: %v", path, err)
+		return ""
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
-		return "", fmt.Errorf("stat %s: unexpected type", path)
+		return ""
 	}
-	return fmt.Sprintf("%d:%d", stat.Uid, stat.Gid), nil
+	return fmt.Sprintf("%d:%d", stat.Uid, stat.Gid)
 }

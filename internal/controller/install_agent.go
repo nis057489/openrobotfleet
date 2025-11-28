@@ -65,9 +65,10 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	broker := agentBrokerURL()
 	cfg := agent.Config{
-		AgentID:       req.Name,
-		MQTTBroker:    broker,
-		WorkspacePath: workspace,
+		AgentID:        req.Name,
+		MQTTBroker:     broker,
+		WorkspacePath:  workspace,
+		WorkspaceOwner: determineWorkspaceOwner(req),
 	}
 	host := sshc.HostSpec{
 		Addr:         addr,
@@ -112,4 +113,17 @@ func agentBrokerURL() string {
 		return v
 	}
 	return "tcp://192.168.100.122:1883"
+}
+
+func determineWorkspaceOwner(req installAgentRequest) string {
+	if v := os.Getenv("AGENT_WORKSPACE_OWNER"); v != "" {
+		return v
+	}
+	if strings.TrimSpace(req.User) != "" && strings.ToLower(req.User) != "root" {
+		return req.User
+	}
+	if v := os.Getenv("DEFAULT_WORKSPACE_OWNER"); v != "" {
+		return v
+	}
+	return "ubuntu"
 }

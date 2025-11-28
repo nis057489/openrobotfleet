@@ -113,6 +113,15 @@ func (s *Server) handleScenariosCollection(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleScenarioItem(w http.ResponseWriter, r *http.Request) {
+	trimmed := strings.TrimSuffix(r.URL.Path, "/")
+	if strings.HasSuffix(trimmed, "/apply") {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		s.Controller.ApplyScenario(w, r)
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		s.Controller.GetScenario(w, r)

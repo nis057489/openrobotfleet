@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -76,31 +77,12 @@ func (c *Controller) RobotCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cmd := agent.Command{Type: req.Type, Data: req.Data}
-	payload, err := json.Marshal(cmd)
+	job, err := c.queueRobotCommand(r.Context(), robot, cmd)
 	if err != nil {
-		log.Printf("marshal command: %v", err)
-		respondError(w, http.StatusInternalServerError, "failed to encode command")
+		log.Printf("queue command: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to queue command")
 		return
 	}
-	now := time.Now().UTC()
-	job := db.Job{
-		Type:        req.Type,
-		TargetRobot: robot.AgentID,
-		PayloadJSON: string(payload),
-		Status:      "queued",
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-	jobID, err := c.DB.CreateJob(r.Context(), job)
-	if err != nil {
-		log.Printf("create job: %v", err)
-		respondError(w, http.StatusInternalServerError, "failed to create job")
-		return
-	}
-	job.ID = jobID
-	topic := fmt.Sprintf("lab/commands/%s", robot.AgentID)
-	log.Printf("command %s queued for robot %s (agent %s) topic %s", req.Type, robot.Name, robot.AgentID, topic)
-	c.MQTT.Publish(topic, payload)
 	respondJSON(w, http.StatusCreated, job)
 }
 
@@ -140,4 +122,29 @@ func (c *Controller) BroadcastCommand(w http.ResponseWriter, r *http.Request) {
 	log.Printf("broadcast command %s queued to lab/commands/all", req.Type)
 	c.MQTT.Publish("lab/commands/all", payload)
 	respondJSON(w, http.StatusCreated, job)
+}
+
+func (c *Controller) queueRobotCommand(ctx context.Context, robot db.Robot, cmd agent.Command) (db.Job, error) {
+	payload, err := json.Marshal(cmd)
+	if err != nil {
+		return db.Job{}, fmt.Errorf("marshal command: %w", err)
+	}
+	now := time.Now().UTC()
+	job := db.Job{
+		Type:        cmd.Type,
+		TargetRobot: robot.AgentID,
+		PayloadJSON: string(payload),
+		Status:      "queued",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	jobID, err := c.DB.CreateJob(ctx, job)
+	if err != nil {
+		return db.Job{}, fmt.Errorf("create job: %w", err)
+	}
+	job.ID = jobID
+	topic := fmt.Sprintf("lab/commands/%s", robot.AgentID)
+	log.Printf("command %s queued for robot %s (agent %s) topic %s", cmd.Type, robot.Name, robot.AgentID, topic)
+	c.MQTT.Publish(topic, payload)
+	return job, nil
 }

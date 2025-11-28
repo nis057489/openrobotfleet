@@ -1,5 +1,6 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
 import {
+    applyScenario,
     createScenario,
     deleteScenario,
     getRobots,
@@ -329,6 +330,10 @@ function ScenarioEditor() {
     const [status, setStatus] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [robots, setRobots] = useState<Robot[]>([]);
+    const [robotsError, setRobotsError] = useState<string | null>(null);
+    const [selectedRobotIds, setSelectedRobotIds] = useState<number[]>([]);
+    const [applying, setApplying] = useState(false);
 
     const loadScenarios = useCallback(async () => {
         setLoading(true);
@@ -358,6 +363,25 @@ function ScenarioEditor() {
         loadScenarios();
     }, [loadScenarios]);
 
+    useEffect(() => {
+        let mounted = true;
+        const loadRobots = async () => {
+            try {
+                const data = await getRobots();
+                if (!mounted) return;
+                setRobots(data);
+                setRobotsError(null);
+            } catch (err) {
+                if (!mounted) return;
+                setRobotsError(err instanceof Error ? err.message : "Failed to load robots");
+            }
+        };
+        loadRobots();
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
     const handleSelect = (scenario: Scenario) => {
         setSelected(scenario);
         setForm({
@@ -367,6 +391,7 @@ function ScenarioEditor() {
         });
         setStatus(null);
         setError(null);
+        setSelectedRobotIds([]);
     };
 
     const handleNew = () => {
@@ -374,6 +399,7 @@ function ScenarioEditor() {
         setForm({ name: "", description: "", config_yaml: "" });
         setStatus(null);
         setError(null);
+        setSelectedRobotIds([]);
     };
 
     const buildPayload = (): ScenarioPayload => {
@@ -407,6 +433,41 @@ function ScenarioEditor() {
             await loadScenarios();
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to save scenario");
+        }
+    };
+
+    const handleRobotSelectionChange = (event: ChangeEvent<HTMLSelectElement>) => {
+        const selectedValues: number[] = [];
+        const options = event.target.selectedOptions;
+        for (let i = 0; i < options.length; i += 1) {
+            const option = options.item(i);
+            if (option) {
+                selectedValues.push(Number(option.value));
+            }
+        }
+        setSelectedRobotIds(selectedValues);
+    };
+
+    const handleApplyScenario = async () => {
+        if (!selected) {
+            setError("Select a scenario first");
+            return;
+        }
+        if (!selectedRobotIds.length) {
+            setError("Select at least one robot");
+            return;
+        }
+        setApplying(true);
+        setStatus(null);
+        setError(null);
+        try {
+            const result = await applyScenario(selected.id, { robot_ids: selectedRobotIds });
+            const count = result.jobs.length;
+            setStatus(`Scenario queued for ${count} robot${count === 1 ? "" : "s"}`);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to apply scenario");
+        } finally {
+            setApplying(false);
         }
     };
 
@@ -486,6 +547,34 @@ function ScenarioEditor() {
                         onChange={(e) => setForm((prev) => ({ ...prev, config_yaml: e.target.value }))}
                     />
                 </label>
+                <div style={{ marginTop: "1rem" }}>
+                    <h3>Apply Scenario</h3>
+                    <label style={styles.label}>
+                        Target Robots
+                        <select
+                            multiple
+                            size={Math.min(Math.max(robots.length, 1), 8)}
+                            value={selectedRobotIds.map((id: number) => id.toString())}
+                            onChange={handleRobotSelectionChange}
+                            style={{ ...styles.input, minHeight: "8rem" }}
+                        >
+                            {robots.map((robot: Robot) => (
+                                <option key={robot.id} value={robot.id.toString()}>
+                                    {robot.name} {robot.status ? `(${robot.status})` : ""}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    {robotsError && <p style={{ color: "red" }}>{robotsError}</p>}
+                    {!robotsError && !robots.length && <p>No robots available.</p>}
+                    <button
+                        type="button"
+                        onClick={handleApplyScenario}
+                        disabled={!selected || !selectedRobotIds.length || applying}
+                    >
+                        Apply to Selected Robots
+                    </button>
+                </div>
                 <div style={styles.buttonRow}>
                     <button onClick={handleSave} type="button">
                         Save

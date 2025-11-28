@@ -3,6 +3,7 @@ import {
   Scenario,
   CommandRequest,
   InstallAgentPayload,
+  Job,
 } from './types';
 
 const JSON_HEADERS = {
@@ -56,6 +57,14 @@ export function getScenario(id: number | string): Promise<Scenario> {
 
 export type ScenarioPayload = Omit<Scenario, 'id'>;
 
+export interface ApplyScenarioPayload {
+  robot_ids: number[];
+}
+
+export interface ApplyScenarioResponse {
+  jobs: Job[];
+}
+
 export function createScenario(payload: ScenarioPayload): Promise<Scenario> {
   return request<Scenario>('/api/scenarios', {
     method: 'POST',
@@ -78,6 +87,17 @@ export function updateScenario(
 export function deleteScenario(id: number | string): Promise<void> {
   return request<void>(`/api/scenarios/${id}`, {
     method: 'DELETE',
+  });
+}
+
+export function applyScenario(
+  id: number | string,
+  payload: ApplyScenarioPayload,
+): Promise<ApplyScenarioResponse> {
+  return request<ApplyScenarioResponse>(`/api/scenarios/${id}/apply`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(payload),
   });
 }
 

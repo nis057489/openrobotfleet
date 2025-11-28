@@ -15,6 +15,16 @@ export interface Scenario {
   config_yaml: string;
 }
 
+export interface Job {
+  id: number;
+  type: string;
+  target_robot: string;
+  payload_json: string;
+  status: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface CommandRequest {
   type: string;
   data: Record<string, any>;

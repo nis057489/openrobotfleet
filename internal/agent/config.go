@@ -10,9 +10,10 @@ import (
 
 // Config represents the agent's runtime configuration.
 type Config struct {
-	AgentID       string `yaml:"agent_id"`
-	MQTTBroker    string `yaml:"mqtt_broker"`
-	WorkspacePath string `yaml:"workspace_path"`
+	AgentID        string `yaml:"agent_id"`
+	MQTTBroker     string `yaml:"mqtt_broker"`
+	WorkspacePath  string `yaml:"workspace_path"`
+	WorkspaceOwner string `yaml:"workspace_owner"`
 }
 
 // LoadConfig reads and parses a YAML config file.

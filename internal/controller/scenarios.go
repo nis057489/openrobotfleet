@@ -3,10 +3,14 @@ package controller
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
+	"example.com/turtlebot-fleet/internal/agent"
 	"example.com/turtlebot-fleet/internal/db"
+	"example.com/turtlebot-fleet/internal/scenario"
 )
 
 type scenarioRequest struct {
@@ -101,4 +105,85 @@ func (c *Controller) DeleteScenario(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type applyScenarioRequest struct {
+	RobotIDs []int64 `json:"robot_ids"`
+}
+
+type applyScenarioResponse struct {
+	Jobs []db.Job `json:"jobs"`
+}
+
+func (c *Controller) ApplyScenario(w http.ResponseWriter, r *http.Request) {
+	scenarioID, err := parseScenarioApplyID(r.URL.Path)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid scenario apply path")
+		return
+	}
+	var req applyScenarioRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid apply payload")
+		return
+	}
+	if len(req.RobotIDs) == 0 {
+		respondError(w, http.StatusBadRequest, "robot_ids required")
+		return
+	}
+	s, err := c.DB.GetScenarioByID(r.Context(), scenarioID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			respondError(w, http.StatusNotFound, "scenario not found")
+			return
+		}
+		log.Printf("apply scenario fetch: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to load scenario")
+		return
+	}
+	spec, err := scenario.Parse(s.ConfigYAML)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid scenario config: %v", err))
+		return
+	}
+	repoPayload := spec.Repo.ToUpdateRepo()
+	data, err := json.Marshal(repoPayload)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to encode scenario command")
+		return
+	}
+	cmd := agent.Command{Type: "update_repo", Data: data}
+	var jobs []db.Job
+	for _, robotID := range req.RobotIDs {
+		robot, err := c.DB.GetRobotByID(r.Context(), robotID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				respondError(w, http.StatusNotFound, fmt.Sprintf("robot %d not found", robotID))
+				return
+			}
+			log.Printf("apply scenario robot fetch: %v", err)
+			respondError(w, http.StatusInternalServerError, "failed to fetch robot")
+			return
+		}
+		if robot.AgentID == "" {
+			respondError(w, http.StatusBadRequest, fmt.Sprintf("robot %s has no agent", robot.Name))
+			return
+		}
+		job, err := c.queueRobotCommand(r.Context(), robot, cmd)
+		if err != nil {
+			log.Printf("apply scenario queue: %v", err)
+			respondError(w, http.StatusInternalServerError, "failed to queue command")
+			return
+		}
+		jobs = append(jobs, job)
+	}
+	respondJSON(w, http.StatusCreated, applyScenarioResponse{Jobs: jobs})
+}
+
+func parseScenarioApplyID(path string) (int64, error) {
+	trimmed := strings.TrimSuffix(path, "/")
+	if !strings.HasSuffix(trimmed, "/apply") {
+		return 0, fmt.Errorf("missing apply suffix")
+	}
+	base := strings.TrimSuffix(trimmed, "/apply")
+	return parseIDFromPath(base, "/api/scenarios/")
 }
