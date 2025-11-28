@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
-import { getRobots, sendCommand, installAgent, getInstallDefaults } from "../api";
-import { Robot, InstallConfig } from "../types";
-import { Check, RefreshCw, GitBranch, Trash2, AlertTriangle, ArrowRight, Clock, Terminal } from "lucide-react";
+import { getRobots, getInstallDefaults, startSemesterBatch, getSemesterStatus } from "../api";
+import { Robot, InstallConfig, SemesterStatus } from "../types";
+import { Check, RefreshCw, GitBranch, Trash2, AlertTriangle, ArrowRight, Clock, Terminal, XCircle } from "lucide-react";
 
 export function SemesterWizard() {
     const [robots, setRobots] = useState<Robot[]>([]);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [loading, setLoading] = useState(true);
     const [executing, setExecuting] = useState(false);
-    const [results, setResults] = useState<Record<number, string>>({}); // robotId -> status
+    const [batchStarted, setBatchStarted] = useState(false);
+    const [status, setStatus] = useState<SemesterStatus | null>(null);
 
     // Actions
     const [doResetLogs, setDoResetLogs] = useState(false);
@@ -31,6 +32,26 @@ export function SemesterWizard() {
             .finally(() => setLoading(false));
     }, []);
 
+    useEffect(() => {
+        const poll = async () => {
+            try {
+                const s = await getSemesterStatus();
+                if (s.active) {
+                    setBatchStarted(true);
+                    setStatus(s);
+                } else if (batchStarted) {
+                    setStatus(s);
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        };
+
+        poll();
+        const interval = setInterval(poll, 2000);
+        return () => clearInterval(interval);
+    }, [batchStarted]);
+
     const toggleSelect = (id: number) => {
         const next = new Set(selectedIds);
         if (next.has(id)) next.delete(id);
@@ -51,59 +72,93 @@ export function SemesterWizard() {
         if (!doResetLogs && !doUpdateRepo && !doReinstall) return;
 
         setExecuting(true);
-
-        // Initialize all to pending
-        const initialResults: Record<number, string> = {};
-        const ids = Array.from(selectedIds);
-        ids.forEach(id => {
-            initialResults[id] = "pending";
-        });
-        setResults(initialResults);
-
-        // Execute sequentially
-        for (const id of ids) {
-            try {
-                setResults(prev => ({ ...prev, [id]: "running" }));
-
-                const robot = robots.find(r => r.id === id);
-                if (!robot) throw new Error("Robot not found");
-
-                if (doResetLogs) {
-                    await sendCommand(id, { type: "reset_logs", data: {} });
+        try {
+            await startSemesterBatch({
+                robot_ids: Array.from(selectedIds),
+                reinstall: doReinstall,
+                reset_logs: doResetLogs,
+                update_repo: doUpdateRepo,
+                repo_config: {
+                    repo: repoUrl,
+                    branch: "main",
+                    path: ""
                 }
-
-                if (doUpdateRepo) {
-                    await sendCommand(id, { type: "update_repo", data: { url: repoUrl } });
-                }
-
-                if (doReinstall) {
-                    // Use robot's specific config if available, otherwise global defaults
-                    const config = robot.install_config || installDefaults;
-                    if (!config || !robot.ip) {
-                        throw new Error("Missing install config or IP");
-                    }
-
-                    await installAgent({
-                        name: robot.name,
-                        address: robot.ip,
-                        user: config.user,
-                        ssh_key: config.ssh_key
-                    });
-                }
-
-                // Small delay to ensure UI updates are visible
-                await new Promise(r => setTimeout(r, 500));
-
-                setResults(prev => ({ ...prev, [id]: "success" }));
-            } catch (err) {
-                console.error(`Error processing robot ${id}:`, err);
-                setResults(prev => ({ ...prev, [id]: "error" }));
-            }
+            });
+            setBatchStarted(true);
+        } catch (err) {
+            console.error("Failed to start batch", err);
+            alert("Failed to start batch operation");
+        } finally {
+            setExecuting(false);
         }
-        setExecuting(false);
     };
 
-    if (loading) return <div className="p-8">Loading...</div>; return (
+    if (loading) return <div className="p-8">Loading...</div>;
+
+    if (batchStarted && !status) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[400px]">
+                <RefreshCw className="animate-spin text-blue-600 mb-4" size={48} />
+                <h2 className="text-xl font-semibold text-gray-900">Initializing Batch Operation...</h2>
+            </div>
+        );
+    }
+
+    if (batchStarted && status) {
+        return (
+            <div className="max-w-4xl mx-auto space-y-8">
+                <div className="text-center py-8">
+                    <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${status.active ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
+                        {status.active ? <RefreshCw className="animate-spin" size={32} /> : <Check size={32} />}
+                    </div>
+                    <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                        {status.active ? "Batch Operation In Progress" : "Batch Operation Complete"}
+                    </h2>
+                    <p className="text-gray-500">
+                        Processed {status.completed} of {status.total} robots
+                    </p>
+                </div>
+
+                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                    {robots.filter(r => status.robots[r.id.toString()]).map(robot => (
+                        <div key={robot.id} className="flex items-center p-4 border-b border-gray-100 last:border-0">
+                            <div className="flex-1">
+                                <div className="font-medium text-gray-900">{robot.name}</div>
+                                <div className="text-sm text-gray-500">{robot.ip}</div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="text-sm text-gray-600 capitalize">
+                                    {status.robots[robot.id.toString()]?.replace(/_/g, ' ')}
+                                </span>
+                                {status.robots[robot.id.toString()] === 'success' && <Check className="text-green-500" size={20} />}
+                                {status.robots[robot.id.toString()] === 'error' && <XCircle className="text-red-500" size={20} />}
+                                {status.robots[robot.id.toString()] === 'processing' && <RefreshCw className="text-blue-500 animate-spin" size={20} />}
+                                {status.robots[robot.id.toString()] === 'pending' && <Clock className="text-gray-400" size={20} />}
+                            </div>
+                            {status.errors[robot.id.toString()] && (
+                                <div className="ml-4 text-sm text-red-600 max-w-xs truncate" title={status.errors[robot.id.toString()]}>
+                                    {status.errors[robot.id.toString()]}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+
+                {!status.active && (
+                    <div className="text-center">
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                            Start Another Batch
+                        </button>
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    return (
         <div className="max-w-4xl mx-auto space-y-8">
             <div>
                 <h1 className="text-2xl font-bold text-gray-900">Semester Start Wizard</h1>
@@ -141,12 +196,6 @@ export function SemesterWizard() {
                                             <span key={t} className="bg-gray-100 px-1 rounded">{t}</span>
                                         ))}
                                     </div>
-                                </div>
-                                <div className="ml-auto">
-                                    {results[robot.id] === "success" && <Check className="text-green-500" size={18} />}
-                                    {results[robot.id] === "error" && <AlertTriangle className="text-red-500" size={18} />}
-                                    {results[robot.id] === "running" && <RefreshCw className="text-blue-500 animate-spin" size={18} />}
-                                    {results[robot.id] === "pending" && <Clock className="text-gray-400" size={18} />}
                                 </div>
                             </div>
                         ))}

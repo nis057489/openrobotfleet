@@ -166,3 +166,35 @@ export function scanNetwork(): Promise<DiscoveryCandidate[]> {
     method: 'POST',
   });
 }
+
+export interface SemesterRequest {
+  robot_ids: number[];
+  reinstall: boolean;
+  reset_logs: boolean;
+  update_repo: boolean;
+  repo_config: {
+    repo: string;
+    branch: string;
+    path: string;
+  };
+}
+
+export function startSemesterBatch(req: SemesterRequest): Promise<void> {
+  return request<void>('/api/semester/start', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(req),
+  });
+}
+
+export interface SemesterStatus {
+  active: boolean;
+  total: number;
+  completed: number;
+  robots: Record<number, string>;
+  errors: Record<number, string>;
+}
+
+export function getSemesterStatus(): Promise<SemesterStatus> {
+  return request<SemesterStatus>('/api/semester/status');
+}

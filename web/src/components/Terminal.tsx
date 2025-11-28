@@ -36,7 +36,7 @@ export function Terminal({ robotId }: TerminalProps) {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
         const wsUrl = `${protocol}//${host}/api/robots/${robotId}/terminal`;
-        
+
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 

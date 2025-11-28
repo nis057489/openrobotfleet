@@ -123,7 +123,7 @@ func (c *Controller) HandleTerminal(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
-	
+
 	go func() {
 		buf := make([]byte, 1024)
 		for {
@@ -155,7 +155,7 @@ func (c *Controller) HandleTerminal(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 		}
-		
+
 		// Fallback: just write to stdin if not JSON
 		stdin.Write(msg)
 	}

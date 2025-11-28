@@ -46,12 +46,14 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/scenarios/", s.handleScenarioItem)
 	mux.HandleFunc("/api/jobs", s.handleListJobs)
 	mux.HandleFunc("/api/discovery/scan", s.handleDiscoveryScan)
+	mux.HandleFunc("/api/semester/start", s.handleSemesterStart)
+	mux.HandleFunc("/api/semester/status", s.handleSemesterStatus)
 
 	webRoot := os.Getenv("WEB_ROOT")
 	if webRoot == "" {
 		webRoot = "./web/dist"
 	}
-	
+
 	fs := http.FileServer(http.Dir(webRoot))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		path := filepath.Join(webRoot, r.URL.Path)
@@ -193,6 +195,22 @@ func (s *Server) handleInstallAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Controller.InstallAgent(w, r)
+}
+
+func (s *Server) handleSemesterStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	s.Controller.HandleSemesterStart(w, r)
+}
+
+func (s *Server) handleSemesterStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	s.Controller.GetSemesterStatus(w, r)
 }
 
 func methodNotAllowed(w http.ResponseWriter) {

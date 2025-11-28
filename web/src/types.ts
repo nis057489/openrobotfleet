@@ -59,3 +59,11 @@ export interface DiscoveryCandidate {
   ip: string;
   port: number;
 }
+
+export interface SemesterStatus {
+  active: boolean;
+  total: number;
+  completed: number;
+  robots: Record<string, string>;
+  errors: Record<string, string>;
+}
