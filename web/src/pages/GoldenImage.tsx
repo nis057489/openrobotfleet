@@ -265,7 +265,7 @@ export function GoldenImage() {
                     {/* Logs Section */}
                     {buildLogs.length > 0 && (
                         <div className="mt-4 border rounded-lg overflow-hidden">
-                            <button 
+                            <button
                                 type="button"
                                 onClick={() => setShowLogs(!showLogs)}
                                 className="w-full flex items-center justify-between px-4 py-2 bg-gray-50 text-xs font-medium text-gray-700 hover:bg-gray-100"
