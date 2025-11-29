@@ -140,9 +140,9 @@ export function RobotDetail() {
                     <ArrowLeft size={20} />
                 </button>
                 <div className="flex-1">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
                         <h1 className="text-2xl font-bold text-gray-900">{robot.name}</h1>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                             <button
                                 onClick={() => handleCommand("identify")}
                                 className="p-2 text-gray-500 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"

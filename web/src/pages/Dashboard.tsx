@@ -125,9 +125,9 @@ function FeatureCard({ title, description, status, icon: Icon, to, extra, loadin
     return (
         <Link to={to} className="block group">
             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow h-full">
-                <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between gap-4">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+                        <div className="p-2 bg-blue-50 rounded-lg text-blue-600 shrink-0">
                             {loading ? <Loader2 size={24} className="animate-spin" /> : <Icon size={24} />}
                         </div>
                         <div>
@@ -135,7 +135,7 @@ function FeatureCard({ title, description, status, icon: Icon, to, extra, loadin
                             <p className="text-sm text-gray-500">{description}</p>
                         </div>
                     </div>
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${status === 'Active' || status === 'Building'
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium shrink-0 ${status === 'Active' || status === 'Building'
                         ? 'bg-blue-100 text-blue-800'
                         : 'bg-gray-100 text-gray-800'
                         }`}>
