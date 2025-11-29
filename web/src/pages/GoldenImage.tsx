@@ -115,7 +115,7 @@ export function GoldenImage() {
         <div className="max-w-3xl mx-auto">
             <div className="mb-8">
                 <h1 className="text-2xl font-bold text-gray-900">Golden Image Generator</h1>
-                <p className="text-gray-500">Create a Cloud-Init configuration to automatically provision new robots.</p>
+                <p className="text-gray-500">Create a custom Raspberry Pi image to automatically provision new robots.</p>
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
