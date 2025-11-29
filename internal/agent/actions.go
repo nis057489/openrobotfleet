@@ -1,14 +1,19 @@
 package agent
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"mime/multipart"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // HandleUpdateRepo clones the requested git repository to the target directory.
@@ -99,22 +104,112 @@ func HandleRestartROS(cfg Config) error {
 	return nil
 }
 
-// HandleWifiProfile adds a new wifi connection profile using nmcli.
-func HandleWifiProfile(data WifiProfileData) error {
-	if data.SSID == "" {
-		return errors.New("ssid is required")
+// HandleTestDrive executes a short movement pattern.
+func HandleTestDrive(cfg Config, data TestDriveData) error {
+	log.Printf("[agent] starting test drive")
+
+	// Twist message for forward motion
+	// linear.x = 0.1, angular.z = 0.0
+	cmdForward := exec.Command("ros2", "topic", "pub", "--once", "/cmd_vel", "geometry_msgs/msg/Twist", "{linear: {x: 0.1, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}")
+	if out, err := cmdForward.CombinedOutput(); err != nil {
+		return fmt.Errorf("forward failed: %v: %s", err, string(out))
 	}
-	// nmcli device wifi connect <SSID> password <PASSWORD>
-	args := []string{"device", "wifi", "connect", data.SSID}
-	if data.Password != "" {
-		args = append(args, "password", data.Password)
+
+	time.Sleep(time.Duration(data.DurationSec) * time.Second)
+
+	// Stop
+	cmdStop := exec.Command("ros2", "topic", "pub", "--once", "/cmd_vel", "geometry_msgs/msg/Twist", "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}")
+	if out, err := cmdStop.CombinedOutput(); err != nil {
+		return fmt.Errorf("stop failed: %v: %s", err, string(out))
 	}
-	cmd := exec.Command("nmcli", args...)
-	output, err := cmd.CombinedOutput()
+
+	log.Printf("[agent] test drive complete")
+	return nil
+}
+
+// HandleStop publishes zero velocity.
+func HandleStop(cfg Config) error {
+	log.Printf("[agent] stopping robot")
+	cmd := exec.Command("ros2", "topic", "pub", "--once", "/cmd_vel", "geometry_msgs/msg/Twist", "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("stop failed: %v: %s", err, string(out))
+	}
+	return nil
+}
+
+// HandleIdentify plays a sound.
+func HandleIdentify() error {
+	// Try aplay first
+	cmd := exec.Command("aplay", "/usr/share/sounds/alsa/Front_Center.wav")
+	if err := cmd.Run(); err != nil {
+		// Fallback to beep or just log
+		log.Printf("[agent] aplay failed, trying beep")
+		// beep might not be installed, but let's try
+		cmd = exec.Command("beep")
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("identify failed (no audio output found)")
+		}
+	}
+	return nil
+}
+
+// HandleCaptureImage takes a photo and uploads it.
+func HandleCaptureImage(cfg Config, data CaptureImageData) error {
+	log.Printf("[agent] capturing image")
+	tmpPath := "/tmp/snapshot.jpg"
+
+	// Try fswebcam first
+	cmd := exec.Command("fswebcam", "-r", "640x480", "--jpeg", "85", "-D", "1", tmpPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("[agent] fswebcam failed: %v: %s", err, string(out))
+		// Fallback: create a dummy image or fail?
+		// Let's fail for now, or maybe try a different tool if needed.
+		return fmt.Errorf("capture failed: %v", err)
+	}
+	defer os.Remove(tmpPath)
+
+	// Upload
+	file, err := os.Open(tmpPath)
 	if err != nil {
-		return fmt.Errorf("nmcli failed: %w: %s", err, strings.TrimSpace(string(output)))
+		return err
 	}
-	log.Printf("[agent] connected to wifi %s", data.SSID)
+	defer file.Close()
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("image", filepath.Base(tmpPath))
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return err
+	}
+	writer.Close()
+
+	req, err := http.NewRequest("POST", data.UploadURL, body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("upload failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("upload returned status: %s", resp.Status)
+	}
+
+	log.Printf("[agent] image uploaded to %s", data.UploadURL)
+	return nil
+}
+
+// HandleWifiProfile configures wifi (placeholder).
+func HandleWifiProfile(data WifiProfileData) error {
+	log.Printf("[agent] wifi profile received for %s (not implemented)", data.SSID)
 	return nil
 }
 

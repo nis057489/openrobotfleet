@@ -17,11 +17,12 @@ import (
 )
 
 type semesterRequest struct {
-	RobotIDs   []int64              `json:"robot_ids"`
-	Reinstall  bool                 `json:"reinstall"`
-	ResetLogs  bool                 `json:"reset_logs"`
-	UpdateRepo bool                 `json:"update_repo"`
-	RepoConfig agent.UpdateRepoData `json:"repo_config"`
+	RobotIDs    []int64              `json:"robot_ids"`
+	Reinstall   bool                 `json:"reinstall"`
+	ResetLogs   bool                 `json:"reset_logs"`
+	UpdateRepo  bool                 `json:"update_repo"`
+	RunSelfTest bool                 `json:"run_self_test"`
+	RepoConfig  agent.UpdateRepoData `json:"repo_config"`
 }
 
 type SemesterBatchStatus struct {
@@ -87,13 +88,19 @@ func (c *Controller) HandleSemesterStart(w http.ResponseWriter, r *http.Request)
 	}
 	batchStatus.Unlock()
 
-	go c.processSemesterBatch(req)
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
+
+	go c.processSemesterBatch(req, baseURL)
 
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
 }
 
-func (c *Controller) processSemesterBatch(req semesterRequest) {
+func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 	defer func() {
 		batchStatus.Lock()
 		batchStatus.Active = false
@@ -256,6 +263,40 @@ func (c *Controller) processSemesterBatch(req semesterRequest) {
 					log.Printf("semester: failed to queue update_repo for %s: %v", robot.Name, err)
 					batchStatus.Lock()
 					batchStatus.Errors[id] = "failed to queue update_repo"
+					batchStatus.Robots[id] = "error"
+					batchStatus.Completed++
+					batchStatus.Unlock()
+					return
+				}
+			}
+
+			if req.RunSelfTest {
+				log.Printf("semester: running self test for %s", robot.Name)
+				batchStatus.Lock()
+				batchStatus.Robots[id] = "running_self_test"
+				batchStatus.Unlock()
+
+				// Test Drive
+				driveData, _ := json.Marshal(agent.TestDriveData{DurationSec: 2})
+				cmdDrive := agent.Command{Type: "test_drive", Data: driveData}
+				if _, err := c.queueRobotCommand(ctx, robot, cmdDrive); err != nil {
+					log.Printf("semester: failed to queue test_drive for %s: %v", robot.Name, err)
+					batchStatus.Lock()
+					batchStatus.Errors[id] = "failed to queue test_drive"
+					batchStatus.Robots[id] = "error"
+					batchStatus.Completed++
+					batchStatus.Unlock()
+					return
+				}
+
+				// Capture Image
+				uploadURL := fmt.Sprintf("%s/api/robots/%d/upload", baseURL, id)
+				captureData, _ := json.Marshal(agent.CaptureImageData{UploadURL: uploadURL})
+				cmdCapture := agent.Command{Type: "capture_image", Data: captureData}
+				if _, err := c.queueRobotCommand(ctx, robot, cmdCapture); err != nil {
+					log.Printf("semester: failed to queue capture_image for %s: %v", robot.Name, err)
+					batchStatus.Lock()
+					batchStatus.Errors[id] = "failed to queue capture_image"
 					batchStatus.Robots[id] = "error"
 					batchStatus.Completed++
 					batchStatus.Unlock()

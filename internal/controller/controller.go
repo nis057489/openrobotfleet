@@ -3,7 +3,11 @@ package controller
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -80,4 +84,58 @@ func parseInstallConfigRobotID(path string) (int64, error) {
 		return 0, fmt.Errorf("missing robot id")
 	}
 	return strconv.ParseInt(trimmed, 10, 64)
+}
+
+func (c *Controller) HandleRobotUpload(w http.ResponseWriter, r *http.Request) {
+	// Parse ID from path /api/robots/:id/upload
+	path := r.URL.Path
+	if !strings.HasPrefix(path, "/api/robots/") || !strings.HasSuffix(path, "/upload") {
+		respondError(w, http.StatusBadRequest, "invalid path")
+		return
+	}
+	trimmed := strings.TrimSuffix(path, "/upload")
+	trimmed = strings.TrimSuffix(trimmed, "/")
+	trimmed = strings.TrimPrefix(trimmed, "/api/robots/")
+	idStr := strings.Trim(trimmed, "/")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid robot id")
+		return
+	}
+
+	file, _, err := r.FormFile("image")
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "failed to get image")
+		return
+	}
+	defer file.Close()
+
+	// Save to web/dist/snapshots/<id>.jpg
+	webRoot := os.Getenv("WEB_ROOT")
+	if webRoot == "" {
+		webRoot = "./web/dist"
+	}
+	snapDir := filepath.Join(webRoot, "snapshots")
+	if err := os.MkdirAll(snapDir, 0755); err != nil {
+		log.Printf("failed to create snapshot dir: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to save")
+		return
+	}
+
+	dstPath := filepath.Join(snapDir, fmt.Sprintf("%d.jpg", id))
+	out, err := os.Create(dstPath)
+	if err != nil {
+		log.Printf("failed to create snapshot file: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to save")
+		return
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, file); err != nil {
+		log.Printf("failed to write snapshot file: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to save")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "uploaded", "url": fmt.Sprintf("/snapshots/%d.jpg", id)})
 }

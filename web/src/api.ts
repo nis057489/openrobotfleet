@@ -172,6 +172,7 @@ export interface SemesterRequest {
   reinstall: boolean;
   reset_logs: boolean;
   update_repo: boolean;
+  run_self_test: boolean;
   repo_config: {
     repo: string;
     branch: string;

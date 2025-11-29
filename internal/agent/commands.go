@@ -25,3 +25,18 @@ type WifiProfileData struct {
 	SSID     string `json:"ssid"`
 	Password string `json:"password"`
 }
+
+// CaptureImageData describes image capture instructions.
+type CaptureImageData struct {
+	UploadURL string `json:"upload_url"`
+}
+
+// TestDriveData describes test drive instructions.
+type TestDriveData struct {
+	DurationSec int `json:"duration_sec"`
+}
+
+// IdentifyData describes identification instructions.
+type IdentifyData struct {
+	Duration int `json:"duration"` // seconds
+}

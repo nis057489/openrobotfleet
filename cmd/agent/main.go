@@ -85,6 +85,40 @@ func main() {
 				return
 			}
 			log.Printf("wifi_profile succeeded for ssid %s", payload.SSID)
+		case "test_drive":
+			var payload agent.TestDriveData
+			if err := json.Unmarshal(cmd.Data, &payload); err != nil {
+				log.Printf("test_drive payload error: %v", err)
+				return
+			}
+			if err := agent.HandleTestDrive(cfg, payload); err != nil {
+				log.Printf("test_drive failed: %v", err)
+				return
+			}
+			log.Printf("test_drive succeeded")
+		case "stop":
+			if err := agent.HandleStop(cfg); err != nil {
+				log.Printf("stop failed: %v", err)
+				return
+			}
+			log.Printf("stop succeeded")
+		case "capture_image":
+			var payload agent.CaptureImageData
+			if err := json.Unmarshal(cmd.Data, &payload); err != nil {
+				log.Printf("capture_image payload error: %v", err)
+				return
+			}
+			if err := agent.HandleCaptureImage(cfg, payload); err != nil {
+				log.Printf("capture_image failed: %v", err)
+				return
+			}
+			log.Printf("capture_image succeeded")
+		case "identify":
+			if err := agent.HandleIdentify(); err != nil {
+				log.Printf("identify failed: %v", err)
+				return
+			}
+			log.Printf("identify succeeded")
 		default:
 			log.Printf("unknown command type: %s", cmd.Type)
 		}

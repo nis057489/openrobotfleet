@@ -1,4 +1,4 @@
-import { Save, Loader2, Power, RefreshCw, AlertTriangle, Download, Upload, Database } from "lucide-react";
+import { Save, Loader2, Power, RefreshCw, AlertTriangle, Download, Upload, Database, Bell } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import { getInstallDefaults, updateInstallDefaults, broadcastCommand } from "../api";
 import { InstallConfig } from "../types";
@@ -44,8 +44,15 @@ export function Settings() {
         setBroadcasting(true);
         setMessage(null);
         try {
-            await broadcastCommand({ type, data: {} });
-            setMessage({ type: 'success', text: `Broadcast command '${type}' sent successfully` });
+            // For "class_over", we send "stop" and "identify"
+            if (type === "class_over") {
+                await broadcastCommand({ type: "stop", data: {} });
+                await broadcastCommand({ type: "identify", data: {} });
+                setMessage({ type: 'success', text: `Class Over signal sent successfully` });
+            } else {
+                await broadcastCommand({ type, data: {} });
+                setMessage({ type: 'success', text: `Broadcast command '${type}' sent successfully` });
+            }
         } catch (err) {
             setMessage({ type: 'error', text: 'Failed to send broadcast command' });
         } finally {
@@ -220,6 +227,18 @@ export function Settings() {
                             <div className="text-xs text-red-500 group-hover:text-red-600">Reboot every robot in the fleet</div>
                         </div>
                         <Power size={20} className="text-red-400 group-hover:text-red-600" />
+                    </button>
+
+                    <button
+                        onClick={() => handleBroadcast("class_over", "Are you sure you want to STOP all robots and play the end-of-session sound?")}
+                        disabled={broadcasting}
+                        className="flex items-center justify-between p-4 border border-yellow-200 rounded-lg hover:bg-yellow-50 transition-colors text-left group"
+                    >
+                        <div>
+                            <div className="font-medium text-yellow-700 group-hover:text-yellow-800">Class Over</div>
+                            <div className="text-xs text-yellow-600 group-hover:text-yellow-700">Stop all robots & play sound</div>
+                        </div>
+                        <Bell size={20} className="text-yellow-500 group-hover:text-yellow-700" />
                     </button>
                 </div>
             </div>

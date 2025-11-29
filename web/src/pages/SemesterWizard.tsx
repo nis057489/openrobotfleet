@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { getRobots, getInstallDefaults, startSemesterBatch, getSemesterStatus } from "../api";
 import { Robot, InstallConfig, SemesterStatus } from "../types";
-import { Check, RefreshCw, GitBranch, Trash2, AlertTriangle, ArrowRight, Clock, Terminal, XCircle } from "lucide-react";
+import { Check, RefreshCw, GitBranch, Trash2, AlertTriangle, ArrowRight, Clock, Terminal, XCircle, Activity } from "lucide-react";
 
 export function SemesterWizard() {
     const [robots, setRobots] = useState<Robot[]>([]);
@@ -15,6 +15,7 @@ export function SemesterWizard() {
     const [doResetLogs, setDoResetLogs] = useState(false);
     const [doUpdateRepo, setDoUpdateRepo] = useState(false);
     const [doReinstall, setDoReinstall] = useState(false);
+    const [doSelfTest, setDoSelfTest] = useState(false);
     const [repoUrl, setRepoUrl] = useState("https://github.com/turtlebot/turtlebot-agent.git");
 
     // Global install defaults
@@ -69,7 +70,7 @@ export function SemesterWizard() {
 
     const handleExecute = async () => {
         if (selectedIds.size === 0) return;
-        if (!doResetLogs && !doUpdateRepo && !doReinstall) return;
+        if (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest) return;
 
         setExecuting(true);
         try {
@@ -78,6 +79,7 @@ export function SemesterWizard() {
                 reinstall: doReinstall,
                 reset_logs: doResetLogs,
                 update_repo: doUpdateRepo,
+                run_self_test: doSelfTest,
                 repo_config: {
                     repo: repoUrl,
                     branch: "main",
@@ -227,6 +229,27 @@ export function SemesterWizard() {
                                         <Trash2 size={16} /> Reset Logs
                                     </div>
                                     <p className="text-sm text-gray-500">Clear all application logs on the robot to start fresh.</p>
+                                </div>
+                            </label>
+
+                            <hr className="border-gray-100" />
+
+                            {/* Run Self Test */}
+                            <label className="flex items-start gap-3 cursor-pointer">
+                                <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doSelfTest ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
+                                    {doSelfTest && <Check size={14} />}
+                                    <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={doSelfTest}
+                                        onChange={e => setDoSelfTest(e.target.checked)}
+                                    />
+                                </div>
+                                <div>
+                                    <div className="font-medium text-gray-900 flex items-center gap-2">
+                                        <Activity size={16} /> Run Self Test
+                                    </div>
+                                    <p className="text-sm text-gray-500">Verify motors and camera functionality.</p>
                                 </div>
                             </label>
 
