@@ -86,7 +86,7 @@ export function Dashboard() {
                     description={stats.semester.active ? "Batch operation in progress" : "Ready to start new semester"}
                     status={stats.semester.active ? "Active" : "Idle"}
                     icon={GraduationCap}
-                    to="/semester"
+                    to="/semester-wizard"
                     extra={stats.semester.active ? `Progress: ${stats.semester.progress}` : undefined}
                 />
                 <FeatureCard
@@ -134,8 +134,8 @@ function FeatureCard({ title, description, status, icon: Icon, to, extra, loadin
                         </div>
                     </div>
                     <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${status === 'Active' || status === 'Building'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-gray-100 text-gray-800'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-gray-100 text-gray-800'
                         }`}>
                         {status}
                     </span>
