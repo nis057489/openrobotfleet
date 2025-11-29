@@ -16,6 +16,10 @@ const JSON_HEADERS = {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
+  if (response.status === 401) {
+    window.location.href = "/login";
+    throw new Error("Unauthorized");
+  }
   if (!response.ok) {
     const text = await response.text();
     let message = text;

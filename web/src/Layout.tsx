@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { InterestSignup } from "./components/InterestSignup";
 
 function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
@@ -67,6 +68,11 @@ export function Layout() {
                 </nav>
 
                 <div className="p-4 border-t border-gray-100">
+                    {sidebarOpen && (
+                        <div className="mb-4 pb-4 border-b border-gray-100">
+                            <InterestSignup compact={true} />
+                        </div>
+                    )}
                     <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
                             OP

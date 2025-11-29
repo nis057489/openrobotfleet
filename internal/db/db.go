@@ -70,6 +70,13 @@ type GoldenImageConfig struct {
 	ROSVersion    string `json:"ros_version"` // "Humble" or "Jazzy"
 }
 
+type LoginEvent struct {
+	ID        int64     `json:"id"`
+	Timestamp time.Time `json:"timestamp"`
+	IP        string    `json:"ip"`
+	UserAgent string    `json:"user_agent"`
+}
+
 const (
 	defaultInstallConfigKey = "default_install_config"
 	goldenImageConfigKey    = "golden_image_config"
@@ -133,6 +140,18 @@ func migrate(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS settings (
 			key TEXT PRIMARY KEY,
 			value TEXT
+		);`,
+		`CREATE TABLE IF NOT EXISTS login_events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp TIMESTAMP,
+			ip TEXT,
+			user_agent TEXT
+		);`,
+		`CREATE TABLE IF NOT EXISTS interest_signups (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			email TEXT NOT NULL,
+			timestamp TIMESTAMP,
+			ip TEXT
 		);`,
 	}
 	for _, s := range stmts {
@@ -629,4 +648,16 @@ func (d *DB) ListJobs(ctx context.Context, target string) ([]Job, error) {
 		jobs = []Job{}
 	}
 	return jobs, rows.Err()
+}
+
+func (db *DB) RecordLogin(ctx context.Context, ip, userAgent string) error {
+	query := `INSERT INTO login_events (timestamp, ip, user_agent) VALUES (?, ?, ?)`
+	_, err := db.SQL.ExecContext(ctx, query, time.Now(), ip, userAgent)
+	return err
+}
+
+func (db *DB) RecordInterest(ctx context.Context, email, ip string) error {
+	query := `INSERT INTO interest_signups (email, timestamp, ip) VALUES (?, ?, ?)`
+	_, err := db.SQL.ExecContext(ctx, query, email, time.Now(), ip)
+	return err
 }

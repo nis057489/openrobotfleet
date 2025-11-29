@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 
+	"time"
+
 	"example.com/turtlebot-fleet/internal/controller"
 	"example.com/turtlebot-fleet/internal/db"
 	mqttc "example.com/turtlebot-fleet/internal/mqtt"
@@ -39,6 +41,11 @@ func NewServer(dbPath string) (*Server, error) {
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealth)
+	mux.HandleFunc("/api/login", s.handleLogin)
+	mux.HandleFunc("/api/auth/status", s.handleAuthStatus) // Add this line
+	mux.HandleFunc("/api/interest", s.handleInterest)
+
+	// Protected routes
 	mux.HandleFunc("/api/install-agent", s.handleInstallAgent)
 	mux.HandleFunc("/api/settings/install-defaults", s.handleInstallDefaults)
 	mux.HandleFunc("/api/robots", s.handleListRobots)
@@ -73,7 +80,114 @@ func (s *Server) routes() http.Handler {
 		}
 		fs.ServeHTTP(w, r)
 	})
-	return mux
+
+	return s.authMiddleware(mux)
+}
+
+func (s *Server) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Allow public endpoints
+		if !strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api/login" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Check cookie
+		cookie, err := r.Cookie("auth_token")
+		if err != nil || cookie.Value != "secret-admin-token" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+
+	var creds struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	expected := os.Getenv("ADMIN_PASSWORD")
+	if expected == "" {
+		expected = "turtlebot" // Default password
+	}
+
+	if creds.Password != expected {
+		http.Error(w, "Invalid password", http.StatusUnauthorized)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "auth_token",
+		Value:    "secret-admin-token",
+		Path:     "/",
+		HttpOnly: true,
+		Expires:  time.Now().Add(24 * time.Hour),
+	})
+
+	// Log successful login
+	ip := r.RemoteAddr
+	// If behind a proxy (like Traefik), use X-Forwarded-For
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		ip = fwd
+	}
+	userAgent := r.Header.Get("User-Agent")
+
+	if err := s.DB.RecordLogin(r.Context(), ip, userAgent); err != nil {
+		log.Printf("failed to record login: %v", err)
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	// If we reached here, the middleware already validated the cookie
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"authenticated":true}`))
+}
+
+func (s *Server) handleInterest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+
+	var payload struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if payload.Email == "" {
+		http.Error(w, "Email required", http.StatusBadRequest)
+		return
+	}
+
+	ip := r.RemoteAddr
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		ip = fwd
+	}
+
+	if err := s.DB.RecordInterest(r.Context(), payload.Email, ip); err != nil {
+		log.Printf("failed to record interest: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) Start() error {
