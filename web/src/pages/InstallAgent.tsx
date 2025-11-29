@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { installAgent, getInstallDefaults } from "../api";
 import { Loader2, Terminal } from "lucide-react";
 
 export function InstallAgent() {
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const location = useLocation();
     const [loading, setLoading] = useState(false);
@@ -54,7 +56,7 @@ export function InstallAgent() {
             await installAgent(formData);
             navigate(formData.type === 'laptop' ? "/laptops" : "/robots");
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to install agent");
+            setError(err instanceof Error ? err.message : t("installAgent.installFailed"));
         } finally {
             setLoading(false);
         }
@@ -63,8 +65,8 @@ export function InstallAgent() {
     return (
         <div className="max-w-2xl mx-auto">
             <div className="mb-8">
-                <h1 className="text-2xl font-bold text-gray-900">Add New {formData.type === 'laptop' ? 'Laptop' : 'Robot'}</h1>
-                <p className="text-gray-500">Install the agent on a remote machine via SSH</p>
+                <h1 className="text-2xl font-bold text-gray-900">{t("installAgent.title", { type: formData.type === 'laptop' ? t("common.laptops") : t("common.robots") })}</h1>
+                <p className="text-gray-500">{t("installAgent.subtitle")}</p>
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -72,9 +74,9 @@ export function InstallAgent() {
                     <div className="flex items-start gap-3">
                         <Terminal className="text-blue-600 mt-1" size={20} />
                         <div>
-                            <h3 className="font-semibold text-gray-900">Installation Details</h3>
+                            <h3 className="font-semibold text-gray-900">{t("installAgent.detailsTitle")}</h3>
                             <p className="text-sm text-gray-500">
-                                The controller will SSH into the target machine, upload the agent binary, and configure the systemd service.
+                                {t("installAgent.detailsDesc")}
                             </p>
                         </div>
                     </div>
@@ -90,7 +92,7 @@ export function InstallAgent() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="col-span-2">
                             <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Robot Name
+                                {t("installAgent.robotName")}
                             </label>
                             <input
                                 required
@@ -104,7 +106,7 @@ export function InstallAgent() {
 
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
-                                IP Address / Hostname
+                                {t("installAgent.ipAddress")}
                             </label>
                             <input
                                 required
@@ -118,7 +120,7 @@ export function InstallAgent() {
 
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
-                                SSH User
+                                {t("installAgent.sshUser")}
                             </label>
                             <input
                                 required
@@ -132,7 +134,7 @@ export function InstallAgent() {
 
                         <div className="col-span-2">
                             <label className="block text-sm font-medium text-gray-700 mb-1">
-                                SSH Private Key
+                                {t("installAgent.sshKey")}
                             </label>
                             <textarea
                                 required
@@ -154,21 +156,21 @@ export function InstallAgent() {
                                     onChange={(e) => setFormData({ ...formData, sudo: e.target.checked })}
                                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                 />
-                                Use Sudo
+                                {t("installAgent.enableSudo")}
                             </label>
                         </div>
 
                         {formData.sudo && (
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Sudo Password
+                                    {t("installAgent.sudoPassword")}
                                 </label>
                                 <input
                                     type="password"
                                     value={formData.sudo_password}
                                     onChange={(e) => setFormData({ ...formData, sudo_password: e.target.value })}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                    placeholder="Required for sudo"
+                                    placeholder={t("installAgent.sudoPlaceholder")}
                                 />
                             </div>
                         )}
@@ -180,7 +182,7 @@ export function InstallAgent() {
                             onClick={() => navigate("/robots")}
                             className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg font-medium transition-colors"
                         >
-                            Cancel
+                            {t("common.cancel")}
                         </button>
                         <button
                             type="submit"
@@ -188,7 +190,7 @@ export function InstallAgent() {
                             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center gap-2 disabled:opacity-50"
                         >
                             {loading && <Loader2 size={18} className="animate-spin" />}
-                            Install Agent
+                            {t("installAgent.install")}
                         </button>
                     </div>
                 </form>

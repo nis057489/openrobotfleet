@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { getRobots, applyScenario } from "../api";
 import { Robot } from "../types";
 import { X, Play, Loader2, CheckCircle2 } from "lucide-react";
@@ -11,6 +12,7 @@ interface DeployModalProps {
 }
 
 export function DeployModal({ scenarioId, scenarioName, onClose, onSuccess }: DeployModalProps) {
+    const { t } = useTranslation();
     const [robots, setRobots] = useState<Robot[]>([]);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [loading, setLoading] = useState(true);
@@ -56,7 +58,7 @@ export function DeployModal({ scenarioId, scenarioName, onClose, onSuccess }: De
             onSuccess();
             onClose();
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to deploy scenario");
+            setError(err instanceof Error ? err.message : t("deployModal.deployError"));
             setDeploying(false);
         }
     };
@@ -66,8 +68,8 @@ export function DeployModal({ scenarioId, scenarioName, onClose, onSuccess }: De
             <div className="bg-white rounded-xl shadow-xl max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]">
                 <div className="p-6 border-b border-gray-100 flex items-center justify-between">
                     <div>
-                        <h2 className="text-xl font-bold text-gray-900">Deploy Scenario</h2>
-                        <p className="text-sm text-gray-500">Target: {scenarioName}</p>
+                        <h2 className="text-xl font-bold text-gray-900">{t("deployModal.title")}</h2>
+                        <p className="text-sm text-gray-500">{t("deployModal.target", { name: scenarioName })}</p>
                     </div>
                     <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
                         <X size={24} />
@@ -76,11 +78,11 @@ export function DeployModal({ scenarioId, scenarioName, onClose, onSuccess }: De
 
                 <div className="p-6 overflow-y-auto flex-1">
                     {loading ? (
-                        <div className="text-center py-8 text-gray-500">Loading robots...</div>
+                        <div className="text-center py-8 text-gray-500">{t("deployModal.loading")}</div>
                     ) : error ? (
                         <div className="text-red-600 bg-red-50 p-4 rounded-lg">{error}</div>
                     ) : robots.length === 0 ? (
-                        <div className="text-center py-8 text-gray-500">No robots available.</div>
+                        <div className="text-center py-8 text-gray-500">{t("deployModal.noRobots")}</div>
                     ) : (
                         <div className="space-y-3">
                             {uniqueTags.length > 0 && (
@@ -99,7 +101,7 @@ export function DeployModal({ scenarioId, scenarioName, onClose, onSuccess }: De
                                     ))}
                                 </div>
                             )}
-                            <p className="text-sm font-medium text-gray-700 mb-2">Select Target Robots:</p>
+                            <p className="text-sm font-medium text-gray-700 mb-2">{t("deployModal.selectTarget")}</p>
                             {robots.map((robot) => {
                                 const isSelected = selectedIds.includes(robot.id);
                                 const isOnline = robot.status !== "offline" && robot.status !== "unknown";
@@ -119,7 +121,7 @@ export function DeployModal({ scenarioId, scenarioName, onClose, onSuccess }: De
                                             />
                                             <div>
                                                 <p className="font-medium text-gray-900">{robot.name}</p>
-                                                <p className="text-xs text-gray-500">{robot.ip || "No IP"}</p>
+                                                <p className="text-xs text-gray-500">{robot.ip || t("deployModal.noIp")}</p>
                                             </div>
                                         </div>
                                         {isSelected && <CheckCircle2 size={20} className="text-blue-600" />}
@@ -135,7 +137,7 @@ export function DeployModal({ scenarioId, scenarioName, onClose, onSuccess }: De
                         onClick={onClose}
                         className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg font-medium transition-colors"
                     >
-                        Cancel
+                        {t("common.cancel")}
                     </button>
                     <button
                         onClick={handleDeploy}
@@ -143,7 +145,7 @@ export function DeployModal({ scenarioId, scenarioName, onClose, onSuccess }: De
                         className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {deploying ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} />}
-                        Deploy ({selectedIds.length})
+                        {t("deployModal.deploy", { count: selectedIds.length })}
                     </button>
                 </div>
             </div>

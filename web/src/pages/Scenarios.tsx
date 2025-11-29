@@ -4,9 +4,11 @@ import { useNavigate } from "react-router-dom";
 import { getScenarios, deleteScenario } from "../api";
 import { Scenario } from "../types";
 import { DeployModal } from "../components/DeployModal";
+import { useTranslation } from "react-i18next";
 
 export function Scenarios() {
     const navigate = useNavigate();
+    const { t } = useTranslation();
     const [scenarios, setScenarios] = useState<Scenario[]>([]);
     const [loading, setLoading] = useState(true);
     const [deployTarget, setDeployTarget] = useState<Scenario | null>(null);
@@ -23,7 +25,7 @@ export function Scenarios() {
     }, []);
 
     const handleDelete = async (id: number) => {
-        if (confirm("Are you sure you want to delete this scenario?")) {
+        if (confirm(t("scenarios.deleteConfirm"))) {
             await deleteScenario(id);
             loadScenarios();
         }
@@ -33,33 +35,33 @@ export function Scenarios() {
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Scenarios</h1>
-                    <p className="text-gray-500">Define and deploy robot behaviors</p>
+                    <h1 className="text-2xl font-bold text-gray-900">{t("common.scenarios")}</h1>
+                    <p className="text-gray-500">{t("scenarios.subtitle")}</p>
                 </div>
                 <button
                     onClick={() => navigate("/scenarios/new")}
                     className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center gap-2"
                 >
-                    <Plus size={18} /> New Scenario
+                    <Plus size={18} /> {t("common.newScenario")}
                 </button>
             </div>
 
             {loading ? (
-                <div className="text-center py-12 text-gray-500">Loading scenarios...</div>
+                <div className="text-center py-12 text-gray-500">{t("scenarios.loading")}</div>
             ) : scenarios.length === 0 ? (
                 <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
                     <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
                         <FileCode size={32} className="text-blue-600" />
                     </div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No Scenarios Found</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">{t("scenarios.emptyTitle")}</h3>
                     <p className="text-gray-500 max-w-md mx-auto mb-6">
-                        Create your first scenario to define a sequence of actions for your robots to perform.
+                        {t("scenarios.emptyDescription")}
                     </p>
                     <button
                         onClick={() => navigate("/scenarios/new")}
                         className="text-blue-600 font-medium hover:text-blue-700"
                     >
-                        Create Scenario
+                        {t("scenarios.createButton")}
                     </button>
                 </div>
             ) : (
@@ -74,21 +76,21 @@ export function Scenarios() {
                                     <button
                                         onClick={() => setDeployTarget(scenario)}
                                         className="p-2 hover:bg-green-50 text-green-600 rounded-lg transition-colors"
-                                        title="Deploy"
+                                        title={t("common.deploy")}
                                     >
                                         <Play size={18} />
                                     </button>
                                     <button
                                         onClick={() => navigate(`/scenarios/${scenario.id}`)}
                                         className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"
-                                        title="Edit"
+                                        title={t("common.edit")}
                                     >
                                         <Edit size={18} />
                                     </button>
                                     <button
                                         onClick={() => handleDelete(scenario.id)}
                                         className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
-                                        title="Delete"
+                                        title={t("common.delete")}
                                     >
                                         <Trash2 size={18} />
                                     </button>
@@ -96,7 +98,7 @@ export function Scenarios() {
                             </div>
                             <h3 className="font-bold text-lg text-gray-900 mb-1">{scenario.name}</h3>
                             <p className="text-sm text-gray-500 line-clamp-2 mb-4">
-                                {scenario.description || "No description provided."}
+                                {scenario.description || t("common.noDescription")}
                             </p>
                             <div className="bg-gray-50 rounded-lg p-3 font-mono text-xs text-gray-600 overflow-hidden h-24 whitespace-pre">
                                 {scenario.config_yaml}

@@ -4,9 +4,12 @@ import { getRobots } from "../api";
 import { Robot } from "../types";
 import { Signal, Wifi, Clock } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { zhCN } from "date-fns/locale";
+import { useTranslation } from "react-i18next";
 
 export function Robots() {
     const navigate = useNavigate();
+    const { t } = useTranslation();
     const [robots, setRobots] = useState<Robot[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -18,28 +21,28 @@ export function Robots() {
             .finally(() => setLoading(false));
     }, []);
 
-    if (loading) return <div className="p-8 text-center text-gray-500">Loading fleet data...</div>;
-    if (error) return <div className="p-8 text-center text-red-500">Error: {error}</div>;
+    if (loading) return <div className="p-8 text-center text-gray-500">{t("robots.loading")}</div>;
+    if (error) return <div className="p-8 text-center text-red-500">{t("common.error")}: {error}</div>;
 
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Robots</h1>
-                    <p className="text-gray-500">Manage your autonomous fleet</p>
+                    <h1 className="text-2xl font-bold text-gray-900">{t("common.robots")}</h1>
+                    <p className="text-gray-500">{t("robots.subtitle")}</p>
                 </div>
                 <div className="flex gap-3">
                     <button
                         onClick={() => navigate("/discovery")}
                         className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors font-medium"
                     >
-                        Scan Network
+                        {t("common.scanNetwork")}
                     </button>
                     <button
                         onClick={() => navigate("/install")}
                         className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
                     >
-                        Add Robot
+                        {t("common.addRobot")}
                     </button>
                 </div>
             </div>
@@ -55,8 +58,12 @@ export function Robots() {
 
 function RobotCard({ robot }: { robot: Robot }) {
     const navigate = useNavigate();
+    const { t, i18n } = useTranslation();
     const isOnline = robot.status !== "offline" && robot.status !== "unknown";
-    const lastSeen = robot.last_seen ? formatDistanceToNow(new Date(robot.last_seen), { addSuffix: true }) : "Never";
+    const lastSeen = robot.last_seen ? formatDistanceToNow(new Date(robot.last_seen), {
+        addSuffix: true,
+        locale: i18n.language.startsWith('zh') ? zhCN : undefined
+    }) : t("common.never");
 
     return (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
@@ -70,7 +77,7 @@ function RobotCard({ robot }: { robot: Robot }) {
                                     }`}
                             />
                             <span className="text-sm text-gray-500 capitalize">
-                                {robot.status || "Unknown"}
+                                {robot.status || t("common.unknown")}
                             </span>
                         </div>
                     </div>
@@ -82,13 +89,13 @@ function RobotCard({ robot }: { robot: Robot }) {
                 <div className="space-y-3">
                     <div className="flex items-center justify-between text-sm">
                         <span className="text-gray-500 flex items-center gap-2">
-                            <Wifi size={16} /> IP Address
+                            <Wifi size={16} /> {t("common.ipAddress")}
                         </span>
                         <span className="font-mono text-gray-700">{robot.ip || "—"}</span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
                         <span className="text-gray-500 flex items-center gap-2">
-                            <Clock size={16} /> Last Seen
+                            <Clock size={16} /> {t("common.lastSeen")}
                         </span>
                         <span className="font-medium text-gray-700">{lastSeen}</span>
                     </div>

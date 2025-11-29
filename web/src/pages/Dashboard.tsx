@@ -2,8 +2,10 @@ import { Activity, AlertCircle, CheckCircle2, Clock, Laptop, Bot, FileText, Grad
 import { useEffect, useState } from "react";
 import { getRobots, getScenarios, getSemesterStatus, getBuildStatus } from "../api";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
 export function Dashboard() {
+    const { t } = useTranslation();
     const [stats, setStats] = useState({
         robots: { total: 0, active: 0 },
         laptops: { total: 0, active: 0 },
@@ -41,39 +43,39 @@ export function Dashboard() {
     }, []);
 
     if (loading) {
-        return <div className="p-8 text-center text-gray-500">Loading mission control...</div>;
+        return <div className="p-8 text-center text-gray-500">{t("common.loading")}</div>;
     }
 
     return (
         <div className="space-y-6">
             <div>
-                <h1 className="text-2xl font-bold text-gray-900">Mission Control</h1>
-                <p className="text-gray-500">Fleet status overview</p>
+                <h1 className="text-2xl font-bold text-gray-900">{t("dashboard.title")}</h1>
+                <p className="text-gray-500">{t("dashboard.subtitle")}</p>
             </div>
 
             {/* Main Stats */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <StatCard
-                    title="Robots"
+                    title={t("common.robots")}
                     value={`${stats.robots.active}/${stats.robots.total}`}
                     icon={Bot}
-                    trend={stats.robots.active === stats.robots.total ? "All systems go" : `${stats.robots.total - stats.robots.active} offline`}
+                    trend={stats.robots.active === stats.robots.total ? t("dashboard.allSystemsGo") : t("dashboard.offlineCount", { count: stats.robots.total - stats.robots.active })}
                     trendColor={stats.robots.active === stats.robots.total ? "text-green-600" : "text-orange-600"}
                     to="/robots"
                 />
                 <StatCard
-                    title="Laptops"
+                    title={t("common.laptops")}
                     value={`${stats.laptops.active}/${stats.laptops.total}`}
                     icon={Laptop}
-                    trend={stats.laptops.active === stats.laptops.total ? "All connected" : `${stats.laptops.total - stats.laptops.active} offline`}
+                    trend={stats.laptops.active === stats.laptops.total ? t("dashboard.allConnected") : t("dashboard.offlineCount", { count: stats.laptops.total - stats.laptops.active })}
                     trendColor="text-blue-600"
                     to="/laptops"
                 />
                 <StatCard
-                    title="Scenarios"
+                    title={t("common.scenarios")}
                     value={stats.scenarios}
                     icon={FileText}
-                    trend="Available configurations"
+                    trend={t("dashboard.availableConfigurations")}
                     trendColor="text-gray-500"
                     to="/scenarios"
                 />
@@ -82,17 +84,17 @@ export function Dashboard() {
             {/* Feature Status */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FeatureCard
-                    title="Semester Wizard"
-                    description={stats.semester.active ? "Batch operation in progress" : "Ready to start new semester"}
-                    status={stats.semester.active ? "Active" : "Idle"}
+                    title={t("common.semesterWizard")}
+                    description={stats.semester.active ? t("dashboard.batchOperationInProgress") : t("dashboard.readyToStartNewSemester")}
+                    status={stats.semester.active ? t("common.active") : t("common.idle")}
                     icon={GraduationCap}
                     to="/semester-wizard"
-                    extra={stats.semester.active ? `Progress: ${stats.semester.progress}` : undefined}
+                    extra={stats.semester.active ? t("dashboard.progress", { progress: stats.semester.progress }) : undefined}
                 />
                 <FeatureCard
-                    title="Golden Image"
-                    description={stats.goldenImage.status === 'building' ? "Building new image..." : "Manage OS images"}
-                    status={stats.goldenImage.status === 'building' ? "Building" : "Ready"}
+                    title={t("common.goldenImage")}
+                    description={stats.goldenImage.status === 'building' ? t("dashboard.buildingNewImage") : t("dashboard.manageOSImages")}
+                    status={stats.goldenImage.status === 'building' ? t("common.building") : t("common.ready")}
                     icon={Disc}
                     to="/golden-image"
                     loading={stats.goldenImage.status === 'building'}

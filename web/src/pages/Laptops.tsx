@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { getRobots, sendCommand } from "../api";
 import { Robot } from "../types";
 import { Signal, Wifi, Clock, Laptop as LaptopIcon } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { zhCN } from "date-fns/locale";
 
 export function Laptops() {
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const [laptops, setLaptops] = useState<Robot[]>([]);
     const [loading, setLoading] = useState(true);
@@ -18,22 +21,22 @@ export function Laptops() {
             .finally(() => setLoading(false));
     }, []);
 
-    if (loading) return <div className="p-8 text-center text-gray-500">Loading fleet data...</div>;
-    if (error) return <div className="p-8 text-center text-red-500">Error: {error}</div>;
+    if (loading) return <div className="p-8 text-center text-gray-500">{t("laptops.loading")}</div>;
+    if (error) return <div className="p-8 text-center text-red-500">{t("common.error")}: {error}</div>;
 
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Laptops</h1>
-                    <p className="text-gray-500">Manage your development laptops</p>
+                    <h1 className="text-2xl font-bold text-gray-900">{t("laptops.title")}</h1>
+                    <p className="text-gray-500">{t("laptops.subtitle")}</p>
                 </div>
                 <div className="flex gap-3">
                     <button
                         onClick={() => navigate("/install?type=laptop")}
                         className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
                     >
-                        Add Laptop
+                        {t("laptops.addLaptop")}
                     </button>
                 </div>
             </div>
@@ -48,24 +51,28 @@ export function Laptops() {
 }
 
 function LaptopCard({ robot }: { robot: Robot }) {
+    const { t, i18n } = useTranslation();
     const navigate = useNavigate();
     const isOnline = robot.status !== "offline" && robot.status !== "unknown";
-    const lastSeen = robot.last_seen ? formatDistanceToNow(new Date(robot.last_seen), { addSuffix: true }) : "Never";
+    const lastSeen = robot.last_seen ? formatDistanceToNow(new Date(robot.last_seen), {
+        addSuffix: true,
+        locale: i18n.language.startsWith('zh') ? zhCN : undefined
+    }) : t("common.never");
 
     const handleWifiConnect = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        const ssid = prompt("Enter WiFi SSID:");
+        const ssid = prompt(t("laptops.wifiSsidPrompt"));
         if (!ssid) return;
-        const password = prompt("Enter WiFi Password (optional):");
+        const password = prompt(t("laptops.wifiPassPrompt"));
 
         try {
             await sendCommand(robot.id, {
                 type: "wifi_profile",
                 data: { ssid, password: password || "" }
             });
-            alert("WiFi connection command sent!");
+            alert(t("laptops.wifiSent"));
         } catch (err) {
-            alert("Failed to send command: " + (err instanceof Error ? err.message : String(err)));
+            alert(t("laptops.commandFailed", { error: err instanceof Error ? err.message : String(err) }));
         }
     };
 
@@ -81,7 +88,7 @@ function LaptopCard({ robot }: { robot: Robot }) {
                                     }`}
                             />
                             <span className="text-sm text-gray-500 capitalize">
-                                {robot.status || "Unknown"}
+                                {t(`common.${robot.status}`) || robot.status || t("common.unknown")}
                             </span>
                         </div>
                     </div>
@@ -93,7 +100,7 @@ function LaptopCard({ robot }: { robot: Robot }) {
                 <div className="space-y-3">
                     <div className="flex items-center justify-between text-sm">
                         <span className="text-gray-500 flex items-center gap-2">
-                            <Wifi size={16} /> IP Address
+                            <Wifi size={16} /> {t("common.ipAddress")}
                         </span>
                         <span className="font-mono text-gray-700">{robot.ip || "—"}</span>
                     </div>

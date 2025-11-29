@@ -2,8 +2,10 @@ import { Save, Loader2, Power, RefreshCw, AlertTriangle, Download, Upload, Datab
 import { useEffect, useState, useRef } from "react";
 import { getInstallDefaults, updateInstallDefaults, broadcastCommand, getSystemConfig } from "../api";
 import { InstallConfig } from "../types";
+import { useTranslation } from "react-i18next";
 
 export function Settings() {
+    const { t } = useTranslation();
     const [config, setConfig] = useState<InstallConfig>({
         address: "",
         user: "",
@@ -33,9 +35,9 @@ export function Settings() {
         setMessage(null);
         try {
             await updateInstallDefaults(config);
-            setMessage({ type: 'success', text: 'Settings saved successfully' });
+            setMessage({ type: 'success', text: t("settings.saveSuccess") });
         } catch (err) {
-            setMessage({ type: 'error', text: 'Failed to save settings' });
+            setMessage({ type: 'error', text: t("settings.saveError") });
         } finally {
             setSaving(false);
         }
@@ -50,13 +52,13 @@ export function Settings() {
             if (type === "class_over") {
                 await broadcastCommand({ type: "stop", data: {} });
                 await broadcastCommand({ type: "identify", data: {} });
-                setMessage({ type: 'success', text: `Class Over signal sent successfully` });
+                setMessage({ type: 'success', text: t("settings.classOverSent") });
             } else {
                 await broadcastCommand({ type, data: {} });
-                setMessage({ type: 'success', text: `Broadcast command '${type}' sent successfully` });
+                setMessage({ type: 'success', text: t("settings.broadcastSent", { type }) });
             }
         } catch (err) {
-            setMessage({ type: 'error', text: 'Failed to send broadcast command' });
+            setMessage({ type: 'error', text: t("settings.broadcastError") });
         } finally {
             setBroadcasting(false);
         }
@@ -70,7 +72,7 @@ export function Settings() {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        if (!confirm("WARNING: This will overwrite the current database and restart the controller. All current data will be replaced. Are you sure?")) {
+        if (!confirm(t("settings.restoreConfirm"))) {
             if (fileInputRef.current) fileInputRef.current.value = '';
             return;
         }
@@ -85,37 +87,37 @@ export function Settings() {
                 body: formData,
             });
             if (!res.ok) throw new Error("Restore failed");
-            alert("Database restored successfully. The page will now reload.");
+            alert(t("settings.restoreSuccess"));
             window.location.reload();
         } catch (err) {
-            setMessage({ type: 'error', text: 'Failed to restore database' });
+            setMessage({ type: 'error', text: t("settings.restoreError") });
         } finally {
             setSaving(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
-    if (loading) return <div className="p-8 text-gray-500">Loading settings...</div>;
+    if (loading) return <div className="p-8 text-gray-500">{t("common.loading")}</div>;
 
     return (
         <div className="max-w-2xl space-y-8">
             <div>
-                <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-                <p className="text-gray-500">Configure global fleet parameters</p>
+                <h1 className="text-2xl font-bold text-gray-900">{t("common.settings")}</h1>
+                <p className="text-gray-500">{t("settings.subtitle")}</p>
             </div>
 
             {/* Install Defaults */}
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <div className="p-6 border-b border-gray-100">
-                    <h2 className="text-lg font-semibold text-gray-900">Install Defaults</h2>
+                    <h2 className="text-lg font-semibold text-gray-900">{t("settings.installDefaults")}</h2>
                     <p className="text-sm text-gray-500 mt-1">
-                        Default credentials used when provisioning new robots via SSH.
+                        {t("settings.installDefaultsDesc")}
                     </p>
                 </div>
                 <div className="p-6 space-y-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Default SSH User
+                            {t("settings.sshUser")}
                         </label>
                         <input
                             type="text"
@@ -127,7 +129,7 @@ export function Settings() {
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Default SSH Private Key
+                            {t("settings.sshKey")}
                         </label>
                         <textarea
                             value={config.ssh_key}
@@ -136,7 +138,7 @@ export function Settings() {
                             placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..."
                         />
                         <p className="mt-1 text-xs text-gray-500">
-                            Paste the private key content directly.
+                            {t("settings.sshKeyDesc")}
                         </p>
                     </div>
                 </div>
@@ -147,7 +149,7 @@ export function Settings() {
                         className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
                     >
                         {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-                        Save Defaults
+                        {t("settings.saveDefaults")}
                     </button>
                 </div>
             </div>
@@ -157,16 +159,16 @@ export function Settings() {
                 <div className="p-6 border-b border-gray-100">
                     <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                         <Database size={20} className="text-blue-500" />
-                        Database Management
+                        {t("settings.dbManagement")}
                     </h2>
                     <p className="text-sm text-gray-500 mt-1">
-                        Backup and restore the controller database.
+                        {t("settings.dbManagementDesc")}
                     </p>
                 </div>
                 <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                     {demoMode ? (
                         <div className="col-span-2 p-4 bg-gray-50 text-gray-500 rounded-lg text-center italic border border-gray-200">
-                            Database backup and restore are disabled in demo mode.
+                            {t("settings.demoModeDisabled")}
                         </div>
                     ) : (
                         <>
@@ -175,8 +177,8 @@ export function Settings() {
                                 className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
                             >
                                 <div>
-                                    <div className="font-medium text-gray-900">Backup Database</div>
-                                    <div className="text-xs text-gray-500">Download current .db file</div>
+                                    <div className="font-medium text-gray-900">{t("settings.backup")}</div>
+                                    <div className="text-xs text-gray-500">{t("settings.backupDesc")}</div>
                                 </div>
                                 <Download size={20} className="text-gray-400" />
                             </button>
@@ -186,8 +188,8 @@ export function Settings() {
                                 className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
                             >
                                 <div>
-                                    <div className="font-medium text-gray-900">Restore Database</div>
-                                    <div className="text-xs text-gray-500">Upload .db file to replace current</div>
+                                    <div className="font-medium text-gray-900">{t("settings.restore")}</div>
+                                    <div className="text-xs text-gray-500">{t("settings.restoreDesc")}</div>
                                 </div>
                                 <Upload size={20} className="text-gray-400" />
                             </button>
@@ -208,45 +210,45 @@ export function Settings() {
                 <div className="p-6 border-b border-gray-100">
                     <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                         <AlertTriangle size={20} className="text-orange-500" />
-                        Fleet Maintenance
+                        {t("settings.fleetMaintenance")}
                     </h2>
                     <p className="text-sm text-gray-500 mt-1">
-                        Dangerous operations that affect the entire fleet. Use with caution.
+                        {t("settings.fleetMaintenanceDesc")}
                     </p>
                 </div>
                 <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                     <button
-                        onClick={() => handleBroadcast("restart_ros", "Are you sure you want to restart ROS on ALL robots?")}
+                        onClick={() => handleBroadcast("restart_ros", t("settings.restartConfirm"))}
                         disabled={broadcasting}
                         className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
                     >
                         <div>
-                            <div className="font-medium text-gray-900">Restart All ROS</div>
-                            <div className="text-xs text-gray-500">Restart ROS 2 daemon on all connected robots</div>
+                            <div className="font-medium text-gray-900">{t("settings.restartRos")}</div>
+                            <div className="text-xs text-gray-500">{t("settings.restartRosDesc")}</div>
                         </div>
                         <RefreshCw size={20} className="text-gray-400" />
                     </button>
 
                     <button
-                        onClick={() => handleBroadcast("reboot", "Are you sure you want to REBOOT ALL robots? This will interrupt all operations.")}
+                        onClick={() => handleBroadcast("reboot", t("settings.rebootConfirm"))}
                         disabled={broadcasting}
                         className="flex items-center justify-between p-4 border border-red-200 rounded-lg hover:bg-red-50 transition-colors text-left group"
                     >
                         <div>
-                            <div className="font-medium text-red-700 group-hover:text-red-800">Reboot Fleet</div>
-                            <div className="text-xs text-red-500 group-hover:text-red-600">Reboot every robot in the fleet</div>
+                            <div className="font-medium text-red-700 group-hover:text-red-800">{t("settings.rebootFleet")}</div>
+                            <div className="text-xs text-red-500 group-hover:text-red-600">{t("settings.rebootFleetDesc")}</div>
                         </div>
                         <Power size={20} className="text-red-400 group-hover:text-red-600" />
                     </button>
 
                     <button
-                        onClick={() => handleBroadcast("class_over", "Are you sure you want to STOP all robots and play the end-of-session sound?")}
+                        onClick={() => handleBroadcast("class_over", t("settings.classOverConfirm"))}
                         disabled={broadcasting}
                         className="flex items-center justify-between p-4 border border-yellow-200 rounded-lg hover:bg-yellow-50 transition-colors text-left group"
                     >
                         <div>
-                            <div className="font-medium text-yellow-700 group-hover:text-yellow-800">Class Over</div>
-                            <div className="text-xs text-yellow-600 group-hover:text-yellow-700">Stop all robots & play sound</div>
+                            <div className="font-medium text-yellow-700 group-hover:text-yellow-800">{t("settings.classOver")}</div>
+                            <div className="text-xs text-yellow-600 group-hover:text-yellow-700">{t("settings.classOverDesc")}</div>
                         </div>
                         <Bell size={20} className="text-yellow-500 group-hover:text-yellow-700" />
                     </button>

@@ -1,9 +1,10 @@
-import { LayoutDashboard, Bot, Laptop, FileCode, Settings, Menu, GraduationCap, Disc } from "lucide-react";
+import { LayoutDashboard, Bot, Laptop, FileCode, Settings, Menu, GraduationCap, Disc, Languages } from "lucide-react";
 import { useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { InterestSignup } from "./components/InterestSignup";
+import { useTranslation } from "react-i18next";
 
 function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
@@ -12,16 +13,22 @@ function cn(...inputs: ClassValue[]) {
 export function Layout() {
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const location = useLocation();
+    const { t, i18n } = useTranslation();
 
     const navItems = [
-        { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-        { icon: Bot, label: "Robots", path: "/robots" },
-        { icon: Laptop, label: "Laptops", path: "/laptops" },
-        { icon: FileCode, label: "Scenarios", path: "/scenarios" },
-        { icon: GraduationCap, label: "Semester Wizard", path: "/semester-wizard" },
-        { icon: Disc, label: "Golden Image", path: "/golden-image" },
-        { icon: Settings, label: "Settings", path: "/settings" },
+        { icon: LayoutDashboard, label: t("common.dashboard"), path: "/" },
+        { icon: Bot, label: t("common.robots"), path: "/robots" },
+        { icon: Laptop, label: t("common.laptops"), path: "/laptops" },
+        { icon: FileCode, label: t("common.scenarios"), path: "/scenarios" },
+        { icon: GraduationCap, label: t("common.semesterWizard"), path: "/semester-wizard" },
+        { icon: Disc, label: t("common.goldenImage"), path: "/golden-image" },
+        { icon: Settings, label: t("common.settings"), path: "/settings" },
     ];
+
+    const toggleLanguage = () => {
+        const newLang = i18n.language === 'en' ? 'zh' : 'en';
+        i18n.changeLanguage(newLang);
+    };
 
     return (
         <div className="flex h-screen bg-gray-50 text-gray-900 font-sans">
@@ -73,13 +80,26 @@ export function Layout() {
                             <InterestSignup compact={true} />
                         </div>
                     )}
+
+                    <button
+                        onClick={toggleLanguage}
+                        className="flex items-center w-full p-2 mb-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                        <Languages size={20} />
+                        {sidebarOpen && (
+                            <span className="ml-3 text-sm font-medium">
+                                {i18n.language === 'en' ? 'English' : '中文'}
+                            </span>
+                        )}
+                    </button>
+
                     <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
                             OP
                         </div>
                         {sidebarOpen && (
                             <div className="overflow-hidden">
-                                <p className="text-sm font-medium truncate">Operator</p>
+                                <p className="text-sm font-medium truncate">{t("common.operator")}</p>
                                 <p className="text-xs text-gray-500 truncate">admin@fleet.local</p>
                             </div>
                         )}

@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getRobots, getInstallDefaults, startSemesterBatch, getSemesterStatus } from "../api";
 import { Robot, InstallConfig, SemesterStatus } from "../types";
 import { Check, RefreshCw, GitBranch, Trash2, AlertTriangle, ArrowRight, Clock, Terminal, XCircle, Activity } from "lucide-react";
 
 export function SemesterWizard() {
+    const { t } = useTranslation();
     const [robots, setRobots] = useState<Robot[]>([]);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [loading, setLoading] = useState(true);
@@ -89,19 +91,19 @@ export function SemesterWizard() {
             setBatchStarted(true);
         } catch (err) {
             console.error("Failed to start batch", err);
-            alert("Failed to start batch operation");
+            alert(t("semesterWizard.startError"));
         } finally {
             setExecuting(false);
         }
     };
 
-    if (loading) return <div className="p-8">Loading...</div>;
+    if (loading) return <div className="p-8">{t("common.loading")}</div>;
 
     if (batchStarted && !status) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[400px]">
                 <RefreshCw className="animate-spin text-blue-600 mb-4" size={48} />
-                <h2 className="text-xl font-semibold text-gray-900">Initializing Batch Operation...</h2>
+                <h2 className="text-xl font-semibold text-gray-900">{t("semesterWizard.initializing")}</h2>
             </div>
         );
     }
@@ -114,10 +116,10 @@ export function SemesterWizard() {
                         {status.active ? <RefreshCw className="animate-spin" size={32} /> : <Check size={32} />}
                     </div>
                     <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                        {status.active ? "Batch Operation In Progress" : "Batch Operation Complete"}
+                        {status.active ? t("semesterWizard.inProgress") : t("semesterWizard.complete")}
                     </h2>
                     <p className="text-gray-500">
-                        Processed {status.completed} of {status.total} robots
+                        {t("semesterWizard.processedCount", { completed: status.completed, total: status.total })}
                     </p>
                 </div>
 
@@ -152,31 +154,29 @@ export function SemesterWizard() {
                             onClick={() => window.location.reload()}
                             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
                         >
-                            Start Another Batch
+                            {t("semesterWizard.startAnother")}
                         </button>
                     </div>
                 )}
             </div>
         );
-    }
-
-    return (
+    } return (
         <div className="max-w-4xl mx-auto space-y-8">
             <div>
-                <h1 className="text-2xl font-bold text-gray-900">Semester Start Wizard</h1>
-                <p className="text-gray-500">Prepare your fleet for a new semester by resetting logs and updating code.</p>
+                <h1 className="text-2xl font-bold text-gray-900">{t("semesterWizard.title")}</h1>
+                <p className="text-gray-500">{t("semesterWizard.subtitle")}</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 {/* Left Column: Robot Selection */}
                 <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                        <h2 className="text-lg font-semibold">1. Select Robots</h2>
+                        <h2 className="text-lg font-semibold">{t("semesterWizard.selectRobots")}</h2>
                         <button
                             onClick={toggleSelectAll}
                             className="text-sm text-blue-600 hover:underline"
                         >
-                            {selectedIds.size === robots.length ? "Deselect All" : "Select All"}
+                            {selectedIds.size === robots.length ? t("semesterWizard.deselectAll") : t("semesterWizard.selectAll")}
                         </button>
                     </div>
 
@@ -193,7 +193,7 @@ export function SemesterWizard() {
                                 <div>
                                     <div className="font-medium text-gray-900">{robot.name}</div>
                                     <div className="text-xs text-gray-500 flex gap-2">
-                                        <span>{robot.ip || "No IP"}</span>
+                                        <span>{robot.ip || t("common.unknown")}</span>
                                         {robot.tags && robot.tags.map(t => (
                                             <span key={t} className="bg-gray-100 px-1 rounded">{t}</span>
                                         ))}
@@ -203,14 +203,14 @@ export function SemesterWizard() {
                         ))}
                     </div>
                     <div className="text-sm text-gray-500">
-                        {selectedIds.size} robots selected
+                        {t("semesterWizard.robotsSelected", { count: selectedIds.size })}
                     </div>
                 </div>
 
                 {/* Right Column: Actions */}
                 <div className="space-y-6">
                     <div>
-                        <h2 className="text-lg font-semibold mb-4">2. Configure Actions</h2>
+                        <h2 className="text-lg font-semibold mb-4">{t("semesterWizard.configureActions")}</h2>
                         <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
 
                             {/* Reset Logs */}
@@ -226,9 +226,9 @@ export function SemesterWizard() {
                                 </div>
                                 <div>
                                     <div className="font-medium text-gray-900 flex items-center gap-2">
-                                        <Trash2 size={16} /> Reset Logs
+                                        <Trash2 size={16} /> {t("semesterWizard.resetLogs")}
                                     </div>
-                                    <p className="text-sm text-gray-500">Clear all application logs on the robot to start fresh.</p>
+                                    <p className="text-sm text-gray-500">{t("semesterWizard.resetLogsDesc")}</p>
                                 </div>
                             </label>
 
@@ -247,9 +247,9 @@ export function SemesterWizard() {
                                 </div>
                                 <div>
                                     <div className="font-medium text-gray-900 flex items-center gap-2">
-                                        <Activity size={16} /> Run Self Test
+                                        <Activity size={16} /> {t("semesterWizard.runSelfTest")}
                                     </div>
-                                    <p className="text-sm text-gray-500">Verify motors and camera functionality.</p>
+                                    <p className="text-sm text-gray-500">{t("semesterWizard.runSelfTestDesc")}</p>
                                 </div>
                             </label>
 
@@ -268,9 +268,9 @@ export function SemesterWizard() {
                                 </div>
                                 <div className="flex-1">
                                     <div className="font-medium text-gray-900 flex items-center gap-2">
-                                        <GitBranch size={16} /> Update Repository
+                                        <GitBranch size={16} /> {t("semesterWizard.updateRepo")}
                                     </div>
-                                    <p className="text-sm text-gray-500 mb-2">Pull the latest code from a remote git repository.</p>
+                                    <p className="text-sm text-gray-500 mb-2">{t("semesterWizard.updateRepoDesc")}</p>
                                     {doUpdateRepo && (
                                         <input
                                             type="text"
@@ -298,9 +298,9 @@ export function SemesterWizard() {
                                 </div>
                                 <div>
                                     <div className="font-medium text-gray-900 flex items-center gap-2">
-                                        <Terminal size={16} /> Reinstall Agent
+                                        <Terminal size={16} /> {t("semesterWizard.reinstallAgent")}
                                     </div>
-                                    <p className="text-sm text-gray-500">Re-run the installation script via SSH using stored credentials.</p>
+                                    <p className="text-sm text-gray-500">{t("semesterWizard.reinstallAgentDesc")}</p>
                                 </div>
                             </label>
                         </div>
@@ -316,11 +316,11 @@ export function SemesterWizard() {
                     >
                         {executing ? (
                             <>
-                                <RefreshCw className="animate-spin" size={20} /> Processing...
+                                <RefreshCw className="animate-spin" size={20} /> {t("semesterWizard.processing")}
                             </>
                         ) : (
                             <>
-                                Start Semester Reset <ArrowRight size={20} />
+                                {t("semesterWizard.startReset")} <ArrowRight size={20} />
                             </>
                         )}
                     </button>

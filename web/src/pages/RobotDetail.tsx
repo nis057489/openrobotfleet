@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { getRobot, sendCommand, updateRobotTags } from "../api";
 import { Robot } from "../types";
 import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Tag, Plus, X, Camera, Play, Lightbulb } from "lucide-react";
 import { Terminal as TerminalView } from "../components/Terminal";
 
 export function RobotDetail() {
+    const { t } = useTranslation();
     const { id } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
@@ -46,9 +48,9 @@ export function RobotDetail() {
         setMessage(null);
         try {
             await sendCommand(robot.id, { type, data });
-            setMessage({ type: 'success', text: `Command '${type}' sent successfully` });
+            setMessage({ type: 'success', text: t("robotDetail.commandSent", { type }) });
         } catch (err) {
-            setMessage({ type: 'error', text: err instanceof Error ? err.message : "Failed to send command" });
+            setMessage({ type: 'error', text: err instanceof Error ? err.message : t("robotDetail.commandFailed") });
         } finally {
             setCmdLoading(false);
         }
@@ -80,7 +82,7 @@ export function RobotDetail() {
 
     const handleTestDrive = async () => {
         if (!robot) return;
-        if (!confirm("WARNING: This will move the robot. Ensure it is on the ground and has clear space.")) return;
+        if (!confirm(t("robotDetail.testDriveWarning"))) return;
         await handleCommand("test_drive");
     };
 
@@ -127,7 +129,7 @@ export function RobotDetail() {
         }
     };
 
-    if (loading) return <div className="p-8 text-gray-500">Loading robot...</div>;
+    if (loading) return <div className="p-8 text-gray-500">{t("robots.loading")}</div>;
     if (!robot) return <div className="p-8 text-red-500">Robot not found</div>;
 
     return (
@@ -175,7 +177,7 @@ export function RobotDetail() {
                     </div>
                     <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
                         <span className={`w-2 h-2 rounded-full ${robot.status !== 'offline' ? 'bg-green-500' : 'bg-gray-300'}`} />
-                        <span className="capitalize">{robot.status || "Unknown"}</span>
+                        <span className="capitalize">{t(`common.${robot.status}`) || robot.status || t("common.unknown")}</span>
                         <span>•</span>
                         <span className="font-mono">{robot.ip}</span>
                     </div>
@@ -189,21 +191,21 @@ export function RobotDetail() {
                     className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "overview" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
                         }`}
                 >
-                    Overview & Controls
+                    {t("robotDetail.overview")}
                 </button>
                 <button
                     onClick={() => setActiveTab("logs")}
                     className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "logs" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
                         }`}
                 >
-                    Logs
+                    {t("robotDetail.logs")}
                 </button>
                 <button
                     onClick={() => setActiveTab("terminal")}
                     className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "terminal" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
                         }`}
                 >
-                    Terminal
+                    {t("robotDetail.terminal")}
                 </button>
             </div>
 
@@ -221,9 +223,9 @@ export function RobotDetail() {
                                 className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 text-left transition-colors"
                             >
                                 <div className="flex items-center gap-2 font-medium text-gray-700 mb-1">
-                                    <RefreshCw size={16} /> Restart ROS
+                                    <RefreshCw size={16} /> {t("settings.restartRos")}
                                 </div>
-                                <p className="text-xs text-gray-500">Restart the ROS 2 daemon</p>
+                                <p className="text-xs text-gray-500">{t("settings.restartRosDesc")}</p>
                             </button>
                             <button
                                 onClick={() => handleCommand("reboot")}
@@ -231,18 +233,18 @@ export function RobotDetail() {
                                 className="p-3 border border-gray-200 rounded-lg hover:bg-red-50 hover:border-red-100 text-left transition-colors group"
                             >
                                 <div className="flex items-center gap-2 font-medium text-gray-700 group-hover:text-red-700 mb-1">
-                                    <Power size={16} /> Reboot System
+                                    <Power size={16} /> {t("robotDetail.rebootSystem")}
                                 </div>
-                                <p className="text-xs text-gray-500 group-hover:text-red-600">Reboot the robot computer</p>
+                                <p className="text-xs text-gray-500 group-hover:text-red-600">{t("robotDetail.rebootSystemDesc")}</p>
                             </button>
                             <button
                                 onClick={() => navigate("/install", { state: { ip: robot.ip, name: robot.name } })}
                                 className="p-3 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-100 text-left transition-colors group col-span-2"
                             >
                                 <div className="flex items-center gap-2 font-medium text-gray-700 group-hover:text-blue-700 mb-1">
-                                    <Terminal size={16} /> Reinstall Agent
+                                    <Terminal size={16} /> {t("robotDetail.reinstallAgent")}
                                 </div>
-                                <p className="text-xs text-gray-500 group-hover:text-blue-600">Re-run the installation script via SSH</p>
+                                <p className="text-xs text-gray-500 group-hover:text-blue-600">{t("robotDetail.reinstallAgentDesc")}</p>
                             </button>
                             <button
                                 onClick={() => handleCommand("identify")}
@@ -250,9 +252,9 @@ export function RobotDetail() {
                                 className="p-3 border border-gray-200 rounded-lg hover:bg-yellow-50 hover:border-yellow-100 text-left transition-colors group"
                             >
                                 <div className="flex items-center gap-2 font-medium text-gray-700 group-hover:text-yellow-700 mb-1">
-                                    <Lightbulb size={16} /> Identify Me
+                                    <Lightbulb size={16} /> {t("robotDetail.identifyMe")}
                                 </div>
-                                <p className="text-xs text-gray-500 group-hover:text-yellow-600">Beep and flash LEDs</p>
+                                <p className="text-xs text-gray-500 group-hover:text-yellow-600">{t("robotDetail.identifyMeDesc")}</p>
                             </button>
                         </div>
                     </div>
@@ -260,11 +262,11 @@ export function RobotDetail() {
                     {/* Update Repo */}
                     <div className="bg-white rounded-xl border border-gray-200 p-6">
                         <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                            <GitBranch size={18} /> Update Repository
+                            <GitBranch size={18} /> {t("semesterWizard.updateRepo")}
                         </h3>
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Repo URL</label>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">{t("semesterWizard.repoUrl")}</label>
                                 <input
                                     value={repoUrl}
                                     onChange={(e) => setRepoUrl(e.target.value)}
@@ -274,7 +276,7 @@ export function RobotDetail() {
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-xs font-medium text-gray-700 mb-1">Branch</label>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">{t("robotDetail.branch")}</label>
                                     <input
                                         value={branch}
                                         onChange={(e) => setBranch(e.target.value)}
@@ -283,7 +285,7 @@ export function RobotDetail() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium text-gray-700 mb-1">Path</label>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">{t("robotDetail.path")}</label>
                                     <input
                                         value={path}
                                         onChange={(e) => setPath(e.target.value)}
@@ -297,7 +299,7 @@ export function RobotDetail() {
                                 disabled={cmdLoading}
                                 className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
                             >
-                                <Save size={16} /> Update Code
+                                <Save size={16} /> {t("robotDetail.updateCode")}
                             </button>
                         </div>
                     </div>
@@ -305,7 +307,7 @@ export function RobotDetail() {
                     {/* Test Drive & Snapshot */}
                     <div className="bg-white rounded-xl border border-gray-200 p-6">
                         <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                            <Lightbulb size={18} /> Test Drive & Snapshot
+                            <Lightbulb size={18} /> {t("robotDetail.testDriveSnapshot")}
                         </h3>
                         <div className="grid grid-cols-1 gap-4">
                             <button
@@ -313,14 +315,14 @@ export function RobotDetail() {
                                 disabled={cmdLoading}
                                 className="w-full bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
                             >
-                                <Play size={16} /> Start Test Drive
+                                <Play size={16} /> {t("robotDetail.startTestDrive")}
                             </button>
                             <button
                                 onClick={handleCaptureImage}
                                 disabled={cmdLoading}
                                 className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
                             >
-                                <Camera size={16} /> Capture Image
+                                <Camera size={16} /> {t("robotDetail.captureImage")}
                             </button>
                         </div>
                     </div>
@@ -330,22 +332,21 @@ export function RobotDetail() {
                         <div className="p-6 border-b border-gray-100">
                             <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                                 <Activity size={20} className="text-blue-500" />
-                                Hardware Self-Test
+                                {t("robotDetail.hardwareSelfTest")}
                             </h2>
                             <p className="text-sm text-gray-500 mt-1">
-                                Verify robot subsystems are functioning correctly.
+                                {t("robotDetail.hardwareSelfTestDesc")}
                             </p>
                         </div>
                         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
                             {/* Motor Test */}
                             <div className="space-y-4">
                                 <div className="flex items-center justify-between">
-                                    <h3 className="font-medium text-gray-900">Motor Test</h3>
-                                    <span className="text-xs text-gray-500">Wiggle Test</span>
+                                    <h3 className="font-medium text-gray-900">{t("robotDetail.motorTest")}</h3>
+                                    <span className="text-xs text-gray-500">{t("robotDetail.wiggleTest")}</span>
                                 </div>
                                 <p className="text-sm text-gray-500">
-                                    Robot will briefly rotate left and right to verify motor control.
-                                    Ensure the robot is on the ground.
+                                    {t("robotDetail.motorTestDesc")}
                                 </p>
                                 <button
                                     onClick={handleTestDrive}
@@ -353,18 +354,18 @@ export function RobotDetail() {
                                     className="w-full flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-900 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
                                 >
                                     {cmdLoading ? <RefreshCw className="animate-spin" size={18} /> : <Play size={18} />}
-                                    Test Motors
+                                    {t("robotDetail.testMotors")}
                                 </button>
                             </div>
 
                             {/* Camera Test */}
                             <div className="space-y-4">
                                 <div className="flex items-center justify-between">
-                                    <h3 className="font-medium text-gray-900">Camera Test</h3>
-                                    <span className="text-xs text-gray-500">Snapshot</span>
+                                    <h3 className="font-medium text-gray-900">{t("robotDetail.cameraTest")}</h3>
+                                    <span className="text-xs text-gray-500">{t("robotDetail.snapshot")}</span>
                                 </div>
                                 <p className="text-sm text-gray-500">
-                                    Capture a single frame from the main camera to verify video feed.
+                                    {t("robotDetail.cameraTestDesc")}
                                 </p>
                                 <button
                                     onClick={handleCaptureImage}
@@ -372,7 +373,7 @@ export function RobotDetail() {
                                     className="w-full flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-900 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
                                 >
                                     {cmdLoading ? <RefreshCw className="animate-spin" size={18} /> : <Camera size={18} />}
-                                    Test Camera
+                                    {t("robotDetail.testCamera")}
                                 </button>
                                 {snapshotUrl && (
                                     <div className="mt-4 rounded-lg overflow-hidden border border-gray-200">
@@ -391,7 +392,7 @@ export function RobotDetail() {
 
                     {snapshotUrl && (
                         <div className="col-span-full">
-                            <h4 className="font-semibold text-gray-900 mb-2">Snapshot</h4>
+                            <h4 className="font-semibold text-gray-900 mb-2">{t("robotDetail.snapshot")}</h4>
                             <div className="relative w-full h-0" style={{ paddingTop: "56.25%" }}>
                                 <img
                                     src={snapshotUrl}
@@ -408,10 +409,9 @@ export function RobotDetail() {
                         <Terminal size={16} />
                         <span>/var/log/syslog</span>
                     </div>
-                    <p>Logs are not yet implemented in the backend.</p>
+                    <p>{t("robotDetail.logsNotImplemented")}</p>
                     <p className="text-gray-600 mt-2">
-                        To view logs, you would typically need a log aggregation service or an API endpoint
-                        that streams logs from the agent via MQTT or HTTP.
+                        {t("robotDetail.logsHelp")}
                     </p>
                 </div>
             ) : (

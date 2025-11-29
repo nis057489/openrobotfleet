@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { buildGoldenImage, getBuildStatus, getGoldenImageConfig, saveGoldenImageConfig } from "../api";
 import { GoldenImageConfig } from "../types";
 import { Save, Download, Wifi, Server, Radio, Hash, Loader2, HardDrive, ChevronDown, ChevronRight } from "lucide-react";
 
 export function GoldenImage() {
+    const { t } = useTranslation();
     const [config, setConfig] = useState<GoldenImageConfig>({
         wifi_ssid: "",
         wifi_password: "",
@@ -81,9 +83,9 @@ export function GoldenImage() {
         setMessage(null);
         try {
             await saveGoldenImageConfig(config);
-            setMessage({ type: 'success', text: "Configuration saved successfully" });
+            setMessage({ type: 'success', text: t("goldenImage.saveSuccess") });
         } catch (err) {
-            setMessage({ type: 'error', text: err instanceof Error ? err.message : "Failed to save configuration" });
+            setMessage({ type: 'error', text: err instanceof Error ? err.message : t("goldenImage.saveError") });
         } finally {
             setSaving(false);
         }
@@ -105,24 +107,24 @@ export function GoldenImage() {
             setBuildError(null);
         } catch (err) {
             setSaving(false);
-            setMessage({ type: 'error', text: "Failed to start build" });
+            setMessage({ type: 'error', text: t("goldenImage.startBuildFailed") });
         }
     };
 
-    if (loading) return <div className="p-8">Loading...</div>;
+    if (loading) return <div className="p-8">{t("common.loading")}</div>;
 
     return (
         <div className="max-w-3xl mx-auto">
             <div className="mb-8">
-                <h1 className="text-2xl font-bold text-gray-900">Golden Image Generator</h1>
-                <p className="text-gray-500">Create a custom Raspberry Pi image to automatically provision new robots.</p>
+                <h1 className="text-2xl font-bold text-gray-900">{t("goldenImage.title")}</h1>
+                <p className="text-gray-500">{t("goldenImage.title")}</p>
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <div className="p-6 border-b border-gray-100 bg-gray-50">
-                    <h3 className="font-semibold text-gray-900">Configuration</h3>
+                    <h3 className="font-semibold text-gray-900">{t("goldenImage.title")}</h3>
                     <p className="text-sm text-gray-500">
-                        These settings will be baked into the <code>user-data</code> file.
+                        {t("goldenImage.step1")}
                     </p>
                 </div>
 
@@ -137,11 +139,11 @@ export function GoldenImage() {
                         {/* Robot & ROS */}
                         <div className="col-span-2">
                             <h4 className="text-sm font-medium text-gray-900 mb-4 flex items-center gap-2">
-                                <Radio size={16} /> Target Hardware
+                                <Radio size={16} /> {t("goldenImage.targetHardware")}
                             </h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-xs font-medium text-gray-700 mb-1">Robot Model</label>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">{t("goldenImage.robotModel")}</label>
                                     <select
                                         value={config.robot_model || "TB3"}
                                         onChange={e => setConfig({ ...config, robot_model: e.target.value })}
@@ -152,7 +154,7 @@ export function GoldenImage() {
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium text-gray-700 mb-1">ROS Version</label>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">{t("goldenImage.rosVersion")}</label>
                                     <select
                                         value={config.ros_version || "Humble"}
                                         onChange={e => setConfig({ ...config, ros_version: e.target.value })}
@@ -168,11 +170,11 @@ export function GoldenImage() {
                         {/* WiFi */}
                         <div className="col-span-2">
                             <h4 className="text-sm font-medium text-gray-900 mb-4 flex items-center gap-2">
-                                <Wifi size={16} /> Network Settings
+                                <Wifi size={16} /> {t("goldenImage.networkSettings")}
                             </h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-xs font-medium text-gray-700 mb-1">WiFi SSID</label>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">{t("goldenImage.wifiSsid")}</label>
                                     <input
                                         required
                                         type="text"
@@ -183,7 +185,7 @@ export function GoldenImage() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium text-gray-700 mb-1">WiFi Password</label>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">{t("goldenImage.wifiPassword")}</label>
                                     <input
                                         required
                                         type="password"
@@ -199,10 +201,10 @@ export function GoldenImage() {
                         {/* Controller */}
                         <div className="col-span-2">
                             <h4 className="text-sm font-medium text-gray-900 mb-4 flex items-center gap-2">
-                                <Server size={16} /> Controller Connection
+                                <Server size={16} /> {t("goldenImage.controllerConnection")}
                             </h4>
                             <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Controller URL</label>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">{t("goldenImage.controllerUrl")}</label>
                                 <input
                                     required
                                     type="text"
@@ -211,10 +213,10 @@ export function GoldenImage() {
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                                     placeholder="http://192.168.1.100:8080"
                                 />
-                                <p className="text-xs text-gray-500 mt-1">The URL where robots can reach this controller.</p>
+                                <p className="text-xs text-gray-500 mt-1">{t("goldenImage.controllerUrlHelp")}</p>
                             </div>
                             <div className="mt-4">
-                                <label className="block text-xs font-medium text-gray-700 mb-1">MQTT Broker</label>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">{t("goldenImage.mqttBroker")}</label>
                                 <input
                                     required
                                     type="text"
@@ -223,18 +225,18 @@ export function GoldenImage() {
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                                     placeholder="tcp://192.168.1.100:1883"
                                 />
-                                <p className="text-xs text-gray-500 mt-1">The MQTT broker address.</p>
+                                <p className="text-xs text-gray-500 mt-1">{t("goldenImage.mqttBrokerHelp")}</p>
                             </div>
                         </div>
 
                         {/* Robot Settings */}
                         <div className="col-span-2">
                             <h4 className="text-sm font-medium text-gray-900 mb-4 flex items-center gap-2">
-                                <Radio size={16} /> Robot Configuration
+                                <Radio size={16} /> {t("goldenImage.robotConfig")}
                             </h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-xs font-medium text-gray-700 mb-1">LDS Model</label>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">{t("goldenImage.ldsModel")}</label>
                                     <select
                                         value={config.lds_model}
                                         onChange={e => setConfig({ ...config, lds_model: e.target.value })}
@@ -246,7 +248,7 @@ export function GoldenImage() {
                                 </div>
                                 <div>
                                     <label className="block text-xs font-medium text-gray-700 mb-1 flex items-center gap-1">
-                                        ROS Domain ID <Hash size={12} />
+                                        {t("goldenImage.rosDomainId")} <Hash size={12} />
                                     </label>
                                     <input
                                         required
@@ -264,7 +266,7 @@ export function GoldenImage() {
                         {buildStatus === "building" ? (
                             <div className="space-y-2">
                                 <div className="flex justify-between text-sm text-gray-600">
-                                    <span>{buildStep || "Building..."}</span>
+                                    <span>{buildStep || t("goldenImage.building")}</span>
                                     <span>{buildProgress}%</span>
                                 </div>
                                 <div className="w-full bg-gray-200 rounded-full h-2.5">
@@ -285,7 +287,7 @@ export function GoldenImage() {
                                     className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
                                 >
                                     <Save size={18} />
-                                    {saving ? "Saving..." : "Save Configuration"}
+                                    {saving ? t("goldenImage.saving") : t("goldenImage.saveConfig")}
                                 </button>
 
                                 <button
@@ -294,7 +296,7 @@ export function GoldenImage() {
                                     className="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
                                 >
                                     <HardDrive size={18} />
-                                    Build Disk Image
+                                    {t("goldenImage.buildImage")}
                                 </button>
 
                                 <button
@@ -303,7 +305,7 @@ export function GoldenImage() {
                                     className="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center gap-2 border border-gray-300"
                                 >
                                     <Download size={18} />
-                                    Download user-data
+                                    {t("goldenImage.downloadImage")}
                                 </button>
                             </div>
                         )}
@@ -317,7 +319,7 @@ export function GoldenImage() {
                                 onClick={() => setShowLogs(!showLogs)}
                                 className="w-full flex items-center justify-between px-4 py-2 bg-gray-50 text-xs font-medium text-gray-700 hover:bg-gray-100"
                             >
-                                <span>Build Logs</span>
+                                <span>{t("goldenImage.buildLogs")}</span>
                                 {showLogs ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                             </button>
                             {showLogs && (
@@ -343,14 +345,14 @@ export function GoldenImage() {
             </div>
 
             <div className="mt-8 bg-blue-50 border border-blue-100 rounded-xl p-6">
-                <h3 className="font-semibold text-blue-900 mb-2">How to use</h3>
+                <h3 className="font-semibold text-blue-900 mb-2">{t("goldenImage.howToUse")}</h3>
                 <ol className="list-decimal list-inside space-y-2 text-sm text-blue-800">
-                    <li>Configure your WiFi and Controller settings above.</li>
-                    <li>Click <strong>Build Disk Image</strong> and wait for the process to complete (approx. 20-30 mins).</li>
-                    <li>Download the generated image file.</li>
-                    <li>Flash the image to an SD card using <strong>Raspberry Pi Imager</strong> (use "Custom" image).</li>
-                    <li>Insert the SD card into the robot and power it on.</li>
-                    <li>The robot will automatically connect to WiFi, start the agent, and appear in the dashboard.</li>
+                    <li>{t("goldenImage.step1")}</li>
+                    <li>{t("goldenImage.step2")}</li>
+                    <li>{t("goldenImage.step3")}</li>
+                    <li>{t("goldenImage.step4")}</li>
+                    <li>{t("goldenImage.step5")}</li>
+                    <li>{t("goldenImage.step6")}</li>
                 </ol>
             </div>
         </div>
