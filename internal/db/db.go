@@ -66,6 +66,8 @@ type GoldenImageConfig struct {
 	MQTTBroker    string `json:"mqtt_broker"`
 	LDSModel      string `json:"lds_model"`
 	ROSDomainID   int    `json:"ros_domain_id"`
+	RobotModel    string `json:"robot_model"` // "TB3" or "TB4"
+	ROSVersion    string `json:"ros_version"` // "Humble" or "Jazzy"
 }
 
 const (

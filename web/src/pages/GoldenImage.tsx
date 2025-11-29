@@ -10,7 +10,9 @@ export function GoldenImage() {
         controller_url: window.location.origin,
         mqtt_broker: "tcp://" + window.location.hostname + ":1883",
         lds_model: "LDS-02",
-        ros_domain_id: 30
+        ros_domain_id: 30,
+        robot_model: "TB3",
+        ros_version: "Humble"
     });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -20,13 +22,19 @@ export function GoldenImage() {
     const [buildProgress, setBuildProgress] = useState<number>(0);
     const [buildStep, setBuildStep] = useState<string>("");
     const [buildLogs, setBuildLogs] = useState<string[]>([]);
+    const [buildImageName, setBuildImageName] = useState<string | null>(null);
     const [showLogs, setShowLogs] = useState(false);
 
     useEffect(() => {
         getGoldenImageConfig()
             .then(data => {
                 if (data.config) {
-                    setConfig(data.config);
+                    // Ensure defaults are set if missing from DB
+                    setConfig({
+                        ...data.config,
+                        robot_model: data.config.robot_model || "TB3",
+                        ros_version: data.config.ros_version || "Humble"
+                    });
                 }
             })
             .catch(console.error)
@@ -39,6 +47,7 @@ export function GoldenImage() {
             if (status.progress) setBuildProgress(status.progress);
             if (status.step) setBuildStep(status.step);
             if (status.logs) setBuildLogs(status.logs);
+            if (status.image_name) setBuildImageName(status.image_name);
         }).catch(console.error);
     }, []);
 
@@ -53,6 +62,7 @@ export function GoldenImage() {
                     if (status.progress) setBuildProgress(status.progress);
                     if (status.step) setBuildStep(status.step);
                     if (status.logs) setBuildLogs(status.logs);
+                    if (status.image_name) setBuildImageName(status.image_name);
 
                     if (status.status === "success" || status.status === "error") {
                         clearInterval(interval);
@@ -85,10 +95,16 @@ export function GoldenImage() {
 
     const handleBuild = async () => {
         try {
+            // Save configuration before building to ensure backend has latest settings
+            setSaving(true);
+            await saveGoldenImageConfig(config);
+            setSaving(false);
+
             await buildGoldenImage();
             setBuildStatus("building");
             setBuildError(null);
         } catch (err) {
+            setSaving(false);
             setMessage({ type: 'error', text: "Failed to start build" });
         }
     };
@@ -118,6 +134,37 @@ export function GoldenImage() {
                     )}
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Robot & ROS */}
+                        <div className="col-span-2">
+                            <h4 className="text-sm font-medium text-gray-900 mb-4 flex items-center gap-2">
+                                <Radio size={16} /> Target Hardware
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">Robot Model</label>
+                                    <select
+                                        value={config.robot_model || "TB3"}
+                                        onChange={e => setConfig({ ...config, robot_model: e.target.value })}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    >
+                                        <option value="TB3">Turtlebot 3</option>
+                                        <option value="TB4">Turtlebot 4</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">ROS Version</label>
+                                    <select
+                                        value={config.ros_version || "Humble"}
+                                        onChange={e => setConfig({ ...config, ros_version: e.target.value })}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    >
+                                        <option value="Humble">Humble (Ubuntu 22.04)</option>
+                                        <option value="Jazzy">Jazzy (Ubuntu 24.04)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
                         {/* WiFi */}
                         <div className="col-span-2">
                             <h4 className="text-sm font-medium text-gray-900 mb-4 flex items-center gap-2">
@@ -283,8 +330,8 @@ export function GoldenImage() {
 
                     {buildStatus === "success" && (
                         <div className="mt-4 p-4 bg-green-50 text-green-700 rounded-lg text-sm flex items-center justify-between">
-                            <span>Image built successfully!</span>
-                            <a href="/images/turtlebot-golden.img" className="underline font-bold">Download Image</a>
+                            <span>Image built successfully! {buildImageName && <strong>{buildImageName}</strong>}</span>
+                            <a href={`/images/${buildImageName || 'turtlebot-golden.img'}`} className="underline font-bold">Download Image</a>
                         </div>
                     )}
                     {buildStatus === "error" && (
@@ -300,7 +347,7 @@ export function GoldenImage() {
                 <ol className="list-decimal list-inside space-y-2 text-sm text-blue-800">
                     <li>Configure your WiFi and Controller settings above.</li>
                     <li>Click <strong>Build Disk Image</strong> and wait for the process to complete (approx. 20-30 mins).</li>
-                    <li>Download the generated <code>turtlebot-golden.img</code> file.</li>
+                    <li>Download the generated image file.</li>
                     <li>Flash the image to an SD card using <strong>Raspberry Pi Imager</strong> (use "Custom" image).</li>
                     <li>Insert the SD card into the robot and power it on.</li>
                     <li>The robot will automatically connect to WiFi, start the agent, and appear in the dashboard.</li>
