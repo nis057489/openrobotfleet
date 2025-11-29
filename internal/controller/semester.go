@@ -198,7 +198,11 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 				if err := sshc.InstallAgent(host, cfg, binary); err != nil {
 					log.Printf("semester: failed to install agent on %s: %v", robot.Name, err)
 					batchStatus.Lock()
-					batchStatus.Errors[id] = fmt.Sprintf("install failed: %v", err)
+					msg := fmt.Sprintf("install failed: %v", err)
+					if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "no route to host") || strings.Contains(err.Error(), "i/o timeout") {
+						msg = "Connection failed. Check connection or restart robot."
+					}
+					batchStatus.Errors[id] = msg
 					batchStatus.Robots[id] = "error"
 					batchStatus.Completed++
 					batchStatus.Unlock()

@@ -85,7 +85,11 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := sshc.InstallAgent(host, cfg, binary); err != nil {
 		log.Printf("install agent: ssh failure: %v", err)
-		respondError(w, http.StatusInternalServerError, "failed to install agent")
+		msg := "failed to install agent"
+		if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "no route to host") || strings.Contains(err.Error(), "i/o timeout") {
+			msg = "Connection failed. Please check the connection or restart the robot."
+		}
+		respondError(w, http.StatusInternalServerError, msg)
 		return
 	}
 	robotIP := req.Address

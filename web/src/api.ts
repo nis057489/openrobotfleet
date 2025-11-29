@@ -16,10 +16,17 @@ const JSON_HEADERS = {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(
-      `Request failed ${response.status} ${response.statusText}: ${message}`,
-    );
+    const text = await response.text();
+    let message = text;
+    try {
+      const json = JSON.parse(text);
+      if (json.error) {
+        message = json.error;
+      }
+    } catch (e) {
+      // ignore
+    }
+    throw new Error(message);
   }
   if (response.status === 204) {
     return undefined as T;
