@@ -137,19 +137,45 @@ func HandleStop(cfg Config) error {
 	return nil
 }
 
-// HandleIdentify plays a sound.
+// HandleIdentify makes the robot beep and flash LEDs to identify itself.
 func HandleIdentify() error {
-	// Try aplay first
-	cmd := exec.Command("aplay", "/usr/share/sounds/alsa/Front_Center.wav")
-	if err := cmd.Run(); err != nil {
-		// Fallback to beep or just log
-		log.Printf("[agent] aplay failed, trying beep")
-		// beep might not be installed, but let's try
-		cmd = exec.Command("beep")
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("identify failed (no audio output found)")
-		}
+	log.Println("[agent] identifying robot...")
+
+	// 1. Beep
+	// Create 3 uses /cmd_audio (irobot_create_msgs/msg/AudioNoteVector)
+	// We'll try a simple beep sequence.
+	// Note: This requires the irobot_create_msgs package to be installed/sourced.
+	// If not available, this might fail, but we'll log it.
+	// Sequence: 2 beeps
+	beepCmd := exec.Command("ros2", "topic", "pub", "--once", "/cmd_audio", "irobot_create_msgs/msg/AudioNoteVector",
+		`{append: false, notes: [{frequency: 880, max_runtime: {sec: 0, nanosec: 500000000}}, {frequency: 0, max_runtime: {sec: 0, nanosec: 100000000}}, {frequency: 880, max_runtime: {sec: 0, nanosec: 500000000}}]}`)
+	if out, err := beepCmd.CombinedOutput(); err != nil {
+		log.Printf("[agent] failed to beep: %v: %s", err, string(out))
 	}
+
+	// 2. Flash LEDs
+	// Create 3 uses /cmd_lightring (irobot_create_msgs/msg/LightringLeds)
+	// We'll flash red a few times.
+	// We need to run this in a loop or send a sequence if possible.
+	// Since 'ros2 topic pub' blocks if we don't use --once, we'll just send a "red" command, wait, then "off".
+
+	// Red
+	ledRed := exec.Command("ros2", "topic", "pub", "--once", "/cmd_lightring", "irobot_create_msgs/msg/LightringLeds",
+		`{override_system: true, leds: [{red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}]}`)
+	if out, err := ledRed.CombinedOutput(); err != nil {
+		log.Printf("[agent] failed to set LEDs red: %v: %s", err, string(out))
+	}
+
+	time.Sleep(1 * time.Second)
+
+	// Off (or return to system control)
+	// To return to system control, we can set override_system to false.
+	ledOff := exec.Command("ros2", "topic", "pub", "--once", "/cmd_lightring", "irobot_create_msgs/msg/LightringLeds",
+		`{override_system: false, leds: []}`)
+	if out, err := ledOff.CombinedOutput(); err != nil {
+		log.Printf("[agent] failed to reset LEDs: %v: %s", err, string(out))
+	}
+
 	return nil
 }
 

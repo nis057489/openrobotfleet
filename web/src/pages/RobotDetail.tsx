@@ -244,6 +244,16 @@ export function RobotDetail() {
                                 </div>
                                 <p className="text-xs text-gray-500 group-hover:text-blue-600">Re-run the installation script via SSH</p>
                             </button>
+                            <button
+                                onClick={() => handleCommand("identify")}
+                                disabled={cmdLoading}
+                                className="p-3 border border-gray-200 rounded-lg hover:bg-yellow-50 hover:border-yellow-100 text-left transition-colors group"
+                            >
+                                <div className="flex items-center gap-2 font-medium text-gray-700 group-hover:text-yellow-700 mb-1">
+                                    <Lightbulb size={16} /> Identify Me
+                                </div>
+                                <p className="text-xs text-gray-500 group-hover:text-yellow-600">Beep and flash LEDs</p>
+                            </button>
                         </div>
                     </div>
 
