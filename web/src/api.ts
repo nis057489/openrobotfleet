@@ -234,3 +234,11 @@ export function buildGoldenImage(): Promise<{ status: string }> {
 export function getBuildStatus(): Promise<{ status: string; error?: string; progress?: number; step?: string; logs?: string[]; image_name?: string }> {
   return request('/api/golden-image/status');
 }
+
+export interface SystemConfig {
+  demo_mode: boolean;
+}
+
+export function getSystemConfig(): Promise<SystemConfig> {
+  return request<SystemConfig>('/api/settings/system');
+}

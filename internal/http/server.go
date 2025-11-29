@@ -48,6 +48,7 @@ func (s *Server) routes() http.Handler {
 	// Protected routes
 	mux.HandleFunc("/api/install-agent", s.handleInstallAgent)
 	mux.HandleFunc("/api/settings/install-defaults", s.handleInstallDefaults)
+	mux.HandleFunc("/api/settings/system", s.handleSystemConfig)
 	mux.HandleFunc("/api/robots", s.handleListRobots)
 	mux.HandleFunc("/api/robots/command/broadcast", s.handleRobotCommandBroadcast)
 	mux.HandleFunc("/api/robots/", s.handleRobotSubroutes)
@@ -349,6 +350,10 @@ func (s *Server) handleBackupDB(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
+	if os.Getenv("DEMO_MODE") == "true" {
+		respondError(w, http.StatusForbidden, "backup disabled in demo mode")
+		return
+	}
 	w.Header().Set("Content-Disposition", "attachment; filename=controller.db")
 	http.ServeFile(w, r, s.DB.Path)
 }
@@ -356,6 +361,10 @@ func (s *Server) handleBackupDB(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRestoreDB(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
+		return
+	}
+	if os.Getenv("DEMO_MODE") == "true" {
+		respondError(w, http.StatusForbidden, "restore disabled in demo mode")
 		return
 	}
 
@@ -583,4 +592,16 @@ func (s *Server) handleGoldenImageStatus(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	s.Controller.GetBuildStatus(w, r)
+}
+
+func (s *Server) handleSystemConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	demoMode := os.Getenv("DEMO_MODE") == "true"
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"demo_mode": demoMode,
+	})
 }

@@ -1,6 +1,6 @@
 import { Save, Loader2, Power, RefreshCw, AlertTriangle, Download, Upload, Database, Bell } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
-import { getInstallDefaults, updateInstallDefaults, broadcastCommand } from "../api";
+import { getInstallDefaults, updateInstallDefaults, broadcastCommand, getSystemConfig } from "../api";
 import { InstallConfig } from "../types";
 
 export function Settings() {
@@ -9,6 +9,7 @@ export function Settings() {
         user: "",
         ssh_key: "",
     });
+    const [demoMode, setDemoMode] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [broadcasting, setBroadcasting] = useState(false);
@@ -16,11 +17,12 @@ export function Settings() {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        getInstallDefaults()
-            .then((data) => {
+        Promise.all([getInstallDefaults(), getSystemConfig()])
+            .then(([data, sysConfig]) => {
                 if (data.install_config) {
                     setConfig(data.install_config);
                 }
+                setDemoMode(sysConfig.demo_mode);
             })
             .catch((err) => console.error(err))
             .finally(() => setLoading(false));
@@ -162,34 +164,42 @@ export function Settings() {
                     </p>
                 </div>
                 <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <button
-                        onClick={handleBackup}
-                        className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
-                    >
-                        <div>
-                            <div className="font-medium text-gray-900">Backup Database</div>
-                            <div className="text-xs text-gray-500">Download current .db file</div>
+                    {demoMode ? (
+                        <div className="col-span-2 p-4 bg-gray-50 text-gray-500 rounded-lg text-center italic border border-gray-200">
+                            Database backup and restore are disabled in demo mode.
                         </div>
-                        <Download size={20} className="text-gray-400" />
-                    </button>
+                    ) : (
+                        <>
+                            <button
+                                onClick={handleBackup}
+                                className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                            >
+                                <div>
+                                    <div className="font-medium text-gray-900">Backup Database</div>
+                                    <div className="text-xs text-gray-500">Download current .db file</div>
+                                </div>
+                                <Download size={20} className="text-gray-400" />
+                            </button>
 
-                    <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
-                    >
-                        <div>
-                            <div className="font-medium text-gray-900">Restore Database</div>
-                            <div className="text-xs text-gray-500">Upload .db file to replace current</div>
-                        </div>
-                        <Upload size={20} className="text-gray-400" />
-                    </button>
-                    <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleRestore}
-                        className="hidden"
-                        accept=".db"
-                    />
+                            <button
+                                onClick={() => fileInputRef.current?.click()}
+                                className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                            >
+                                <div>
+                                    <div className="font-medium text-gray-900">Restore Database</div>
+                                    <div className="text-xs text-gray-500">Upload .db file to replace current</div>
+                                </div>
+                                <Upload size={20} className="text-gray-400" />
+                            </button>
+                            <input
+                                type="file"
+                                ref={fileInputRef}
+                                onChange={handleRestore}
+                                className="hidden"
+                                accept=".db"
+                            />
+                        </>
+                    )}
                 </div>
             </div>
 
