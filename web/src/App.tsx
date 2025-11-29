@@ -10,6 +10,7 @@ import { InstallAgent } from "./pages/InstallAgent";
 import { ScenarioEditor } from "./pages/ScenarioEditor";
 import { Discovery } from "./pages/Discovery";
 import { SemesterWizard } from "./pages/SemesterWizard";
+import { GoldenImage } from "./pages/GoldenImage";
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="scenarios/new" element={<ScenarioEditor />} />
           <Route path="scenarios/:id" element={<ScenarioEditor />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="golden-image" element={<GoldenImage />} />
         </Route>
       </Routes>
     </BrowserRouter>

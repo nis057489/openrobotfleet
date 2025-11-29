@@ -7,6 +7,7 @@ import {
   InstallConfig,
   InstallDefaultsResponse,
   DiscoveryCandidate,
+  GoldenImageConfig,
 } from './types';
 
 const JSON_HEADERS = {
@@ -205,4 +206,27 @@ export interface SemesterStatus {
 
 export function getSemesterStatus(): Promise<SemesterStatus> {
   return request<SemesterStatus>('/api/semester/status');
+}
+
+export function getGoldenImageConfig(): Promise<{ config: GoldenImageConfig }> {
+  return request<{ config: GoldenImageConfig }>('/api/golden-image');
+}
+
+export function saveGoldenImageConfig(config: GoldenImageConfig): Promise<{ config: GoldenImageConfig }> {
+  return request<{ config: GoldenImageConfig }>('/api/golden-image', {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(config),
+  });
+}
+
+export function buildGoldenImage(): Promise<{ status: string }> {
+  return request<{ status: string }>('/api/golden-image/build', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+  });
+}
+
+export function getBuildStatus(): Promise<{ status: string; error?: string; progress?: number; step?: string; logs?: string[] }> {
+  return request('/api/golden-image/status');
 }

@@ -59,7 +59,19 @@ type Job struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-const defaultInstallConfigKey = "default_install_config"
+type GoldenImageConfig struct {
+	WifiSSID      string `json:"wifi_ssid"`
+	WifiPassword  string `json:"wifi_password"`
+	ControllerURL string `json:"controller_url"`
+	MQTTBroker    string `json:"mqtt_broker"`
+	LDSModel      string `json:"lds_model"`
+	ROSDomainID   int    `json:"ros_domain_id"`
+}
+
+const (
+	defaultInstallConfigKey = "default_install_config"
+	goldenImageConfigKey    = "golden_image_config"
+)
 
 func Open(path string) (*DB, error) {
 	db, err := sql.Open("sqlite", path)
@@ -436,6 +448,35 @@ func (d *DB) SaveDefaultInstallConfig(ctx context.Context, cfg InstallConfig) er
 	}
 	_, err = d.SQL.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?, ?)
 ON CONFLICT(key) DO UPDATE SET value = excluded.value`, defaultInstallConfigKey, string(data))
+	return err
+}
+
+func (d *DB) GetGoldenImageConfig(ctx context.Context) (*GoldenImageConfig, error) {
+	var val sql.NullString
+	err := d.SQL.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, goldenImageConfigKey).Scan(&val)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if !val.Valid || val.String == "" {
+		return nil, nil
+	}
+	var cfg GoldenImageConfig
+	if err := json.Unmarshal([]byte(val.String), &cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+func (d *DB) SaveGoldenImageConfig(ctx context.Context, cfg GoldenImageConfig) error {
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	_, err = d.SQL.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?, ?)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value`, goldenImageConfigKey, string(data))
 	return err
 }
 

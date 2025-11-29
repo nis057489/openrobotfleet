@@ -12,6 +12,7 @@ services:
       context: .
       dockerfile: Dockerfile.controller
     container_name: turtlebot-controller
+    privileged: true
     depends_on:
       - mqtt
     environment:

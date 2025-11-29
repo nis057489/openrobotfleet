@@ -14,6 +14,19 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o controller ./cmd/controller \
     && CGO_ENABLED=0 GOOS=linux go build -o agent ./cmd/agent
 
 FROM debian:stable-slim
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    mtools \
+    wget \
+    xz-utils \
+    qemu-user-static \
+    fdisk \
+    mount \
+    parted \
+    udev \
+    e2fsprogs \
+    dosfstools \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=go-build /app/controller /app/controller
 COPY --from=go-build /app/agent /app/agent

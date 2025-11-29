@@ -52,6 +52,11 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/semester/status", s.handleSemesterStatus)
 	mux.HandleFunc("/api/settings/backup", s.handleBackupDB)
 	mux.HandleFunc("/api/settings/restore", s.handleRestoreDB)
+	mux.HandleFunc("/api/golden-image", s.handleGoldenImage)
+	mux.HandleFunc("/api/golden-image/download", s.handleGoldenImageDownload)
+	mux.HandleFunc("/api/agent/download", s.handleAgentDownload)
+	mux.HandleFunc("/api/golden-image/build", s.handleGoldenImageBuild)
+	mux.HandleFunc("/api/golden-image/status", s.handleGoldenImageStatus)
 
 	webRoot := os.Getenv("WEB_ROOT")
 	if webRoot == "" {
@@ -420,4 +425,48 @@ func respondJSON(w http.ResponseWriter, status int, v interface{}) {
 
 func respondError(w http.ResponseWriter, status int, msg string) {
 	respondJSON(w, status, map[string]string{"error": msg})
+}
+
+func (s *Server) handleGoldenImage(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		s.Controller.GetGoldenImageConfig(w, r)
+		return
+	}
+	if r.Method == http.MethodPut {
+		s.Controller.SaveGoldenImageConfig(w, r)
+		return
+	}
+	methodNotAllowed(w)
+}
+
+func (s *Server) handleGoldenImageDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	s.Controller.DownloadGoldenImage(w, r)
+}
+
+func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	s.Controller.DownloadAgentBinary(w, r)
+}
+
+func (s *Server) handleGoldenImageBuild(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	s.Controller.BuildGoldenImage(w, r)
+}
+
+func (s *Server) handleGoldenImageStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	s.Controller.GetBuildStatus(w, r)
 }

@@ -126,6 +126,14 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, robot)
 }
 
+func (c *Controller) DownloadAgentBinary(w http.ResponseWriter, r *http.Request) {
+	binaryPath := os.Getenv("AGENT_BINARY_PATH")
+	if binaryPath == "" {
+		binaryPath = "/app/agent"
+	}
+	http.ServeFile(w, r, binaryPath)
+}
+
 func agentBrokerURL() string {
 	if v := os.Getenv("AGENT_MQTT_BROKER"); v != "" {
 		return v

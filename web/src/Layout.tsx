@@ -1,4 +1,4 @@
-import { LayoutDashboard, Bot, Laptop, FileCode, Settings, Menu, GraduationCap } from "lucide-react";
+import { LayoutDashboard, Bot, Laptop, FileCode, Settings, Menu, GraduationCap, Disc } from "lucide-react";
 import { useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { clsx, type ClassValue } from "clsx";
@@ -18,6 +18,7 @@ export function Layout() {
         { icon: Laptop, label: "Laptops", path: "/laptops" },
         { icon: FileCode, label: "Scenarios", path: "/scenarios" },
         { icon: GraduationCap, label: "Semester Wizard", path: "/semester-wizard" },
+        { icon: Disc, label: "Golden Image", path: "/golden-image" },
         { icon: Settings, label: "Settings", path: "/settings" },
     ];
 

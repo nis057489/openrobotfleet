@@ -72,3 +72,12 @@ export interface SemesterStatus {
   robots: Record<string, string>;
   errors: Record<string, string>;
 }
+
+export interface GoldenImageConfig {
+  wifi_ssid: string;
+  wifi_password: string;
+  controller_url: string;
+  mqtt_broker: string;
+  lds_model: string;
+  ros_domain_id: number;
+}
