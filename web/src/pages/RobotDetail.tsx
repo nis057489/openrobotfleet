@@ -100,12 +100,12 @@ export function RobotDetail() {
             // For now, let's try passing the origin + /api/robots/:id/upload
             const uploadUrl = `${window.location.origin}/api/robots/${robot.id}/upload`;
             await sendCommand(robot.id, { type: "capture_image", data: { upload_url: uploadUrl } });
-            
+
             // Poll for the image or just wait a bit and show it
             // Since the command is async (MQTT), we don't know when it's done.
             // We can just show a "Check back soon" or try to load the image with retries.
             setMessage({ type: 'success', text: 'Snapshot requested. It should appear below shortly.' });
-            
+
             // Simple retry mechanism to show the image
             let retries = 0;
             const checkImage = setInterval(() => {
