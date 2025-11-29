@@ -133,11 +133,10 @@ function FeatureCard({ title, description, status, icon: Icon, to, extra, loadin
                             <p className="text-sm text-gray-500">{description}</p>
                         </div>
                     </div>
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        status === 'Active' || status === 'Building' 
-                            ? 'bg-blue-100 text-blue-800' 
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${status === 'Active' || status === 'Building'
+                            ? 'bg-blue-100 text-blue-800'
                             : 'bg-gray-100 text-gray-800'
-                    }`}>
+                        }`}>
                         {status}
                     </span>
                 </div>
