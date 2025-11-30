@@ -235,8 +235,8 @@ export const en = {
       startTestDrive: "Start Test Drive",
       logsNotImplemented: "Logs are not yet implemented in the backend.",
       logsHelp: "To view logs, you would typically need a log aggregation service or an API endpoint that streams logs from the agent via MQTT or HTTP.",
-      terminalDisabledDemo: "The terminal is disabled in demo mode for security reasons.",
-      logsDisabledDemo: "Logs are disabled in demo mode for security reasons.",
+      terminalDisabledDemo: "The terminal is unavailable in demo mode.",
+      logsDisabledDemo: "Logs are unavailable in demo mode.",
     },
     scenarioEditor: {
       newTitle: "New Scenario",
