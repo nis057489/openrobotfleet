@@ -15,8 +15,15 @@ services:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=admin@nbembedded.com"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
     ports:
       - "80:80"
+      - "443:443"
       - "8080:8080" # Traefik Dashboard
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -41,8 +48,9 @@ services:
       - controller-data:/data
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.controller.rule=PathPrefix(`/`)"
-      - "traefik.http.routers.controller.entrypoints=web"
+      - "traefik.http.routers.controller.rule=Host(`demo.nbembedded.com`)"
+      - "traefik.http.routers.controller.entrypoints=websecure"
+      - "traefik.http.routers.controller.tls.certresolver=myresolver"
       - "traefik.http.services.controller.loadbalancer.server.port=8080"
 
 volumes:
