@@ -16,6 +16,7 @@ export const zh = {
       delete: "删除",
       edit: "编辑",
       active: "活跃",
+      ok: "正常",
       idle: "空闲",
       offline: "离线",
       unknown: "未知",

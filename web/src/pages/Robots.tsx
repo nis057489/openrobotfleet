@@ -77,7 +77,7 @@ function RobotCard({ robot }: { robot: Robot }) {
                                     }`}
                             />
                             <span className="text-sm text-gray-500 capitalize">
-                                {robot.status || t("common.unknown")}
+                                {t(`common.${(robot.status || '').toLowerCase()}`) || robot.status || t("common.unknown")}
                             </span>
                         </div>
                     </div>

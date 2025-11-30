@@ -16,6 +16,7 @@ export const en = {
       delete: "Delete",
       edit: "Edit",
       active: "Active",
+      ok: "OK",
       idle: "Idle",
       offline: "Offline",
       unknown: "Unknown",
