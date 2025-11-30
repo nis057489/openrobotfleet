@@ -148,6 +148,8 @@ export const en = {
       building: "Building...",
       buildStatus: "Build Status",
       buildLogs: "Build Logs",
+      buildInProgress: "Installing ROS 2 and Agent (this takes 20-30 mins)...",
+      navigateAway: "You can navigate away from this page. The build will continue in the background.",
       targetHardware: "Target Hardware",
       networkSettings: "Network Settings",
       controllerConnection: "Controller Connection",

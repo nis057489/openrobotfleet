@@ -276,7 +276,7 @@ export function GoldenImage() {
                                     ></div>
                                 </div>
                                 <p className="text-xs text-gray-400 text-center">
-                                    You can navigate away from this page. The build will continue in the background.
+                                    {t("goldenImage.navigateAway")}
                                 </p>
                             </div>
                         ) : (

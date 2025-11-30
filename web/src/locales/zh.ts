@@ -147,6 +147,8 @@ export const zh = {
       building: "构建中...",
       buildStatus: "构建状态",
       buildLogs: "构建日志",
+      buildInProgress: "正在安装 ROS 2 和代理（这需要 20-30 分钟）...",
+      navigateAway: "您可以离开此页面。构建将在后台继续。",
       targetHardware: "目标硬件",
       networkSettings: "网络设置",
       controllerConnection: "控制器连接",
