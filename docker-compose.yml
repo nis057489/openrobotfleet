@@ -2,8 +2,6 @@ services:
   mqtt:
     image: eclipse-mosquitto:2
     container_name: turtlebot-mqtt
-    ports:
-      - "1883:1883"
     volumes:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
 
@@ -11,7 +9,6 @@ services:
     image: traefik:v2.11
     container_name: turtlebot-traefik
     command:
-      - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
@@ -25,7 +22,6 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080" # Traefik Dashboard
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - traefik-certificates:/letsencrypt
@@ -54,6 +50,15 @@ services:
       - "traefik.http.routers.controller.entrypoints=websecure"
       - "traefik.http.routers.controller.tls.certresolver=myresolver"
       - "traefik.http.services.controller.loadbalancer.server.port=8080"
+      # Security Middlewares
+      - "traefik.http.middlewares.rate-limit.ratelimit.average=100"
+      - "traefik.http.middlewares.rate-limit.ratelimit.burst=50"
+      - "traefik.http.middlewares.secure-headers.headers.sslredirect=true"
+      - "traefik.http.middlewares.secure-headers.headers.stsseconds=31536000"
+      - "traefik.http.middlewares.secure-headers.headers.browserxssfilter=true"
+      - "traefik.http.middlewares.secure-headers.headers.contenttypenosniff=true"
+      - "traefik.http.middlewares.secure-headers.headers.framedeny=true"
+      - "traefik.http.routers.controller.middlewares=rate-limit,secure-headers"
 
   robot1:
     build:
