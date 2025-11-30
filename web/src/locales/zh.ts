@@ -130,6 +130,7 @@ export const zh = {
     },
     goldenImage: {
       title: "黄金镜像构建器",
+      explanation: "黄金镜像是一个预配置的操作系统镜像，包含所有必要的软件和设置，可随时刷入多台机器人。",
       saveSuccess: "配置保存成功",
       saveError: "保存配置失败",
       wifiSsid: "WiFi SSID",

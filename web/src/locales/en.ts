@@ -131,6 +131,7 @@ export const en = {
     },
     goldenImage: {
       title: "Golden Image Builder",
+      explanation: "A golden image is a pre-configured OS image with all necessary software and settings, ready to be flashed onto multiple robots.",
       saveSuccess: "Configuration saved successfully",
       saveError: "Failed to save configuration",
       wifiSsid: "WiFi SSID",

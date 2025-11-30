@@ -117,7 +117,7 @@ export function GoldenImage() {
         <div className="max-w-3xl mx-auto">
             <div className="mb-8">
                 <h1 className="text-2xl font-bold text-gray-900">{t("goldenImage.title")}</h1>
-                <p className="text-gray-500">{t("goldenImage.title")}</p>
+                <p className="text-gray-500">{t("goldenImage.explanation")}</p>
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">

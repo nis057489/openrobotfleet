@@ -32,7 +32,7 @@ export function Layout() {
     ];
 
     const toggleLanguage = () => {
-        const newLang = i18n.language === 'en' ? 'zh' : 'en';
+        const newLang = i18n.language.startsWith('zh') ? 'en' : 'zh';
         i18n.changeLanguage(newLang);
     };
 
@@ -133,7 +133,7 @@ export function Layout() {
                         <Languages size={20} className="shrink-0" />
                         {isExpanded && (
                             <span className="ml-3 text-sm font-medium">
-                                {i18n.language === 'en' ? 'English' : '中文'}
+                                {i18n.language.startsWith('zh') ? '中文' : 'English'}
                             </span>
                         )}
                     </button>
