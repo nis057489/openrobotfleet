@@ -174,16 +174,16 @@ vite.config.ts.timestamp-*
 .vite/
 
 # Artifacts
-agent
-controller
-agent
+/agent
+/controller
 
 # General
 .DS_Store
 __MACOSX/
 .AppleDouble
 .LSOverride
-Icon[]
+Icon[
+]
 
 # Thumbnails
 ._*

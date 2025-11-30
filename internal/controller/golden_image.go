@@ -1,0 +1,582 @@
+package controller
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"text/template"
+	"time"
+
+	"example.com/turtlebot-fleet/internal/db"
+)
+
+func (c *Controller) GetGoldenImageConfig(w http.ResponseWriter, r *http.Request) {
+	cfg, err := c.DB.GetGoldenImageConfig(r.Context())
+	if err != nil {
+		log.Printf("get golden image config: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to load config")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]*db.GoldenImageConfig{"config": cfg})
+}
+
+func (c *Controller) SaveGoldenImageConfig(w http.ResponseWriter, r *http.Request) {
+	var req db.GoldenImageConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid config")
+		return
+	}
+	if err := c.DB.SaveGoldenImageConfig(r.Context(), req); err != nil {
+		log.Printf("save golden image config: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to save config")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]*db.GoldenImageConfig{"config": &req})
+}
+
+func (c *Controller) DownloadGoldenImage(w http.ResponseWriter, r *http.Request) {
+	cfg, err := c.DB.GetGoldenImageConfig(r.Context())
+	if err != nil {
+		log.Printf("get golden image config: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to load config")
+		return
+	}
+	if cfg == nil {
+		respondError(w, http.StatusBadRequest, "golden image config not set")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/yaml")
+	w.Header().Set("Content-Disposition", "attachment; filename=user-data")
+
+	tmpl, err := template.New("user-data").Parse(userDataTemplate)
+	if err != nil {
+		log.Printf("parse template: %v", err)
+		respondError(w, http.StatusInternalServerError, "template error")
+		return
+	}
+
+	if err := tmpl.Execute(w, cfg); err != nil {
+		log.Printf("execute template: %v", err)
+	}
+}
+
+const userDataTemplate = `#cloud-config
+hostname: turtlebot
+manage_etc_hosts: true
+users:
+  - name: ubuntu
+    groups: [sudo, dialout, video]
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    lock_passwd: false
+    passwd: $6$rounds=4096$randomsalt$encryptedpassword
+
+# Packages are pre-installed in the golden image.
+# We only handle runtime configuration here.
+
+write_files:
+  - path: /etc/netplan/50-cloud-init.yaml
+    content: |
+      network:
+        version: 2
+        ethernets:
+          eth0:
+            dhcp4: true
+            optional: true
+        wifis:
+          wlan0:
+            dhcp4: true
+            optional: true
+            access-points:
+              "{{.WifiSSID}}":
+                password: "{{.WifiPassword}}"
+
+  - path: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "0";
+      APT::Periodic::Unattended-Upgrade "0";
+
+  - path: /etc/turtlebot-agent/config.yaml
+    content: |
+      agent_id: "TB-UNINITIALIZED"
+      mqtt_broker: "{{.MQTTBroker}}"
+      workspace_path: "/home/ubuntu/turtlebot3_ws/src"
+
+runcmd:
+  # Network setup
+  - netplan apply
+  - systemctl mask systemd-networkd-wait-online.service
+
+  # Environment variables
+  {{if eq .RobotModel "TB4"}}
+  - echo 'export ROS_DOMAIN_ID={{.ROSDomainID}}' >> /home/ubuntu/.bashrc
+  # TB4 setup script handles other env vars
+  {{else}}
+  # TB3 Default
+  - echo 'source /opt/ros/{{if eq .ROSVersion "Jazzy"}}jazzy{{else}}humble{{end}}/setup.bash' >> /home/ubuntu/.bashrc
+  - echo 'source /home/ubuntu/turtlebot3_ws/install/setup.bash' >> /home/ubuntu/.bashrc
+  - echo 'export ROS_DOMAIN_ID={{.ROSDomainID}}' >> /home/ubuntu/.bashrc
+  - echo 'export LDS_MODEL={{.LDSModel}}' >> /home/ubuntu/.bashrc
+  {{end}}
+
+  # Agent Service (Binary is pre-installed)
+  - |
+    cat <<EOF > /etc/systemd/system/turtlebot-agent.service
+    [Unit]
+    Description=Turtlebot Agent
+    After=network.target
+
+    [Service]
+    ExecStart=/usr/local/bin/turtlebot-agent
+    Restart=always
+    User=root
+    Environment=AGENT_CONFIG_PATH=/etc/turtlebot-agent/config.yaml
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+  - systemctl enable turtlebot-agent
+  - systemctl start turtlebot-agent
+
+final_message: "Turtlebot setup complete. Ready to roll!"
+`
+
+var (
+	buildLock      sync.Mutex
+	buildStatus    = "idle" // idle, building, success, error
+	buildError     string
+	buildProgress  int      // 0-100
+	buildStep      string   // Current step description
+	buildLogs      []string // New
+	buildImageName string   // New
+)
+
+func (c *Controller) logBuild(format string, v ...interface{}) {
+	msg := fmt.Sprintf(format, v...)
+	log.Print(msg)
+	buildLock.Lock()
+	// Prepend timestamp
+	ts := time.Now().Format("15:04:05")
+	buildLogs = append(buildLogs, fmt.Sprintf("[%s] %s", ts, msg))
+	// Limit log size
+	if len(buildLogs) > 2000 {
+		buildLogs = buildLogs[len(buildLogs)-2000:]
+	}
+	buildLock.Unlock()
+}
+
+func (c *Controller) BuildGoldenImage(w http.ResponseWriter, r *http.Request) {
+	buildLock.Lock()
+	if buildStatus == "building" {
+		buildLock.Unlock()
+		respondError(w, http.StatusConflict, "build already in progress")
+		return
+	}
+	buildStatus = "building"
+	buildError = ""
+	buildProgress = 0
+	buildStep = "Starting build..."
+	buildLogs = []string{}
+	buildImageName = ""
+	buildLock.Unlock()
+
+	go c.runBuild()
+
+	respondJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
+}
+
+func (c *Controller) GetBuildStatus(w http.ResponseWriter, r *http.Request) {
+	buildLock.Lock()
+	defer buildLock.Unlock()
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"status":     buildStatus,
+		"error":      buildError,
+		"progress":   buildProgress,
+		"step":       buildStep,
+		"logs":       buildLogs,
+		"image_name": buildImageName,
+	})
+}
+
+func (c *Controller) updateBuildProgress(step string, progress int) {
+	buildLock.Lock()
+	defer buildLock.Unlock()
+	buildStep = step
+	buildProgress = progress
+	// Also log the step
+	ts := time.Now().Format("15:04:05")
+	buildLogs = append(buildLogs, fmt.Sprintf("[%s] >>> %s", ts, step))
+}
+
+func (c *Controller) runBuild() {
+	defer func() {
+		if r := recover(); r != nil {
+			c.failBuild(fmt.Sprintf("panic: %v", r))
+		}
+	}()
+
+	// 1. Load Config
+	c.updateBuildProgress("Loading configuration...", 5)
+	ctx := context.Background()
+	cfg, err := c.DB.GetGoldenImageConfig(ctx)
+	if err != nil || cfg == nil {
+		c.failBuild("failed to load config")
+		return
+	}
+	c.logBuild("Config loaded: RobotModel=%s, ROSVersion=%s", cfg.RobotModel, cfg.ROSVersion)
+
+	// 2. Prepare directories
+	c.updateBuildProgress("Preparing directories...", 10)
+	webRoot := os.Getenv("WEB_ROOT")
+	if webRoot == "" {
+		webRoot = "./web/dist"
+	}
+	imagesDir := filepath.Join(webRoot, "images")
+	if err := os.MkdirAll(imagesDir, 0755); err != nil {
+		c.failBuild(fmt.Sprintf("mkdir failed: %v", err))
+		return
+	}
+
+	// 3. Download Base Image
+	c.updateBuildProgress("Downloading base image (this may take a while)...", 15)
+
+	// Determine Image URL based on ROS Version
+	baseImageURL := "https://cdimage.ubuntu.com/releases/22.04/release/ubuntu-22.04.5-preinstalled-server-arm64+raspi.img.xz"
+	baseImageName := "ubuntu-22.04-server-arm64.img.xz"
+	if cfg.ROSVersion == "Jazzy" {
+		baseImageURL = "https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.3-preinstalled-server-arm64+raspi.img.xz"
+		baseImageName = "ubuntu-24.04-server-arm64.img.xz"
+	}
+
+	// Cache it in /data/image-cache (persistent volume) if available, else /tmp
+	cacheDir := "/tmp/image-cache"
+	if _, err := os.Stat("/data"); err == nil {
+		cacheDir = "/data/image-cache"
+	}
+
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		c.failBuild(fmt.Sprintf("cache dir failed: %v", err))
+		return
+	}
+	baseImageXZ := filepath.Join(cacheDir, baseImageName)
+
+	if _, err := os.Stat(baseImageXZ); os.IsNotExist(err) {
+		c.logBuild("downloading base image from %s...", baseImageURL)
+		cmd := exec.Command("wget", "-O", baseImageXZ, baseImageURL)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			c.failBuild(fmt.Sprintf("download failed: %v: %s", err, string(out)))
+			return
+		}
+	}
+
+	// 4. Decompress to working copy
+	c.updateBuildProgress("Decompressing image...", 25)
+
+	// Construct image name
+	robotModel := cfg.RobotModel
+	if robotModel == "" {
+		robotModel = "TB3"
+	}
+	rosVersion := cfg.ROSVersion
+	if rosVersion == "" {
+		rosVersion = "Humble"
+	}
+	imageName := fmt.Sprintf("turtlebot-%s-%s-golden.img", strings.ToLower(robotModel), strings.ToLower(rosVersion))
+	workImage := filepath.Join(imagesDir, imageName)
+
+	c.logBuild("decompressing to %s...", workImage)
+	cmd := exec.Command("xz", "-d", "-k", "-c", baseImageXZ)
+	outFile, err := os.Create(workImage)
+	if err != nil {
+		c.failBuild(fmt.Sprintf("create work image failed: %v", err))
+		return
+	}
+	cmd.Stdout = outFile
+	if err := cmd.Run(); err != nil {
+		outFile.Close()
+		c.failBuild(fmt.Sprintf("decompress failed: %v", err))
+		return
+	}
+	outFile.Close()
+
+	// 5. Expand Image (+4GB)
+	c.updateBuildProgress("Expanding image...", 35)
+	c.logBuild("expanding image by 4GB...")
+	if err := exec.Command("truncate", "-s", "+4G", workImage).Run(); err != nil {
+		c.failBuild(fmt.Sprintf("truncate failed: %v", err))
+		return
+	}
+
+	// 6. Setup Loop Device
+	c.updateBuildProgress("Setting up loop device...", 40)
+	c.logBuild("setting up loop device...")
+	out, err := exec.Command("losetup", "-fP", "--show", workImage).CombinedOutput()
+	if err != nil {
+		c.failBuild(fmt.Sprintf("losetup failed: %v: %s", err, string(out)))
+		return
+	}
+	loopDev := strings.TrimSpace(string(out))
+	defer exec.Command("losetup", "-d", loopDev).Run()
+
+	// 7. Resize Partition and Filesystem
+	c.updateBuildProgress("Resizing partitions...", 45)
+	c.logBuild("resizing partition 2 on %s...", loopDev)
+	if out, err := exec.Command("parted", "-s", loopDev, "resizepart", "2", "100%").CombinedOutput(); err != nil {
+		c.failBuild(fmt.Sprintf("parted failed: %v: %s", err, string(out)))
+		return
+	}
+
+	// Force kernel to re-read partition table
+	exec.Command("partprobe", loopDev).Run()
+	time.Sleep(2 * time.Second)
+
+	// Ensure device nodes exist (Docker container might not have udev)
+	if err := ensureDeviceNode(loopDev + "p1"); err != nil {
+		c.logBuild("warning: ensureDeviceNode p1: %v", err)
+	}
+	if err := ensureDeviceNode(loopDev + "p2"); err != nil {
+		c.logBuild("warning: ensureDeviceNode p2: %v", err)
+	}
+
+	c.logBuild("resizing filesystem on %sp2...", loopDev)
+	if out, err := exec.Command("resize2fs", loopDev+"p2").CombinedOutput(); err != nil {
+		c.failBuild(fmt.Sprintf("resize2fs failed: %v: %s", err, string(out)))
+		return
+	}
+
+	// 8. Mount
+	c.updateBuildProgress("Mounting image...", 50)
+	mntDir := "/mnt/turtlebot-build"
+	os.MkdirAll(mntDir, 0755)
+	defer os.RemoveAll(mntDir)
+
+	// Mount root
+	if out, err := exec.Command("mount", loopDev+"p2", mntDir).CombinedOutput(); err != nil {
+		c.failBuild(fmt.Sprintf("mount root failed: %v: %s", err, string(out)))
+		return
+	}
+	defer exec.Command("umount", "-R", mntDir).Run()
+
+	// Mount boot (firmware)
+	os.MkdirAll(filepath.Join(mntDir, "boot/firmware"), 0755)
+	if out, err := exec.Command("mount", loopDev+"p1", filepath.Join(mntDir, "boot/firmware")).CombinedOutput(); err != nil {
+		c.failBuild(fmt.Sprintf("mount boot failed: %v: %s", err, string(out)))
+		return
+	}
+
+	// 9. Prepare Chroot
+	c.updateBuildProgress("Preparing chroot environment...", 55)
+	c.logBuild("preparing chroot...")
+	// Copy qemu-aarch64-static
+	if out, err := exec.Command("cp", "/usr/bin/qemu-aarch64-static", filepath.Join(mntDir, "usr/bin/")).CombinedOutput(); err != nil {
+		c.failBuild(fmt.Sprintf("cp qemu failed: %v: %s", err, string(out)))
+		return
+	}
+	// Bind mounts
+	for _, d := range []string{"proc", "sys", "dev", "dev/pts"} {
+		if err := exec.Command("mount", "--bind", "/"+d, filepath.Join(mntDir, d)).Run(); err != nil {
+			// dev/pts might fail if not present, ignore
+			if d != "dev/pts" {
+				c.failBuild(fmt.Sprintf("mount bind %s failed: %v", d, err))
+				return
+			}
+		}
+	}
+	// DNS
+	destResolv := filepath.Join(mntDir, "etc/resolv.conf")
+	os.Remove(destResolv) // Remove existing file/symlink to avoid issues
+	if err := exec.Command("cp", "/etc/resolv.conf", destResolv).Run(); err != nil {
+		c.failBuild(fmt.Sprintf("cp resolv.conf failed: %v", err))
+		return
+	}
+
+	// 10. Install ROS 2 & Agent
+	c.updateBuildProgress("Installing ROS 2 and Agent (this takes 20-30 mins)...", 60)
+	c.logBuild("installing ROS 2 and Agent (this may take a while)...")
+
+	var installScript string
+	if cfg.RobotModel == "TB4" {
+		// TB4 Logic
+		branch := "humble"
+		if cfg.ROSVersion == "Jazzy" {
+			branch = "jazzy"
+		}
+		installScript = fmt.Sprintf(`#!/bin/bash
+set -e
+export DEBIAN_FRONTEND=noninteractive
+
+# Define sudo as a no-op since we are root
+function sudo() { "$@"; }
+export -f sudo
+
+# Install prerequisites
+apt-get update
+apt-get install -y wget curl git
+
+# Run official setup script
+wget -qO - https://raw.githubusercontent.com/turtlebot/turtlebot4_setup/%s/scripts/turtlebot4_setup.sh | bash
+
+# Cleanup
+apt-get clean
+rm -rf /var/lib/apt/lists/*
+`, branch)
+	} else {
+		// TB3 Logic (Existing)
+		installScript = `#!/bin/bash
+set -e
+export DEBIAN_FRONTEND=noninteractive
+
+# Install ROS 2 Humble
+apt-get update
+apt-get install -y software-properties-common curl gnupg lsb-release
+curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(source /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
+apt-get update
+apt-get install -y ros-humble-ros-base ros-humble-turtlebot3-msgs ros-humble-dynamixel-sdk ros-humble-xacro ros-humble-hls-lfcd-lds-driver libudev-dev build-essential git python3-colcon-common-extensions
+
+# Setup Workspace
+mkdir -p /home/ubuntu/turtlebot3_ws/src
+cd /home/ubuntu/turtlebot3_ws/src
+git clone -b humble https://github.com/ROBOTIS-GIT/turtlebot3.git
+git clone -b humble https://github.com/ROBOTIS-GIT/ld08_driver.git
+cd /home/ubuntu/turtlebot3_ws
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --parallel-workers 1
+chown -R 1000:1000 /home/ubuntu/turtlebot3_ws
+
+# Udev Rules
+cp /home/ubuntu/turtlebot3_ws/src/turtlebot3/turtlebot3_bringup/script/99-turtlebot3-cdc.rules /etc/udev/rules.d/
+
+# Cleanup
+apt-get clean
+rm -rf /var/lib/apt/lists/*
+`
+	}
+	if err := os.WriteFile(filepath.Join(mntDir, "tmp/install.sh"), []byte(installScript), 0755); err != nil {
+		c.failBuild(fmt.Sprintf("write install script failed: %v", err))
+		return
+	}
+
+	// Copy Agent Binary (assuming it's in current dir or path)
+	// We are running in /app, agent binary is ./agent (from Dockerfile)
+	if out, err := exec.Command("cp", "./agent", filepath.Join(mntDir, "usr/local/bin/turtlebot-agent")).CombinedOutput(); err != nil {
+		// Try finding it
+		if out2, err2 := exec.Command("cp", "/app/agent", filepath.Join(mntDir, "usr/local/bin/turtlebot-agent")).CombinedOutput(); err2 != nil {
+			c.logBuild("warning: could not copy agent binary: %v %s", err, string(out))
+			c.logBuild("warning: could not copy agent binary (try 2): %v %s", err2, string(out2))
+		}
+	}
+	exec.Command("chmod", "+x", filepath.Join(mntDir, "usr/local/bin/turtlebot-agent")).Run()
+
+	// Run Script in Chroot
+	cmd = exec.Command("chroot", mntDir, "/bin/bash", "/tmp/install.sh")
+
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+
+	if err := cmd.Start(); err != nil {
+		c.failBuild(fmt.Sprintf("install script start failed: %v", err))
+		return
+	}
+
+	// Stream logs
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			c.logBuild("[install] %s", scanner.Text())
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			c.logBuild("[install/err] %s", scanner.Text())
+		}
+	}()
+
+	wg.Wait()
+
+	if err := cmd.Wait(); err != nil {
+		c.failBuild(fmt.Sprintf("install script failed: %v", err))
+		return
+	}
+
+	// 11. Write User Data (Cloud Init)
+	c.updateBuildProgress("Injecting configuration...", 90)
+	c.logBuild("writing user-data...")
+	userDataPath := filepath.Join(mntDir, "boot/firmware/user-data") // Ubuntu 22.04 Pi
+
+	tmpl, err := template.New("user-data").Parse(userDataTemplate)
+	if err != nil {
+		c.failBuild(fmt.Sprintf("template parse failed: %v", err))
+		return
+	}
+	f, err := os.Create(userDataPath)
+	if err != nil {
+		c.failBuild(fmt.Sprintf("create user-data failed: %v", err))
+		return
+	}
+	if err := tmpl.Execute(f, cfg); err != nil {
+		f.Close()
+		c.failBuild(fmt.Sprintf("template execute failed: %v", err))
+		return
+	}
+	f.Close()
+
+	// Success
+	buildLock.Lock()
+	buildStatus = "success"
+	buildProgress = 100
+	buildStep = fmt.Sprintf("Build complete! Image: %s", imageName)
+	buildImageName = imageName
+	buildLock.Unlock()
+	c.logBuild("golden image build complete: %s", workImage)
+}
+
+func (c *Controller) failBuild(msg string) {
+	c.logBuild("build failed: %s", msg)
+	buildLock.Lock()
+	buildStatus = "error"
+	buildError = msg
+	buildLock.Unlock()
+}
+
+func ensureDeviceNode(devicePath string) error {
+	if _, err := os.Stat(devicePath); err == nil {
+		return nil
+	}
+	// Try to find major:minor from sysfs
+	// devicePath e.g. /dev/loop0p2 -> name loop0p2
+	deviceName := filepath.Base(devicePath)
+	sysPath := fmt.Sprintf("/sys/class/block/%s/dev", deviceName)
+
+	data, err := os.ReadFile(sysPath)
+	if err != nil {
+		return fmt.Errorf("could not read sysfs for %s: %v", deviceName, err)
+	}
+	parts := strings.Split(strings.TrimSpace(string(data)), ":")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid sysfs data for %s: %s", deviceName, string(data))
+	}
+
+	// mknod devicePath b major minor
+	cmd := exec.Command("mknod", devicePath, "b", parts[0], parts[1])
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("mknod failed: %v %s", err, string(out))
+	}
+	return nil
+}
