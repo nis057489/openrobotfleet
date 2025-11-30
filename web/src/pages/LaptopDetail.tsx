@@ -265,16 +265,26 @@ export function LaptopDetail() {
                     )}
                 </div>
             ) : activeTab === "logs" ? (
-                <div className="bg-black rounded-xl p-6 font-mono text-sm text-gray-300 min-h-[400px]">
-                    <div className="flex items-center gap-2 text-gray-500 mb-4 border-b border-gray-800 pb-2">
-                        <Terminal size={16} />
-                        <span>/var/log/syslog</span>
+                demoMode ? (
+                    <div className="bg-black rounded-xl p-6 font-mono text-sm text-gray-300 min-h-[400px] flex items-center justify-center">
+                        <div className="text-center">
+                            <Terminal size={48} className="mx-auto mb-4 text-gray-600" />
+                            <p className="text-lg font-medium text-gray-400">{t("common.demoMode")}</p>
+                            <p className="text-gray-600 mt-2">{t("robotDetail.logsDisabledDemo")}</p>
+                        </div>
                     </div>
-                    <p>{t("robotDetail.logsNotImplemented")}</p>
-                    <p className="text-gray-600 mt-2">
-                        {t("robotDetail.logsHelp")}
-                    </p>
-                </div>
+                ) : (
+                    <div className="bg-black rounded-xl p-6 font-mono text-sm text-gray-300 min-h-[400px]">
+                        <div className="flex items-center gap-2 text-gray-500 mb-4 border-b border-gray-800 pb-2">
+                            <Terminal size={16} />
+                            <span>/var/log/syslog</span>
+                        </div>
+                        <p>{t("robotDetail.logsNotImplemented")}</p>
+                        <p className="text-gray-600 mt-2">
+                            {t("robotDetail.logsHelp")}
+                        </p>
+                    </div>
+                )
             ) : (
                 demoMode ? (
                     <div className="bg-black rounded-xl p-6 font-mono text-sm text-gray-300 min-h-[400px] flex items-center justify-center">
