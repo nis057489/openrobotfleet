@@ -37,7 +37,7 @@ Manage lab laptops just like robots. Push code updates and manage WiFi profiles 
 
 ## Getting Started
 
-The easiest way to run the Fleet Manager is using Docker or Podman.
+The easiest way to run the Fleet Manager is using Docker.
 
 ### Using Docker
 
@@ -46,27 +46,6 @@ The easiest way to run the Fleet Manager is using Docker or Podman.
 
     ```bash
     docker compose up --build
-    ```
-
-3. **Access the Dashboard**: Open your browser to `http://localhost:8080`.
-
-### Using Podman
-
-1. **Prerequisites**: Ensure you have Podman and `podman-compose` (or `podman compose`) installed.
-2. **Start the System**:
-
-    We provide a helper script to detect your Podman socket configuration:
-
-    ```bash
-    ./run-podman.sh
-    ```
-
-    Alternatively, you can run it manually:
-
-    ```bash
-    # Replace with your socket path
-    export PODMAN_SOCKET=/run/user/1000/podman/podman.sock 
-    podman-compose -f podman-compose.yml up --build
     ```
 
 3. **Access the Dashboard**: Open your browser to `http://localhost:8080`.
