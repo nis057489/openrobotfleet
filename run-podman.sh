@@ -7,12 +7,14 @@ if ! command -v podman &> /dev/null; then
     exit 1
 fi
 
-# Check for podman-compose
-if ! command -v podman-compose &> /dev/null; then
-    echo "Warning: podman-compose is not installed. Trying 'podman compose'..."
+# Determine compose command
+if podman compose --help &> /dev/null; then
     COMPOSE_CMD="podman compose"
-else
+elif command -v podman-compose &> /dev/null; then
     COMPOSE_CMD="podman-compose"
+else
+    echo "Error: Neither 'podman compose' nor 'podman-compose' is available."
+    exit 1
 fi
 
 # Detect Podman socket
