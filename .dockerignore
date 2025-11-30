@@ -1,7 +1,5 @@
 web/node_modules
 web/dist
-/controller
-/agent
 *.db
 *.db-wal
 *.db-shm
