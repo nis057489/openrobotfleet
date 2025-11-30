@@ -74,6 +74,8 @@ export const en = {
       placeholder: "Enter admin password",
       invalid: "Invalid password",
       failed: "Login failed",
+      password: "Password",
+      signIn: "Sign In",
     },
     settings: {
       language: "Language",

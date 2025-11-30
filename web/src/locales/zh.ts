@@ -74,6 +74,8 @@ export const zh = {
       placeholder: "输入管理员密码",
       invalid: "密码无效",
       failed: "登录失败",
+      password: "密码",
+      signIn: "登录",
     },
     settings: {
       language: "语言",
