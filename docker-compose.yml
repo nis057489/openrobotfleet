@@ -54,6 +54,72 @@ services:
       - "traefik.http.routers.controller.tls.certresolver=myresolver"
       - "traefik.http.services.controller.loadbalancer.server.port=8080"
 
+  robot1:
+    build:
+      context: .
+      dockerfile: Dockerfile.robot
+    container_name: turtlebot-robot1
+    environment:
+      - AGENT_ID=robot1
+      - MQTT_BROKER=tcp://mqtt:1883
+    depends_on:
+      - mqtt
+
+  robot2:
+    build:
+      context: .
+      dockerfile: Dockerfile.robot
+    container_name: turtlebot-robot2
+    environment:
+      - AGENT_ID=robot2
+      - MQTT_BROKER=tcp://mqtt:1883
+    depends_on:
+      - mqtt
+
+  robot3:
+    build:
+      context: .
+      dockerfile: Dockerfile.robot
+    container_name: turtlebot-robot3
+    environment:
+      - AGENT_ID=robot3
+      - MQTT_BROKER=tcp://mqtt:1883
+    depends_on:
+      - mqtt
+
+  laptop1:
+    build:
+      context: .
+      dockerfile: Dockerfile.laptop
+    container_name: turtlebot-laptop1
+    environment:
+      - AGENT_ID=laptop1
+      - MQTT_BROKER=tcp://mqtt:1883
+    depends_on:
+      - mqtt
+
+  laptop2:
+    build:
+      context: .
+      dockerfile: Dockerfile.laptop
+    container_name: turtlebot-laptop2
+    environment:
+      - AGENT_ID=laptop2
+      - MQTT_BROKER=tcp://mqtt:1883
+    depends_on:
+      - mqtt
+
+  laptop3:
+    build:
+      context: .
+      dockerfile: Dockerfile.laptop
+    container_name: turtlebot-laptop3
+    environment:
+      - AGENT_ID=laptop3
+      - MQTT_BROKER=tcp://mqtt:1883
+    depends_on:
+      - mqtt
+
 volumes:
   controller-data:
   traefik-certificates:
