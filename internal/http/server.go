@@ -120,7 +120,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	expected := os.Getenv("ADMIN_PASSWORD")
 	if expected == "" {
-		expected = "turtlebot" // Default password
+		expected = "mrs2025" // Default password
 	}
 
 	if creds.Password != expected {
