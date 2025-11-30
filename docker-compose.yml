@@ -49,7 +49,7 @@ services:
       - controller-data:/data
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.controller.rule=Host(`demo2.nbembedded.com`)"
+      - "traefik.http.routers.controller.rule=Host(`demo.nbembedded.com`)"
       - "traefik.http.routers.controller.entrypoints=websecure"
       - "traefik.http.routers.controller.tls.certresolver=myresolver"
       - "traefik.http.services.controller.loadbalancer.server.port=8080"
