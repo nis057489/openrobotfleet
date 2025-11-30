@@ -6,6 +6,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { Robots } from "./pages/Robots";
 import { Laptops } from "./pages/Laptops";
 import { RobotDetail } from "./pages/RobotDetail";
+import { LaptopDetail } from "./pages/LaptopDetail";
 import { Scenarios } from "./pages/Scenarios";
 import { Settings } from "./pages/Settings";
 import { InstallAgent } from "./pages/InstallAgent";
@@ -26,6 +27,7 @@ export default function App() {
             <Route path="robots" element={<Robots />} />
             <Route path="laptops" element={<Laptops />} />
             <Route path="robots/:id" element={<RobotDetail />} />
+            <Route path="laptops/:id" element={<LaptopDetail />} />
             <Route path="discovery" element={<Discovery />} />
             <Route path="semester-wizard" element={<SemesterWizard />} />
             <Route path="install" element={<InstallAgent />} />

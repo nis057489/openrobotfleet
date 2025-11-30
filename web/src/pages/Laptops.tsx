@@ -121,7 +121,7 @@ function LaptopCard({ robot }: { robot: Robot }) {
                     Connect WiFi
                 </button>
                 <button
-                    onClick={() => navigate(`/robots/${robot.id}`)}
+                    onClick={() => navigate(`/laptops/${robot.id}`)}
                     className="text-sm font-medium text-gray-600 hover:text-gray-900"
                 >
                     View Details

@@ -31,6 +31,7 @@ export const en = {
       noDescription: "No description provided.",
       signIn: "Sign In",
       password: "Password",
+      demoMode: "Demo Mode",
     },
     dashboard: {
       title: "Mission Control",
@@ -234,6 +235,7 @@ export const en = {
       startTestDrive: "Start Test Drive",
       logsNotImplemented: "Logs are not yet implemented in the backend.",
       logsHelp: "To view logs, you would typically need a log aggregation service or an API endpoint that streams logs from the agent via MQTT or HTTP.",
+      terminalDisabledDemo: "The terminal is disabled in demo mode for security reasons.",
     },
     scenarioEditor: {
       newTitle: "New Scenario",

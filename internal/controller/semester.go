@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"example.com/turtlebot-fleet/internal/agent"
+	"example.com/turtlebot-fleet/internal/db"
 	sshc "example.com/turtlebot-fleet/internal/ssh"
 )
 
@@ -152,87 +153,124 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 			}
 
 			if req.Reinstall {
-				if robot.InstallConfig == nil {
-					log.Printf("semester: robot %d missing install config", id)
-					batchStatus.Lock()
-					batchStatus.Errors[id] = "missing install config"
-					batchStatus.Robots[id] = "error"
-					batchStatus.Completed++
-					batchStatus.Unlock()
-					return
-				}
-
-				log.Printf("semester: reinstalling agent on %s", robot.Name)
-				batchStatus.Lock()
-				batchStatus.Robots[id] = "installing_agent"
-				batchStatus.Unlock()
-
-				addr := robot.InstallConfig.Address
-				if !strings.Contains(addr, ":") {
-					addr = net.JoinHostPort(addr, "22")
-				}
-
-				// Default sudo logic from install_agent.go
-				useSudo := strings.ToLower(robot.InstallConfig.User) != "root"
-				sudoPwd := os.Getenv("AGENT_SUDO_PASSWORD")
-				if useSudo && sudoPwd == "" {
-					sudoPwd = "ubuntu"
-				}
-
-				cfg := agent.Config{
-					AgentID:        robot.Name, // Use name as AgentID for consistency
-					MQTTBroker:     broker,
-					WorkspacePath:  workspace,
-					WorkspaceOwner: determineWorkspaceOwner(installAgentRequest{User: robot.InstallConfig.User}),
-				}
-
-				host := sshc.HostSpec{
-					Addr:         addr,
-					User:         robot.InstallConfig.User,
-					PrivateKey:   []byte(robot.InstallConfig.SSHKey),
-					UseSudo:      useSudo,
-					SudoPassword: sudoPwd,
-				}
-
-				installStart := time.Now()
-				if err := sshc.InstallAgent(host, cfg, binary); err != nil {
-					log.Printf("semester: failed to install agent on %s: %v", robot.Name, err)
-					batchStatus.Lock()
-					msg := fmt.Sprintf("install failed: %v", err)
-					if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "no route to host") || strings.Contains(err.Error(), "i/o timeout") {
-						msg = "Connection failed. Check connection or restart robot."
-					}
-					batchStatus.Errors[id] = msg
-					batchStatus.Robots[id] = "error"
-					batchStatus.Completed++
-					batchStatus.Unlock()
-					return
-				}
-
-				// Wait for reconnect
-				if req.ResetLogs || req.UpdateRepo {
-					log.Printf("semester: waiting for %s to reconnect...", robot.Name)
-					batchStatus.Lock()
-					batchStatus.Robots[id] = "waiting_for_connection"
-					batchStatus.Unlock()
-
-					connected := false
-					for i := 0; i < 60; i++ {
-						time.Sleep(1 * time.Second)
-						updated, err := c.DB.GetRobotByID(ctx, id)
-						if err == nil && updated.LastSeen.After(installStart) {
-							connected = true
-							break
+				if robot.InstallConfig == nil || robot.InstallConfig.Address == "" {
+					// Try to use default install config if robot-specific one is missing
+					defaultCfg, err := c.DB.GetDefaultInstallConfig(ctx)
+					if err == nil && defaultCfg != nil {
+						if robot.InstallConfig == nil {
+							robot.InstallConfig = &db.InstallConfig{}
+						}
+						if robot.InstallConfig.User == "" {
+							robot.InstallConfig.User = defaultCfg.User
+						}
+						if robot.InstallConfig.SSHKey == "" {
+							robot.InstallConfig.SSHKey = defaultCfg.SSHKey
 						}
 					}
-					if !connected {
-						log.Printf("semester: timeout waiting for %s to reconnect", robot.Name)
+					// If address is still missing, try to use the robot's IP
+					if (robot.InstallConfig == nil || robot.InstallConfig.Address == "") && robot.IP != "" {
+						if robot.InstallConfig == nil {
+							robot.InstallConfig = &db.InstallConfig{}
+						}
+						robot.InstallConfig.Address = robot.IP
+					}
+				}
+
+				if robot.InstallConfig == nil || robot.InstallConfig.Address == "" || robot.InstallConfig.User == "" || robot.InstallConfig.SSHKey == "" {
+					// If we are in demo mode, we can fake success for reinstall
+					if os.Getenv("DEMO_MODE") == "true" {
+						log.Printf("semester: demo mode, skipping reinstall for %s", robot.Name)
+						// Fall through to other steps
+					} else {
+						log.Printf("semester: robot %d missing install config (addr=%v, user=%v, key_len=%d)", id,
+							robot.InstallConfig != nil && robot.InstallConfig.Address != "",
+							robot.InstallConfig != nil && robot.InstallConfig.User != "",
+							func() int {
+								if robot.InstallConfig != nil {
+									return len(robot.InstallConfig.SSHKey)
+								}
+								return 0
+							}())
 						batchStatus.Lock()
-						batchStatus.Errors[id] = "reconnect timeout"
+						batchStatus.Errors[id] = "missing install config"
 						batchStatus.Robots[id] = "error"
 						batchStatus.Completed++
 						batchStatus.Unlock()
 						return
+					}
+				} else {
+					log.Printf("semester: reinstalling agent on %s", robot.Name)
+					batchStatus.Lock()
+					batchStatus.Robots[id] = "installing_agent"
+					batchStatus.Unlock()
+
+					addr := robot.InstallConfig.Address
+					if !strings.Contains(addr, ":") {
+						addr = net.JoinHostPort(addr, "22")
+					}
+
+					// Default sudo logic from install_agent.go
+					useSudo := strings.ToLower(robot.InstallConfig.User) != "root"
+					sudoPwd := os.Getenv("AGENT_SUDO_PASSWORD")
+					if useSudo && sudoPwd == "" {
+						sudoPwd = "ubuntu"
+					}
+
+					cfg := agent.Config{
+						AgentID:        robot.Name, // Use name as AgentID for consistency
+						MQTTBroker:     broker,
+						WorkspacePath:  workspace,
+						WorkspaceOwner: determineWorkspaceOwner(installAgentRequest{User: robot.InstallConfig.User}),
+					}
+
+					host := sshc.HostSpec{
+						Addr:         addr,
+						User:         robot.InstallConfig.User,
+						PrivateKey:   []byte(robot.InstallConfig.SSHKey),
+						UseSudo:      useSudo,
+						SudoPassword: sudoPwd,
+					}
+
+					installStart := time.Now()
+					if err := sshc.InstallAgent(host, cfg, binary); err != nil {
+						log.Printf("semester: failed to install agent on %s: %v", robot.Name, err)
+						batchStatus.Lock()
+						msg := fmt.Sprintf("install failed: %v", err)
+						if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "no route to host") || strings.Contains(err.Error(), "i/o timeout") {
+							msg = "Connection failed. Check connection or restart robot."
+						}
+						batchStatus.Errors[id] = msg
+						batchStatus.Robots[id] = "error"
+						batchStatus.Completed++
+						batchStatus.Unlock()
+						return
+					}
+
+					// Wait for reconnect
+					if req.ResetLogs || req.UpdateRepo {
+						log.Printf("semester: waiting for %s to reconnect...", robot.Name)
+						batchStatus.Lock()
+						batchStatus.Robots[id] = "waiting_for_connection"
+						batchStatus.Unlock()
+
+						connected := false
+						for i := 0; i < 60; i++ {
+							time.Sleep(1 * time.Second)
+							updated, err := c.DB.GetRobotByID(ctx, id)
+							if err == nil && updated.LastSeen.After(installStart) {
+								connected = true
+								break
+							}
+						}
+						if !connected {
+							log.Printf("semester: timeout waiting for %s to reconnect", robot.Name)
+							batchStatus.Lock()
+							batchStatus.Errors[id] = "reconnect timeout"
+							batchStatus.Robots[id] = "error"
+							batchStatus.Completed++
+							batchStatus.Unlock()
+							return
+						}
 					}
 				}
 			}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,11 @@ type terminalMessage struct {
 }
 
 func (c *Controller) HandleTerminal(w http.ResponseWriter, r *http.Request) {
+	if os.Getenv("DEMO_MODE") == "true" {
+		http.Error(w, "terminal disabled in demo mode", http.StatusForbidden)
+		return
+	}
+
 	id, err := parseRobotID(r.URL.Path)
 	if err != nil {
 		http.Error(w, "invalid robot id", http.StatusBadRequest)

@@ -3,10 +3,10 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getRobot, sendCommand, updateRobotTags, getSystemConfig } from "../api";
 import { Robot } from "../types";
-import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Tag, Plus, X, Camera, Play, Lightbulb } from "lucide-react";
+import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Plus, X, Lightbulb } from "lucide-react";
 import { Terminal as TerminalView } from "../components/Terminal";
 
-export function RobotDetail() {
+export function LaptopDetail() {
     const { t } = useTranslation();
     const { id } = useParams();
     const navigate = useNavigate();
@@ -22,7 +22,6 @@ export function RobotDetail() {
     const [path, setPath] = useState("");
     const [cmdLoading, setCmdLoading] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
-    const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
 
     // Tag state
     const [newTag, setNewTag] = useState("");
@@ -84,63 +83,14 @@ export function RobotDetail() {
         }
     };
 
-    const handleTestDrive = async () => {
-        if (!robot) return;
-        if (!confirm(t("robotDetail.testDriveWarning"))) return;
-        await handleCommand("test_drive");
-    };
-
-    const handleCaptureImage = async () => {
-        if (!robot) return;
-        setCmdLoading(true);
-        setMessage(null);
-        setSnapshotUrl(null);
-        try {
-            // The agent will upload to /api/robots/:id/upload
-            // We need to tell the agent where to upload.
-            // Since we are on the same network, we can use window.location.origin or a configured URL.
-            // But the agent is on the robot, it needs to reach the controller.
-            // The controller URL is not known by the frontend easily unless we assume relative to current page if agent can reach it.
-            // Actually, the agent config has MQTT broker, but maybe not HTTP controller.
-            // Let's assume the agent can reach the controller at the same IP as the browser is using, or we pass it.
-            // For now, let's try passing the origin + /api/robots/:id/upload
-            const uploadUrl = `${window.location.origin}/api/robots/${robot.id}/upload`;
-            await sendCommand(robot.id, { type: "capture_image", data: { upload_url: uploadUrl } });
-
-            // Poll for the image or just wait a bit and show it
-            // Since the command is async (MQTT), we don't know when it's done.
-            // We can just show a "Check back soon" or try to load the image with retries.
-            setMessage({ type: 'success', text: 'Snapshot requested. It should appear below shortly.' });
-
-            // Simple retry mechanism to show the image
-            let retries = 0;
-            const checkImage = setInterval(() => {
-                const url = `/snapshots/${robot.id}.jpg?t=${Date.now()}`;
-                const img = new Image();
-                img.onload = () => {
-                    setSnapshotUrl(url);
-                    clearInterval(checkImage);
-                };
-                img.src = url;
-                retries++;
-                if (retries > 10) clearInterval(checkImage);
-            }, 1000);
-
-        } catch (err) {
-            setMessage({ type: 'error', text: "Failed to request snapshot" });
-        } finally {
-            setCmdLoading(false);
-        }
-    };
-
     if (loading) return <div className="p-8 text-gray-500">{t("robots.loading")}</div>;
-    if (!robot) return <div className="p-8 text-red-500">Robot not found</div>;
+    if (!robot) return <div className="p-8 text-red-500">Laptop not found</div>;
 
     return (
         <div className="max-w-4xl mx-auto space-y-6">
             {/* Header */}
             <div className="flex items-center gap-4">
-                <button onClick={() => navigate("/robots")} className="p-2 hover:bg-gray-100 rounded-lg">
+                <button onClick={() => navigate("/laptops")} className="p-2 hover:bg-gray-100 rounded-lg">
                     <ArrowLeft size={20} />
                 </button>
                 <div className="flex-1">
@@ -150,7 +100,7 @@ export function RobotDetail() {
                             <button
                                 onClick={() => handleCommand("identify")}
                                 className="p-2 text-gray-500 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
-                                title="Identify Robot (Sound)"
+                                title="Identify (Sound)"
                             >
                                 <Lightbulb size={20} />
                             </button>
@@ -308,102 +258,9 @@ export function RobotDetail() {
                         </div>
                     </div>
 
-                    {/* Test Drive & Snapshot */}
-                    <div className="bg-white rounded-xl border border-gray-200 p-6">
-                        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                            <Lightbulb size={18} /> {t("robotDetail.testDriveSnapshot")}
-                        </h3>
-                        <div className="grid grid-cols-1 gap-4">
-                            <button
-                                onClick={handleTestDrive}
-                                disabled={cmdLoading}
-                                className="w-full bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
-                            >
-                                <Play size={16} /> {t("robotDetail.startTestDrive")}
-                            </button>
-                            <button
-                                onClick={handleCaptureImage}
-                                disabled={cmdLoading}
-                                className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
-                            >
-                                <Camera size={16} /> {t("robotDetail.captureImage")}
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Self Test Card */}
-                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                        <div className="p-6 border-b border-gray-100">
-                            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                                <Activity size={20} className="text-blue-500" />
-                                {t("robotDetail.hardwareSelfTest")}
-                            </h2>
-                            <p className="text-sm text-gray-500 mt-1">
-                                {t("robotDetail.hardwareSelfTestDesc")}
-                            </p>
-                        </div>
-                        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Motor Test */}
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <h3 className="font-medium text-gray-900">{t("robotDetail.motorTest")}</h3>
-                                    <span className="text-xs text-gray-500">{t("robotDetail.wiggleTest")}</span>
-                                </div>
-                                <p className="text-sm text-gray-500">
-                                    {t("robotDetail.motorTestDesc")}
-                                </p>
-                                <button
-                                    onClick={handleTestDrive}
-                                    disabled={cmdLoading}
-                                    className="w-full flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-900 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
-                                >
-                                    {cmdLoading ? <RefreshCw className="animate-spin" size={18} /> : <Play size={18} />}
-                                    {t("robotDetail.testMotors")}
-                                </button>
-                            </div>
-
-                            {/* Camera Test */}
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <h3 className="font-medium text-gray-900">{t("robotDetail.cameraTest")}</h3>
-                                    <span className="text-xs text-gray-500">{t("robotDetail.snapshot")}</span>
-                                </div>
-                                <p className="text-sm text-gray-500">
-                                    {t("robotDetail.cameraTestDesc")}
-                                </p>
-                                <button
-                                    onClick={handleCaptureImage}
-                                    disabled={cmdLoading}
-                                    className="w-full flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-900 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
-                                >
-                                    {cmdLoading ? <RefreshCw className="animate-spin" size={18} /> : <Camera size={18} />}
-                                    {t("robotDetail.testCamera")}
-                                </button>
-                                {snapshotUrl && (
-                                    <div className="mt-4 rounded-lg overflow-hidden border border-gray-200">
-                                        <img src={snapshotUrl} alt="Robot Snapshot" className="w-full h-auto" />
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-
                     {message && (
                         <div className={`col-span-full p-4 rounded-lg text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                             {message.text}
-                        </div>
-                    )}
-
-                    {snapshotUrl && (
-                        <div className="col-span-full">
-                            <h4 className="font-semibold text-gray-900 mb-2">{t("robotDetail.snapshot")}</h4>
-                            <div className="relative w-full h-0" style={{ paddingTop: "56.25%" }}>
-                                <img
-                                    src={snapshotUrl}
-                                    alt="Robot Snapshot"
-                                    className="absolute inset-0 w-full h-full object-cover rounded-xl border border-gray-200"
-                                />
-                            </div>
                         </div>
                     )}
                 </div>
