@@ -16,7 +16,7 @@ export function Robots() {
 
     useEffect(() => {
         getRobots()
-            .then(setRobots)
+            .then(robots => setRobots(robots.filter(r => r.type !== 'laptop')))
             .catch((err) => setError(err.message))
             .finally(() => setLoading(false));
     }, []);

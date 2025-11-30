@@ -11,6 +11,7 @@ import (
 // Config represents the agent's runtime configuration.
 type Config struct {
 	AgentID        string `yaml:"agent_id"`
+	Type           string `yaml:"type"` // "robot" or "laptop"
 	MQTTBroker     string `yaml:"mqtt_broker"`
 	WorkspacePath  string `yaml:"workspace_path"`
 	WorkspaceOwner string `yaml:"workspace_owner"`

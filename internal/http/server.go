@@ -415,6 +415,7 @@ type statusPayload struct {
 	TS     string `json:"ts"`
 	IP     string `json:"ip"`
 	Name   string `json:"name"`
+	Type   string `json:"type"`
 }
 
 func (s *Server) subscribeStatusUpdates() {
@@ -438,8 +439,8 @@ func (s *Server) subscribeStatusUpdates() {
 		if name == "" {
 			name = agentID
 		}
-		log.Printf("status update from %s: status=%s ip=%s", agentID, payload.Status, payload.IP)
-		if err := s.DB.UpsertRobotStatus(context.Background(), agentID, name, payload.IP, payload.Status); err != nil {
+		log.Printf("status update from %s: status=%s ip=%s type=%s", agentID, payload.Status, payload.IP, payload.Type)
+		if err := s.DB.UpsertRobotStatus(context.Background(), agentID, name, payload.IP, payload.Status, payload.Type); err != nil {
 			log.Printf("status: failed to upsert robot %s: %v", agentID, err)
 		}
 	}

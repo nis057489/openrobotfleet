@@ -143,22 +143,24 @@ func main() {
 			log.Println("shutting down agent")
 			return
 		case <-time.After(10 * time.Second):
-			payload := buildStatusPayload()
+			payload := buildStatusPayload(cfg)
 			client.Publish(statusTopic, payload)
 		}
 	}
 }
 
-func buildStatusPayload() []byte {
+func buildStatusPayload(cfg agent.Config) []byte {
 	type status struct {
 		Status string `json:"status"`
 		TS     string `json:"ts"`
 		IP     string `json:"ip"`
+		Type   string `json:"type,omitempty"`
 	}
 	data := status{
 		Status: "ok",
 		TS:     time.Now().Format(time.RFC3339),
 		IP:     detectIPv4(),
+		Type:   cfg.Type,
 	}
 	buf, err := json.Marshal(data)
 	if err != nil {

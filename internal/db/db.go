@@ -280,21 +280,22 @@ ORDER BY r.name`)
 	return robots, rows.Err()
 }
 
-func (d *DB) UpsertRobotStatus(ctx context.Context, agentID, name, ip, status string) error {
+func (d *DB) UpsertRobotStatus(ctx context.Context, agentID, name, ip, status, rType string) error {
 	if name == "" {
 		return errors.New("robot name required")
 	}
-	stmt, err := d.SQL.PrepareContext(ctx, `INSERT INTO robots (name, agent_id, ip, last_seen, status) VALUES (?, ?, ?, ?, ?)
+	stmt, err := d.SQL.PrepareContext(ctx, `INSERT INTO robots (name, agent_id, ip, last_seen, status, type) VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT(name) DO UPDATE SET
 	agent_id=excluded.agent_id,
 	ip=excluded.ip,
 	status=excluded.status,
-	last_seen=excluded.last_seen`)
+	last_seen=excluded.last_seen,
+	type=CASE WHEN excluded.type != '' THEN excluded.type ELSE robots.type END`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
-	_, err = stmt.ExecContext(ctx, name, agentID, ip, time.Now().UTC(), status)
+	_, err = stmt.ExecContext(ctx, name, agentID, ip, time.Now().UTC(), status, rType)
 	return err
 }
 

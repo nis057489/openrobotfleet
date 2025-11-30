@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y \
 RUN echo '#!/bin/bash\n\
 cat <<EOF > /app/agent.yaml\n\
 agent_id: ${AGENT_ID:-robot-$(hostname)}\n\
+type: robot\n\
 mqtt_broker: ${MQTT_BROKER:-tcp://mqtt:1883}\n\
 workspace_path: ${WORKSPACE_PATH:-/app/workspace}\n\
 workspace_owner: ${WORKSPACE_OWNER:-root}\n\
