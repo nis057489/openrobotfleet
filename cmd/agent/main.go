@@ -114,7 +114,7 @@ func main() {
 			}
 			log.Printf("capture_image succeeded")
 		case "identify":
-			if err := agent.HandleIdentify(); err != nil {
+			if err := agent.HandleIdentify(cfg); err != nil {
 				log.Printf("identify failed: %v", err)
 				return
 			}

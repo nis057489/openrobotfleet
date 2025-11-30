@@ -230,6 +230,7 @@ export const en = {
       reinstallAgentDesc: "Re-run the installation script via SSH",
       identifyMe: "Identify Me",
       identifyMeDesc: "Beep and flash LEDs",
+      identifySent: "Sent!",
       updateRepo: "Update Repository",
       repoUrl: "Repo URL",
       branch: "Branch",

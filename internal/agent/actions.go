@@ -138,8 +138,12 @@ func HandleStop(cfg Config) error {
 }
 
 // HandleIdentify makes the robot beep and flash LEDs to identify itself.
-func HandleIdentify() error {
+func HandleIdentify(cfg Config) error {
 	log.Println("[agent] identifying robot...")
+
+	if cfg.Type == "laptop" {
+		return identifyLaptop()
+	}
 
 	// 1. Beep
 	// Create 3 uses /cmd_audio (irobot_create_msgs/msg/AudioNoteVector)
@@ -150,7 +154,11 @@ func HandleIdentify() error {
 	beepCmd := exec.Command("ros2", "topic", "pub", "--once", "/cmd_audio", "irobot_create_msgs/msg/AudioNoteVector",
 		`{append: false, notes: [{frequency: 880, max_runtime: {sec: 0, nanosec: 500000000}}, {frequency: 0, max_runtime: {sec: 0, nanosec: 100000000}}, {frequency: 880, max_runtime: {sec: 0, nanosec: 500000000}}]}`)
 	if out, err := beepCmd.CombinedOutput(); err != nil {
-		log.Printf("[agent] failed to beep: %v: %s", err, string(out))
+		log.Printf("[agent] failed to beep via ROS: %v: %s", err, string(out))
+		// Fallback to laptop identification (system beep) if ROS fails
+		if err := identifyLaptop(); err != nil {
+			log.Printf("[agent] fallback identify failed: %v", err)
+		}
 	}
 
 	// 2. Flash LEDs
@@ -176,6 +184,27 @@ func HandleIdentify() error {
 		log.Printf("[agent] failed to reset LEDs: %v: %s", err, string(out))
 	}
 
+	return nil
+}
+
+func identifyLaptop() error {
+	// Try speaker-test (ALSA)
+	cmd := exec.Command("speaker-test", "-t", "sine", "-f", "1000", "-l", "1")
+	if err := cmd.Run(); err == nil {
+		return nil
+	}
+
+	// Try beep command
+	cmd = exec.Command("beep")
+	if err := cmd.Run(); err == nil {
+		return nil
+	}
+
+	// Try sending bell character to all TTYs (requires root usually, or at least access to tty)
+	// This is a bit hacky but might work if the user is looking at the screen
+	// We'll just log it for now as a last resort
+	log.Println("[agent] *BEEP* (visual/log beep)")
+	fmt.Print("\a") // Bell to stdout of agent
 	return nil
 }
 

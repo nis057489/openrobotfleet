@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, MouseEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getRobots, sendCommand } from "../api";
 import { Robot } from "../types";
-import { Signal, Wifi, Clock, Laptop as LaptopIcon } from "lucide-react";
+import { Signal, Wifi, Clock, Laptop as LaptopIcon, Lightbulb, Loader2, Check } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
 
@@ -43,7 +43,10 @@ export function Laptops() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {laptops.map((laptop) => (
-                    <LaptopCard key={laptop.id} robot={laptop} />
+                    <LaptopCard 
+                        key={laptop.id} 
+                        robot={laptop} 
+                    />
                 ))}
             </div>
         </div>
@@ -53,26 +56,27 @@ export function Laptops() {
 function LaptopCard({ robot }: { robot: Robot }) {
     const { t, i18n } = useTranslation();
     const navigate = useNavigate();
+    const [identifying, setIdentifying] = useState(false);
+    const [success, setSuccess] = useState(false);
     const isOnline = robot.status !== "offline" && robot.status !== "unknown";
     const lastSeen = robot.last_seen ? formatDistanceToNow(new Date(robot.last_seen), {
         addSuffix: true,
         locale: i18n.language.startsWith('zh') ? zhCN : undefined
     }) : t("common.never");
 
-    const handleWifiConnect = async (e: React.MouseEvent) => {
+    const handleIdentify = async (e: MouseEvent) => {
         e.stopPropagation();
-        const ssid = prompt(t("laptops.wifiSsidPrompt"));
-        if (!ssid) return;
-        const password = prompt(t("laptops.wifiPassPrompt"));
-
+        setIdentifying(true);
+        setSuccess(false);
         try {
-            await sendCommand(robot.id, {
-                type: "wifi_profile",
-                data: { ssid, password: password || "" }
-            });
-            alert(t("laptops.wifiSent"));
+            await sendCommand(robot.id, { type: "identify", data: {} });
+            setSuccess(true);
+            setTimeout(() => setSuccess(false), 2000);
         } catch (err) {
+            console.error("Failed to identify", err);
             alert(t("laptops.commandFailed", { error: err instanceof Error ? err.message : String(err) }));
+        } finally {
+            setIdentifying(false);
         }
     };
 
@@ -115,10 +119,20 @@ function LaptopCard({ robot }: { robot: Robot }) {
 
             <div className="bg-gray-50 px-6 py-3 border-t border-gray-100 flex justify-between items-center gap-2">
                 <button
-                    onClick={handleWifiConnect}
-                    className="text-sm font-medium text-blue-600 hover:text-blue-800"
+                    onClick={handleIdentify}
+                    disabled={identifying}
+                    className={`text-sm font-medium flex items-center gap-1 transition-colors ${
+                        success ? "text-green-600" : "text-blue-600 hover:text-blue-800"
+                    }`}
                 >
-                    Connect WiFi
+                    {identifying ? (
+                        <Loader2 size={16} className="animate-spin" />
+                    ) : success ? (
+                        <Check size={16} />
+                    ) : (
+                        <Lightbulb size={16} />
+                    )}
+                    {success ? t("robotDetail.identifySent") : t("robotDetail.identifyMe")}
                 </button>
                 <button
                     onClick={() => navigate(`/laptops/${robot.id}`)}

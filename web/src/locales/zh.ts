@@ -229,6 +229,7 @@ export const zh = {
       reinstallAgentDesc: "通过 SSH 重新运行安装脚本",
       identifyMe: "识别我",
       identifyMeDesc: "发出蜂鸣声并闪烁 LED",
+      identifySent: "已发送！",
       updateRepo: "更新仓库",
       repoUrl: "仓库 URL",
       branch: "分支",
