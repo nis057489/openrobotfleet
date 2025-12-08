@@ -1,45 +1,102 @@
-# Turtlebot Fleet Starter – Copilot Instructions
+# Turtlebot Fleet – Copilot Instructions
 
-## Architecture & Responsibilities
-- **Controller** (`cmd/controller`): Orchestrates the system. Wires HTTP, MQTT, and DB.
-    - `internal/http/server.go`: Handles API routes. Manually parses paths (e.g., `parseIDFromPath`).
-    - `internal/controller`: Business logic. `ApplyScenario` parses YAML, updates repo data, and queues commands.
-- **Agent** (`cmd/agent`): Runs on robots.
-    - Listens to `lab/commands/<agent_id>` and `lab/commands/all`.
-    - Sends 10s heartbeats to `lab/status/<agent_id>`.
-    - `internal/agent/actions.go`: Handles commands (update repo, reset logs, restart ROS).
-- **Web** (`web/`): React dashboard.
-    - Fetches same-origin `/api/...`.
-    - `web/src/api.ts`: Centralized API client. Handles errors by throwing with server message.
-- **Infrastructure**:
-    - `docker-compose.yml`: Mosquitto + Controller.
-    - `Dockerfile.controller`: Multi-stage build for controller and agent binaries.
+## Project Overview
+Turtlebot Fleet is a robotics fleet management system comprising a central **Controller**, distributed **Agents** (on robots/laptops), and a **Web Dashboard**. It orchestrates code deployment, status monitoring, and remote commands via MQTT and HTTP.
 
-## Data Flow & Persistence
-- **SQLite** (`internal/db`):
-    - Uses `modernc.org/sqlite` (no CGO).
-    - `Open` enables WAL and sets `SetMaxOpenConns(1)` to prevent `SQLITE_BUSY`.
-    - Migrations are inline in `internal/db/db.go` (`migrate`).
-- **MQTT**:
-    - Topics: `lab/commands/<agent_id>`, `lab/commands/all`, `lab/status/<agent_id>`.
-    - **Critical**: All outbound commands must be stored as `db.Job` rows *before* publishing via `internal/controller.queueRobotCommand`.
+## Architecture & Components
+
+### 1. Controller (`cmd/controller`)
+- **Role**: Central brain. Manages state, serves API, bridges HTTP to MQTT.
+- **Entry**: `cmd/controller/main.go`
+- **HTTP Server**: `internal/http/server.go`. Uses `net/http` with **manual path parsing** (no external router).
+- **Business Logic**: `internal/controller/`. Handlers are methods on `*Controller`.
+- **Data**: SQLite via `internal/db`.
+- **Communication**: Publishes to MQTT topics to control agents.
+
+### 2. Agent (`cmd/agent`)
+- **Role**: Runs on robots/laptops. Executes commands, reports status.
+- **Entry**: `cmd/agent/main.go`
+- **Config**: `internal/agent/config.go` (YAML).
+- **Actions**: `internal/agent/actions.go`. Handles git operations, service restarts, log clearing.
+- **Communication**: Subscribes to MQTT command topics, publishes heartbeats.
+
+### 3. Web Dashboard (`web/`)
+- **Role**: User interface for fleet management.
+- **Stack**: React, Vite, Tailwind CSS.
+- **API Client**: `web/src/api.ts`. Centralized fetch wrapper.
+- **Types**: `web/src/types.ts` (Must match backend JSON structs).
+
+### 4. Infrastructure
+- **MQTT**: Mosquitto broker.
+- **Database**: SQLite (`controller.db`).
+- **Docker**: `docker-compose.yml` orchestrates the full stack.
+
+## Data Flow & Communication
+
+### Command Execution (User -> Robot)
+1. **User** clicks button in Web UI.
+2. **Web** calls HTTP API (e.g., `POST /api/robots/1/command`).
+3. **Controller** (`internal/controller/robots.go`):
+    - Validates request.
+    - **Persists** command to DB (`db.Job`).
+    - **Publishes** MQTT message to `lab/commands/<agent_id>`.
+4. **Agent** (`cmd/agent/main.go`):
+    - Receives MQTT message.
+    - Executes action (`internal/agent/actions.go`).
+    - Reports status back (optional/implicit via heartbeat).
+
+### Status Reporting (Robot -> User)
+1. **Agent** runs background ticker.
+2. **Agent** publishes JSON payload to `lab/status/<agent_id>`.
+3. **Controller** subscribes to `lab/status/+`.
+4. **Controller** updates DB with last seen, battery, etc.
+5. **Web** polls `/api/robots` to display latest status.
 
 ## Developer Workflows
-- **Full Stack**: `docker compose up --build` (Mosquitto + Controller + Static UI).
-- **Backend Dev**:
-    - `MQTT_BROKER=tcp://localhost:1883 DB_PATH=controller.db go run ./cmd/controller`
-- **Agent Dev**:
-    - `AGENT_CONFIG_PATH=$PWD/agent.local.yaml go run ./cmd/agent`
-- **Frontend Dev**:
-    - `cd web && npm install && npm run dev -- --host 0.0.0.0`
-    - Set `WEB_ROOT=http://localhost:5173` for the controller to proxy or use Vite proxy.
+
+### Running Locally (Backend)
+```bash
+# Run Controller (requires MQTT broker running, e.g., via docker-compose up mosquitto)
+export MQTT_BROKER=tcp://localhost:1883
+export DB_PATH=controller.db
+go run ./cmd/controller
+
+# Run Agent (simulated robot)
+export AGENT_CONFIG_PATH=./agent.local.yaml
+go run ./cmd/agent
+```
+
+### Running Locally (Frontend)
+```bash
+cd web
+npm install
+npm run dev
+# Set WEB_ROOT in controller to point to dev server if needed, or use Vite proxy
+```
+
+### Database
+- **Driver**: `modernc.org/sqlite` (Pure Go, no CGO).
+- **Migrations**: Inline in `internal/db/db.go`.
+- **Concurrency**: `SetMaxOpenConns(1)` is used to avoid `SQLITE_BUSY`.
 
 ## Conventions & Patterns
-- **Routing**: Use `net/http` with manual path parsing helpers in `internal/controller`. Avoid external router libraries.
-- **Error Handling**: Return `{ "error": "..." }` via `respondError`. Log short prefixes in controller.
-- **Agent Config**: YAML only (`internal/agent/config.go`). Remote installs rely on this schema.
-- **Frontend**: Keep `web/src/types.ts` in sync with backend JSON structs. Use snake_case for shared properties.
 
-## Integration Points
-- **Remote Install**: `/api/install-agent` reads compiled agent from `AGENT_BINARY_PATH`, generates config, and uses `internal/ssh` to upload/install.
-- **Golden Image**: `/api/golden-image` endpoints manage standard OS images for robots.
+### Go (Backend)
+- **Routing**: Do NOT use a router library. Use `http.NewServeMux` and helper functions like `parseIDFromPath` in `internal/controller`.
+- **Error Handling**: Return JSON `{ "error": "message" }` using `respondError`.
+- **Configuration**: Use environment variables for Controller, YAML for Agent.
+- **MQTT Topics**:
+    - Command: `lab/commands/<agent_id>` or `lab/commands/all`
+    - Status: `lab/status/<agent_id>`
+
+### TypeScript (Frontend)
+- **API**: Always use `api.ts` for backend calls.
+- **State**: React functional components with Hooks.
+- **Styling**: Tailwind CSS utility classes.
+
+## Key Files
+- `internal/http/server.go`: API route definitions.
+- `internal/controller/controller.go`: Shared controller logic & helpers.
+- `internal/agent/actions.go`: Implementation of robot commands.
+- `web/src/api.ts`: Frontend API definition.
+- `docker-compose.yml`: Service orchestration.
