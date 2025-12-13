@@ -54,6 +54,21 @@ func (c *Controller) DownloadGoldenImage(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Fetch default install config for SSH key
+	installCfg, err := c.DB.GetDefaultInstallConfig(r.Context())
+	sshKey := ""
+	if err == nil && installCfg != nil {
+		sshKey = installCfg.SSHKey
+	}
+
+	tmplData := struct {
+		*db.GoldenImageConfig
+		SSHKey string
+	}{
+		GoldenImageConfig: cfg,
+		SSHKey:            sshKey,
+	}
+
 	w.Header().Set("Content-Type", "text/yaml")
 	w.Header().Set("Content-Disposition", "attachment; filename=user-data")
 
@@ -64,7 +79,7 @@ func (c *Controller) DownloadGoldenImage(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := tmpl.Execute(w, cfg); err != nil {
+	if err := tmpl.Execute(w, tmplData); err != nil {
 		log.Printf("execute template: %v", err)
 	}
 }
@@ -79,6 +94,8 @@ users:
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
     lock_passwd: false
     passwd: $6$rounds=4096$randomsalt$encryptedpassword
+    ssh_authorized_keys:
+      - {{.SSHKey}}
 
 # Packages are pre-installed in the golden image.
 # We only handle runtime configuration here.
@@ -520,6 +537,21 @@ rm -rf /var/lib/apt/lists/*
 	c.logBuild("writing user-data...")
 	userDataPath := filepath.Join(mntDir, "boot/firmware/user-data") // Ubuntu 22.04 Pi
 
+	// Fetch default install config for SSH key
+	installCfg, err := c.DB.GetDefaultInstallConfig(ctx)
+	sshKey := ""
+	if err == nil && installCfg != nil {
+		sshKey = installCfg.SSHKey
+	}
+
+	tmplData := struct {
+		*db.GoldenImageConfig
+		SSHKey string
+	}{
+		GoldenImageConfig: cfg,
+		SSHKey:            sshKey,
+	}
+
 	tmpl, err := template.New("user-data").Parse(userDataTemplate)
 	if err != nil {
 		c.failBuild(fmt.Sprintf("template parse failed: %v", err))
@@ -530,7 +562,7 @@ rm -rf /var/lib/apt/lists/*
 		c.failBuild(fmt.Sprintf("create user-data failed: %v", err))
 		return
 	}
-	if err := tmpl.Execute(f, cfg); err != nil {
+	if err := tmpl.Execute(f, tmplData); err != nil {
 		f.Close()
 		c.failBuild(fmt.Sprintf("template execute failed: %v", err))
 		return
