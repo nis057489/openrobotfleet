@@ -20,6 +20,25 @@ func (req installConfigRequest) validate() error {
 	return nil
 }
 
+type installDefaultsRequest struct {
+	User   string `json:"user"`
+	SSHKey string `json:"ssh_key"`
+}
+
+func (req installDefaultsRequest) validate() error {
+	if strings.TrimSpace(req.User) == "" || strings.TrimSpace(req.SSHKey) == "" {
+		return errors.New("user and ssh_key required")
+	}
+	return nil
+}
+
+func (req installDefaultsRequest) toInstallConfig() db.InstallConfig {
+	return db.InstallConfig{
+		User:   strings.TrimSpace(req.User),
+		SSHKey: req.SSHKey,
+	}
+}
+
 func (req installConfigRequest) toInstallConfig() db.InstallConfig {
 	return db.InstallConfig{
 		Address: strings.TrimSpace(req.Address),

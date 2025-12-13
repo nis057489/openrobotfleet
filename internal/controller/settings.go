@@ -19,7 +19,7 @@ func (c *Controller) GetInstallDefaults(w http.ResponseWriter, r *http.Request) 
 }
 
 func (c *Controller) UpdateInstallDefaults(w http.ResponseWriter, r *http.Request) {
-	var req installConfigRequest
+	var req installDefaultsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid install defaults")
 		return
