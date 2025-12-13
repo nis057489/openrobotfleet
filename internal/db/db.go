@@ -662,3 +662,8 @@ func (db *DB) RecordInterest(ctx context.Context, email, ip string) error {
 	_, err := db.SQL.ExecContext(ctx, query, email, time.Now(), ip)
 	return err
 }
+
+func (d *DB) DeleteRobot(ctx context.Context, id int64) error {
+	_, err := d.SQL.ExecContext(ctx, `DELETE FROM robots WHERE id = ?`, id)
+	return err
+}

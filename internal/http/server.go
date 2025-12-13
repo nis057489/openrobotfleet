@@ -258,6 +258,10 @@ func (s *Server) handleRobotSubroutes(w http.ResponseWriter, r *http.Request) {
 		s.Controller.GetRobot(w, r)
 		return
 	}
+	if r.Method == http.MethodDelete {
+		s.Controller.DeleteRobot(w, r)
+		return
+	}
 	methodNotAllowed(w)
 }
 

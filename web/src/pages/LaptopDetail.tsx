@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { getRobot, sendCommand, updateRobotTags, getSystemConfig } from "../api";
+import { getRobot, sendCommand, updateRobotTags, getSystemConfig, deleteRobot } from "../api";
 import { Robot } from "../types";
-import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Plus, X, Lightbulb } from "lucide-react";
+import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Plus, X, Lightbulb, Trash2 } from "lucide-react";
 import { Terminal as TerminalView } from "../components/Terminal";
 
 export function LaptopDetail() {
@@ -83,6 +83,18 @@ export function LaptopDetail() {
         }
     };
 
+    const handleDelete = async () => {
+        if (!robot) return;
+        if (!confirm(t("robotDetail.deleteConfirm"))) return;
+        try {
+            await deleteRobot(robot.id);
+            navigate("/laptops");
+        } catch (err) {
+            console.error("Failed to delete laptop", err);
+            alert(t("robotDetail.deleteFailed"));
+        }
+    };
+
     if (loading) return <div className="p-8 text-gray-500">{t("robots.loading")}</div>;
     if (!robot) return <div className="p-8 text-red-500">Laptop not found</div>;
 
@@ -103,6 +115,13 @@ export function LaptopDetail() {
                                 title="Identify (Sound)"
                             >
                                 <Lightbulb size={20} />
+                            </button>
+                            <button
+                                onClick={handleDelete}
+                                className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                title={t("robotDetail.delete")}
+                            >
+                                <Trash2 size={20} />
                             </button>
                             {robot.tags?.map(tag => (
                                 <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-medium border border-blue-100">
@@ -209,6 +228,16 @@ export function LaptopDetail() {
                                     <Lightbulb size={16} /> {t("robotDetail.identifyMe")}
                                 </div>
                                 <p className="text-xs text-gray-500 group-hover:text-yellow-600">{t("robotDetail.identifyMeDesc")}</p>
+                            </button>
+                            <button
+                                onClick={handleDelete}
+                                disabled={cmdLoading}
+                                className="p-3 border border-gray-200 rounded-lg hover:bg-red-50 hover:border-red-100 text-left transition-colors group"
+                            >
+                                <div className="flex items-center gap-2 font-medium text-gray-700 group-hover:text-red-700 mb-1">
+                                    <Trash2 size={16} /> {t("robotDetail.delete")}
+                                </div>
+                                <p className="text-xs text-gray-500 group-hover:text-red-600">{t("robotDetail.deleteDesc")}</p>
                             </button>
                         </div>
                     </div>

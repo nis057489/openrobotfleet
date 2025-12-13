@@ -204,6 +204,20 @@ func (c *Controller) UpdateRobotTags(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, robot)
 }
 
+func (c *Controller) DeleteRobot(w http.ResponseWriter, r *http.Request) {
+	id, err := parseIDFromPath(r.URL.Path, "/api/robots/")
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid robot id")
+		return
+	}
+	if err := c.DB.DeleteRobot(r.Context(), id); err != nil {
+		log.Printf("delete robot: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to delete robot")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (c *Controller) queueRobotCommand(ctx context.Context, robot db.Robot, cmd agent.Command) (db.Job, error) {
 	payload, err := json.Marshal(cmd)
 	if err != nil {

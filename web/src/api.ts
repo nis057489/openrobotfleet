@@ -242,3 +242,9 @@ export interface SystemConfig {
 export function getSystemConfig(): Promise<SystemConfig> {
   return request<SystemConfig>('/api/settings/system');
 }
+
+export function deleteRobot(id: number | string): Promise<void> {
+  return request<void>(`/api/robots/${id}`, {
+    method: 'DELETE',
+  });
+}
