@@ -3,9 +3,11 @@ import { useEffect, useState, useRef } from "react";
 import { getInstallDefaults, updateInstallDefaults, broadcastCommand, getSystemConfig } from "../api";
 import { InstallConfig } from "../types";
 import { useTranslation } from "react-i18next";
+import { useNotification } from "../contexts/NotificationContext";
 
 export function Settings() {
     const { t } = useTranslation();
+    const { success, error } = useNotification();
     const [config, setConfig] = useState<InstallConfig>({
         address: "",
         user: "",
@@ -15,7 +17,6 @@ export function Settings() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [broadcasting, setBroadcasting] = useState(false);
-    const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -32,12 +33,11 @@ export function Settings() {
 
     const handleSave = async () => {
         setSaving(true);
-        setMessage(null);
         try {
             await updateInstallDefaults(config);
-            setMessage({ type: 'success', text: t("settings.saveSuccess") });
+            success(t("settings.saveSuccess"));
         } catch (err) {
-            setMessage({ type: 'error', text: t("settings.saveError") });
+            error(t("settings.saveError"));
         } finally {
             setSaving(false);
         }
@@ -46,19 +46,18 @@ export function Settings() {
     const handleBroadcast = async (type: string, confirmMsg: string) => {
         if (!confirm(confirmMsg)) return;
         setBroadcasting(true);
-        setMessage(null);
         try {
             // For "class_over", we send "stop" and "identify"
             if (type === "class_over") {
                 await broadcastCommand({ type: "stop", data: {} });
                 await broadcastCommand({ type: "identify", data: {} });
-                setMessage({ type: 'success', text: t("settings.classOverSent") });
+                success(t("settings.classOverSent"));
             } else {
                 await broadcastCommand({ type, data: {} });
-                setMessage({ type: 'success', text: t("settings.broadcastSent", { type }) });
+                success(t("settings.broadcastSent", { type }));
             }
         } catch (err) {
-            setMessage({ type: 'error', text: t("settings.broadcastError") });
+            error(t("settings.broadcastError"));
         } finally {
             setBroadcasting(false);
         }
@@ -90,7 +89,7 @@ export function Settings() {
             alert(t("settings.restoreSuccess"));
             window.location.reload();
         } catch (err) {
-            setMessage({ type: 'error', text: t("settings.restoreError") });
+            error(t("settings.restoreError"));
         } finally {
             setSaving(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
@@ -254,12 +253,6 @@ export function Settings() {
                     </button>
                 </div>
             </div>
-
-            {message && (
-                <div className={`p-4 rounded-lg ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                    {message.text}
-                </div>
-            )}
         </div>
     );
 }

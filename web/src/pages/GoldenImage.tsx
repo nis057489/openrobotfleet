@@ -3,9 +3,11 @@ import { useTranslation } from "react-i18next";
 import { buildGoldenImage, getBuildStatus, getGoldenImageConfig, saveGoldenImageConfig } from "../api";
 import { GoldenImageConfig } from "../types";
 import { Save, Download, Wifi, Server, Radio, Hash, Loader2, HardDrive, ChevronDown, ChevronRight } from "lucide-react";
+import { useNotification } from "../contexts/NotificationContext";
 
 export function GoldenImage() {
     const { t } = useTranslation();
+    const { success, error } = useNotification();
     const [config, setConfig] = useState<GoldenImageConfig>({
         wifi_ssid: "",
         wifi_password: "",
@@ -18,7 +20,6 @@ export function GoldenImage() {
     });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
     const [buildStatus, setBuildStatus] = useState<string>("idle");
     const [buildError, setBuildError] = useState<string | null>(null);
     const [buildProgress, setBuildProgress] = useState<number>(0);
@@ -80,12 +81,11 @@ export function GoldenImage() {
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
-        setMessage(null);
         try {
             await saveGoldenImageConfig(config);
-            setMessage({ type: 'success', text: t("goldenImage.saveSuccess") });
+            success(t("goldenImage.saveSuccess"));
         } catch (err) {
-            setMessage({ type: 'error', text: err instanceof Error ? err.message : t("goldenImage.saveError") });
+            error(err instanceof Error ? err.message : t("goldenImage.saveError"));
         } finally {
             setSaving(false);
         }
@@ -107,7 +107,7 @@ export function GoldenImage() {
             setBuildError(null);
         } catch (err) {
             setSaving(false);
-            setMessage({ type: 'error', text: t("goldenImage.startBuildFailed") });
+            error(t("goldenImage.startBuildFailed"));
         }
     };
 
@@ -129,12 +129,6 @@ export function GoldenImage() {
                 </div>
 
                 <form onSubmit={handleSave} className="p-6 space-y-6">
-                    {message && (
-                        <div className={`p-4 rounded-lg text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                            {message.text}
-                        </div>
-                    )}
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Robot & ROS */}
                         <div className="col-span-2">

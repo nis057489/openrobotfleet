@@ -5,12 +5,14 @@ import { getRobot, sendCommand, updateRobotTags, getSystemConfig, deleteRobot } 
 import { Robot } from "../types";
 import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Plus, X, Lightbulb, Trash2 } from "lucide-react";
 import { Terminal as TerminalView } from "../components/Terminal";
+import { useNotification } from "../contexts/NotificationContext";
 
 export function LaptopDetail() {
     const { t } = useTranslation();
     const { id } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
+    const { success, error } = useNotification();
     const [robot, setRobot] = useState<Robot | null>(null);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<"overview" | "logs" | "terminal">("overview");
@@ -21,7 +23,6 @@ export function LaptopDetail() {
     const [branch, setBranch] = useState("main");
     const [path, setPath] = useState("");
     const [cmdLoading, setCmdLoading] = useState(false);
-    const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
     // Tag state
     const [newTag, setNewTag] = useState("");
@@ -48,12 +49,11 @@ export function LaptopDetail() {
     const handleCommand = async (type: string, data: any = {}) => {
         if (!robot) return;
         setCmdLoading(true);
-        setMessage(null);
         try {
             await sendCommand(robot.id, { type, data });
-            setMessage({ type: 'success', text: t("robotDetail.commandSent", { type }) });
+            success(t("robotDetail.commandSent", { type }));
         } catch (err) {
-            setMessage({ type: 'error', text: err instanceof Error ? err.message : t("robotDetail.commandFailed") });
+            error(err instanceof Error ? err.message : t("robotDetail.commandFailed"));
         } finally {
             setCmdLoading(false);
         }
@@ -286,12 +286,6 @@ export function LaptopDetail() {
                             </button>
                         </div>
                     </div>
-
-                    {message && (
-                        <div className={`col-span-full p-4 rounded-lg text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                            {message.text}
-                        </div>
-                    )}
                 </div>
             ) : activeTab === "logs" ? (
                 demoMode ? (

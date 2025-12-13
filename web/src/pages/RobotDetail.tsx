@@ -5,12 +5,14 @@ import { getRobot, sendCommand, updateRobotTags, getSystemConfig, deleteRobot } 
 import { Robot } from "../types";
 import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Tag, Plus, X, Camera, Play, Lightbulb, Trash2 } from "lucide-react";
 import { Terminal as TerminalView } from "../components/Terminal";
+import { useNotification } from "../contexts/NotificationContext";
 
 export function RobotDetail() {
     const { t } = useTranslation();
     const { id } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
+    const { success, error } = useNotification();
     const [robot, setRobot] = useState<Robot | null>(null);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<"overview" | "logs" | "terminal">("overview");
@@ -21,7 +23,6 @@ export function RobotDetail() {
     const [branch, setBranch] = useState("main");
     const [path, setPath] = useState("");
     const [cmdLoading, setCmdLoading] = useState(false);
-    const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
     const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
 
     // Tag state
@@ -49,12 +50,11 @@ export function RobotDetail() {
     const handleCommand = async (type: string, data: any = {}) => {
         if (!robot) return;
         setCmdLoading(true);
-        setMessage(null);
         try {
             await sendCommand(robot.id, { type, data });
-            setMessage({ type: 'success', text: t("robotDetail.commandSent", { type }) });
+            success(t("robotDetail.commandSent", { type }));
         } catch (err) {
-            setMessage({ type: 'error', text: err instanceof Error ? err.message : t("robotDetail.commandFailed") });
+            error(err instanceof Error ? err.message : t("robotDetail.commandFailed"));
         } finally {
             setCmdLoading(false);
         }
@@ -93,7 +93,6 @@ export function RobotDetail() {
     const handleCaptureImage = async () => {
         if (!robot) return;
         setCmdLoading(true);
-        setMessage(null);
         setSnapshotUrl(null);
         try {
             // The agent will upload to /api/robots/:id/upload
@@ -110,7 +109,7 @@ export function RobotDetail() {
             // Poll for the image or just wait a bit and show it
             // Since the command is async (MQTT), we don't know when it's done.
             // We can just show a "Check back soon" or try to load the image with retries.
-            setMessage({ type: 'success', text: 'Snapshot requested. It should appear below shortly.' });
+            success('Snapshot requested. It should appear below shortly.');
 
             // Simple retry mechanism to show the image
             let retries = 0;
@@ -127,7 +126,7 @@ export function RobotDetail() {
             }, 1000);
 
         } catch (err) {
-            setMessage({ type: 'error', text: "Failed to request snapshot" });
+            error("Failed to request snapshot");
         } finally {
             setCmdLoading(false);
         }
@@ -416,12 +415,6 @@ export function RobotDetail() {
                             </div>
                         </div>
                     </div>
-
-                    {message && (
-                        <div className={`col-span-full p-4 rounded-lg text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                            {message.text}
-                        </div>
-                    )}
 
                     {snapshotUrl && (
                         <div className="col-span-full">
