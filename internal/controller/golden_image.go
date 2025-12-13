@@ -135,7 +135,6 @@ runcmd:
 
   # Environment variables
   {{if eq .RobotModel "TB4"}}
-  - echo 'source /opt/ros/{{if eq .ROSVersion "Jazzy"}}jazzy{{else}}humble{{end}}/setup.bash' >> /home/ubuntu/.bashrc
   - echo 'export ROS_DOMAIN_ID={{.ROSDomainID}}' >> /home/ubuntu/.bashrc
   # TB4 setup script handles other env vars
   {{else}}
