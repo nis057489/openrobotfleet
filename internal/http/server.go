@@ -24,6 +24,7 @@ type Server struct {
 	DB         *db.DB
 	MQTT       *mqttc.Client
 	Controller *controller.Controller
+	CommitHash string // Add CommitHash field
 }
 
 func NewServer(dbPath string) (*Server, error) {
@@ -49,24 +50,26 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/install-agent", s.handleInstallAgent)
 	mux.HandleFunc("/api/settings/install-defaults", s.handleInstallDefaults)
 	mux.HandleFunc("/api/settings/system", s.handleSystemConfig)
+	mux.HandleFunc("/api/version", s.handleVersion)
 	mux.HandleFunc("/api/robots", s.handleListRobots)
-	mux.HandleFunc("/api/robots/command/broadcast", s.handleRobotCommandBroadcast)
-	mux.HandleFunc("/api/robots/identify-all", s.handleIdentifyAll)
 	mux.HandleFunc("/api/robots/", s.handleRobotSubroutes)
+	mux.HandleFunc("/api/robots/command/broadcast", s.handleRobotCommandBroadcast)
 	mux.HandleFunc("/api/scenarios", s.handleScenariosCollection)
 	mux.HandleFunc("/api/scenarios/", s.handleScenarioItem)
 	mux.HandleFunc("/api/jobs", s.handleListJobs)
-	mux.HandleFunc("/api/discovery/scan", s.handleDiscoveryScan)
 	mux.HandleFunc("/api/semester/start", s.handleSemesterStart)
 	mux.HandleFunc("/api/semester/status", s.handleSemesterStatus)
-	mux.HandleFunc("/api/settings/backup", s.handleBackupDB)
-	mux.HandleFunc("/api/settings/restore", s.handleRestoreDB)
+	mux.HandleFunc("/api/db/backup", s.handleBackupDB)
+	mux.HandleFunc("/api/db/restore", s.handleRestoreDB)
+	mux.HandleFunc("/api/discovery/scan", s.handleDiscoveryScan)
 	mux.HandleFunc("/api/golden-image", s.handleGoldenImage)
-	mux.HandleFunc("/api/golden-image/download", s.handleGoldenImageDownload)
-	mux.HandleFunc("/api/agent/download", s.handleAgentDownload)
 	mux.HandleFunc("/api/golden-image/build", s.handleGoldenImageBuild)
 	mux.HandleFunc("/api/golden-image/status", s.handleGoldenImageStatus)
+	mux.HandleFunc("/api/golden-image/download", s.handleGoldenImageDownload)
+	mux.HandleFunc("/api/agent/download", s.handleAgentDownload)
+	mux.HandleFunc("/api/robots/identify-all", s.handleIdentifyAll)
 
+	// Static files
 	webRoot := os.Getenv("WEB_ROOT")
 	if webRoot == "" {
 		webRoot = "./web/dist"
@@ -614,4 +617,12 @@ func (s *Server) handleSystemConfig(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleIdentifyAll(w http.ResponseWriter, r *http.Request) {
 	s.Controller.IdentifyAll(w, r)
+}
+
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"commit_hash": s.CommitHash})
 }
