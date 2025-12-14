@@ -258,7 +258,7 @@ export const en = {
       editTitle: "Edit Scenario",
       subtitle: "Define robot behavior using YAML configuration",
       nameLabel: "Scenario Name",
-      namePlaceholder: "e.g. Warehouse Patrol",
+      namePlaceholder: "e.g., Warehouse Patrol",
       descriptionLabel: "Description",
       descriptionPlaceholder: "Brief description of what this scenario does",
       configLabel: "Configuration (YAML)",
