@@ -272,7 +272,7 @@ ORDER BY r.name`)
 			r.Type = "robot"
 		}
 		r.InstallConfig = buildInstallConfig(sshAddr, sshUser, sshKey)
-		
+
 		// Check for offline status
 		if !r.LastSeen.IsZero() && time.Since(r.LastSeen) > 1*time.Minute {
 			r.Status = "offline"
