@@ -1,6 +1,6 @@
-import { Save, Loader2, Power, RefreshCw, AlertTriangle, Download, Upload, Database, Bell } from "lucide-react";
+import { Save, Loader2, Download, Upload, Database } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
-import { getInstallDefaults, updateInstallDefaults, broadcastCommand, getSystemConfig } from "../api";
+import { getInstallDefaults, updateInstallDefaults, getSystemConfig } from "../api";
 import { InstallConfig } from "../types";
 import { useTranslation } from "react-i18next";
 import { useNotification } from "../contexts/NotificationContext";
@@ -16,7 +16,6 @@ export function Settings() {
     const [demoMode, setDemoMode] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [broadcasting, setBroadcasting] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -40,26 +39,6 @@ export function Settings() {
             error(t("settings.saveError"));
         } finally {
             setSaving(false);
-        }
-    };
-
-    const handleBroadcast = async (type: string, confirmMsg: string) => {
-        if (!confirm(confirmMsg)) return;
-        setBroadcasting(true);
-        try {
-            // For "class_over", we send "stop" and "identify"
-            if (type === "class_over") {
-                await broadcastCommand({ type: "stop", data: {} });
-                await broadcastCommand({ type: "identify", data: {} });
-                success(t("settings.classOverSent"));
-            } else {
-                await broadcastCommand({ type, data: {} });
-                success(t("settings.broadcastSent", { type }));
-            }
-        } catch (err) {
-            error(t("settings.broadcastError"));
-        } finally {
-            setBroadcasting(false);
         }
     };
 
@@ -219,56 +198,6 @@ export function Settings() {
                             />
                         </>
                     )}
-                </div>
-            </div>
-
-            {/* Fleet Maintenance */}
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="p-6 border-b border-gray-100">
-                    <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                        <AlertTriangle size={20} className="text-orange-500" />
-                        {t("settings.fleetMaintenance")}
-                    </h2>
-                    <p className="text-sm text-gray-500 mt-1">
-                        {t("settings.fleetMaintenanceDesc")}
-                    </p>
-                </div>
-                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <button
-                        onClick={() => handleBroadcast("restart_ros", t("settings.restartConfirm"))}
-                        disabled={broadcasting}
-                        className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
-                    >
-                        <div>
-                            <div className="font-medium text-gray-900">{t("settings.restartRos")}</div>
-                            <div className="text-xs text-gray-500">{t("settings.restartRosDesc")}</div>
-                        </div>
-                        <RefreshCw size={20} className="text-gray-400" />
-                    </button>
-
-                    <button
-                        onClick={() => handleBroadcast("reboot", t("settings.rebootConfirm"))}
-                        disabled={broadcasting}
-                        className="flex items-center justify-between p-4 border border-red-200 rounded-lg hover:bg-red-50 transition-colors text-left group"
-                    >
-                        <div>
-                            <div className="font-medium text-red-700 group-hover:text-red-800">{t("settings.rebootFleet")}</div>
-                            <div className="text-xs text-red-500 group-hover:text-red-600">{t("settings.rebootFleetDesc")}</div>
-                        </div>
-                        <Power size={20} className="text-red-400 group-hover:text-red-600" />
-                    </button>
-
-                    <button
-                        onClick={() => handleBroadcast("class_over", t("settings.classOverConfirm"))}
-                        disabled={broadcasting}
-                        className="flex items-center justify-between p-4 border border-yellow-200 rounded-lg hover:bg-yellow-50 transition-colors text-left group"
-                    >
-                        <div>
-                            <div className="font-medium text-yellow-700 group-hover:text-yellow-800">{t("settings.classOver")}</div>
-                            <div className="text-xs text-yellow-600 group-hover:text-yellow-700">{t("settings.classOverDesc")}</div>
-                        </div>
-                        <Bell size={20} className="text-yellow-500 group-hover:text-yellow-700" />
-                    </button>
                 </div>
             </div>
         </div>

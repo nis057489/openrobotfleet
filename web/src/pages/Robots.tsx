@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getRobots, identifyAll } from "../api";
 import { Robot } from "../types";
-import { Signal, Wifi, Clock, Eye } from "lucide-react";
+import { Signal, Wifi, Clock, Eye, Settings } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
+import { FleetActionsModal } from "../components/FleetActionsModal";
 
 export function Robots() {
     const navigate = useNavigate();
@@ -14,6 +15,7 @@ export function Robots() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [patterns, setPatterns] = useState<Record<number, string>>({});
+    const [showFleetActions, setShowFleetActions] = useState(false);
 
     useEffect(() => {
         getRobots()
@@ -45,6 +47,13 @@ export function Robots() {
                 </div>
                 <div className="flex gap-3 w-full md:w-auto">
                     <button
+                        onClick={() => setShowFleetActions(true)}
+                        className="flex-1 md:flex-none justify-center bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center gap-2"
+                    >
+                        <Settings size={18} />
+                        {t("settings.fleetMaintenance")}
+                    </button>
+                    <button
                         onClick={handleIdentifyAll}
                         className="flex-1 md:flex-none justify-center bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center gap-2"
                     >
@@ -71,6 +80,10 @@ export function Robots() {
                     <RobotCard key={robot.id} robot={robot} pattern={patterns[robot.id]} />
                 ))}
             </div>
+
+            {showFleetActions && (
+                <FleetActionsModal onClose={() => setShowFleetActions(false)} />
+            )}
         </div>
     );
 }

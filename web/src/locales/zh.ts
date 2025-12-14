@@ -13,6 +13,8 @@ export const zh = {
       error: "错误",
       save: "保存",
       cancel: "取消",
+      confirm: "确认",
+      confirmAction: "确认操作",
       delete: "删除",
       edit: "编辑",
       active: "活跃",
