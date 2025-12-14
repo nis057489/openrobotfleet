@@ -24,7 +24,6 @@ type Server struct {
 	DB         *db.DB
 	MQTT       *mqttc.Client
 	Controller *controller.Controller
-	CommitHash string // Add CommitHash field
 }
 
 func NewServer(dbPath string) (*Server, error) {
