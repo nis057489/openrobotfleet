@@ -2,6 +2,8 @@ services:
   mqtt:
     image: eclipse-mosquitto:2
     container_name: turtlebot-mqtt
+    ports:
+      - "1883:1883"
     volumes:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
 

@@ -138,8 +138,11 @@ func HandleStop(cfg Config) error {
 }
 
 // HandleIdentify makes the robot beep and flash LEDs to identify itself.
-func HandleIdentify(cfg Config) error {
+func HandleIdentify(cfg Config, data IdentifyData) error {
 	log.Println("[agent] identifying robot...")
+
+	// Blink Pi LED (fire and forget)
+	blinkPiLED(data.Pattern, data.Duration)
 
 	if cfg.Type == "laptop" {
 		return identifyLaptop()
@@ -208,6 +211,64 @@ func identifyLaptop() error {
 	return nil
 }
 
+func blinkPiLED(pattern string, duration int) {
+	led0Path := "/sys/class/leds/led0/brightness" // Green
+	led1Path := "/sys/class/leds/led1/brightness" // Red
+
+	// Check if at least one LED exists
+	_, err0 := os.Stat(led0Path)
+	_, err1 := os.Stat(led1Path)
+	if os.IsNotExist(err0) && os.IsNotExist(err1) {
+		return
+	}
+
+	go func() {
+		log.Printf("[agent] blinking Pi LEDs with pattern %s for %ds", pattern, duration)
+
+		// Default pattern if empty
+		if pattern == "" {
+			pattern = "g0g0g0g0g0"
+		}
+		if duration <= 0 {
+			duration = 5
+		}
+
+		endTime := time.Now().Add(time.Duration(duration) * time.Second)
+
+		for time.Now().Before(endTime) {
+			for _, char := range pattern {
+				if time.Now().After(endTime) {
+					break
+				}
+
+				var gVal, rVal []byte
+				switch char {
+				case 'g':
+					gVal, rVal = []byte("1"), []byte("0")
+				case 'r':
+					gVal, rVal = []byte("0"), []byte("1")
+				case 'b':
+					gVal, rVal = []byte("1"), []byte("1")
+				default: // '0' or unknown
+					gVal, rVal = []byte("0"), []byte("0")
+				}
+
+				_ = os.WriteFile(led0Path, gVal, 0644)
+				_ = os.WriteFile(led1Path, rVal, 0644)
+
+				time.Sleep(200 * time.Millisecond)
+			}
+		}
+
+		// Restore default trigger (mmc0 for green, input for red usually)
+		_ = os.WriteFile("/sys/class/leds/led0/trigger", []byte("mmc0"), 0644)
+		_ = os.WriteFile("/sys/class/leds/led1/trigger", []byte("input"), 0644)
+		// Ensure off
+		_ = os.WriteFile(led0Path, []byte("0"), 0644)
+		_ = os.WriteFile(led1Path, []byte("0"), 0644)
+	}()
+}
+
 // HandleCaptureImage takes a photo and uploads it.
 func HandleCaptureImage(cfg Config, data CaptureImageData) error {
 	log.Printf("[agent] capturing image")
@@ -265,6 +326,30 @@ func HandleCaptureImage(cfg Config, data CaptureImageData) error {
 // HandleWifiProfile configures wifi (placeholder).
 func HandleWifiProfile(data WifiProfileData) error {
 	log.Printf("[agent] wifi profile received for %s (not implemented)", data.SSID)
+	return nil
+}
+
+// HandleReboot reboots the system.
+func HandleReboot(cfg Config) error {
+	log.Printf("[agent] rebooting system...")
+	// Sync filesystem before reboot
+	exec.Command("sync").Run()
+
+	// Try systemctl first (most modern linuxes)
+	if err := exec.Command("sudo", "systemctl", "reboot").Run(); err == nil {
+		return nil
+	}
+
+	// Fallback to reboot command
+	if err := exec.Command("sudo", "reboot").Run(); err == nil {
+		return nil
+	}
+
+	// Fallback to direct reboot (if running as root)
+	cmd := exec.Command("reboot")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("reboot failed: %v: %s", err, string(out))
+	}
 	return nil
 }
 

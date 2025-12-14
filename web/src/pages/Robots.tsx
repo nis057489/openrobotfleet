@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getRobots } from "../api";
+import { getRobots, identifyAll } from "../api";
 import { Robot } from "../types";
-import { Signal, Wifi, Clock } from "lucide-react";
+import { Signal, Wifi, Clock, Eye } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
@@ -13,6 +13,7 @@ export function Robots() {
     const [robots, setRobots] = useState<Robot[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [patterns, setPatterns] = useState<Record<number, string>>({});
 
     useEffect(() => {
         getRobots()
@@ -20,6 +21,17 @@ export function Robots() {
             .catch((err) => setError(err.message))
             .finally(() => setLoading(false));
     }, []);
+
+    const handleIdentifyAll = async () => {
+        try {
+            const newPatterns = await identifyAll();
+            setPatterns(newPatterns);
+            // Clear after 10 seconds (matching backend duration)
+            setTimeout(() => setPatterns({}), 10000);
+        } catch (err) {
+            console.error("Failed to identify all:", err);
+        }
+    };
 
     if (loading) return <div className="p-8 text-center text-gray-500">{t("robots.loading")}</div>;
     if (error) return <div className="p-8 text-center text-red-500">{t("common.error")}: {error}</div>;
@@ -32,6 +44,13 @@ export function Robots() {
                     <p className="text-gray-500">{t("robots.subtitle")}</p>
                 </div>
                 <div className="flex gap-3 w-full md:w-auto">
+                    <button
+                        onClick={handleIdentifyAll}
+                        className="flex-1 md:flex-none justify-center bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center gap-2"
+                    >
+                        <Eye size={18} />
+                        {t("common.identifyAll") || "Identify All"}
+                    </button>
                     <button
                         onClick={() => navigate("/discovery")}
                         className="flex-1 md:flex-none justify-center bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center gap-2"
@@ -49,14 +68,36 @@ export function Robots() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {robots.map((robot) => (
-                    <RobotCard key={robot.id} robot={robot} />
+                    <RobotCard key={robot.id} robot={robot} pattern={patterns[robot.id]} />
                 ))}
             </div>
         </div>
     );
 }
 
-function RobotCard({ robot }: { robot: Robot }) {
+function BlinkStatus({ pattern }: { pattern: string }) {
+    const [step, setStep] = useState(0);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setStep(s => (s + 1) % pattern.length);
+        }, 200);
+        return () => clearInterval(interval);
+    }, [pattern]);
+
+    const char = pattern[step];
+    const green = char === 'g' || char === 'b';
+    const red = char === 'r' || char === 'b';
+
+    return (
+        <div className="flex gap-2 items-center bg-gray-900 px-3 py-1.5 rounded-full border border-gray-700">
+            <div className={`w-3 h-3 rounded-full transition-all duration-100 ${green ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] scale-110' : 'bg-green-900/30'}`} />
+            <div className={`w-3 h-3 rounded-full transition-all duration-100 ${red ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] scale-110' : 'bg-red-900/30'}`} />
+        </div>
+    );
+}
+
+function RobotCard({ robot, pattern }: { robot: Robot, pattern?: string }) {
     const navigate = useNavigate();
     const { t, i18n } = useTranslation();
     const isOnline = robot.status !== "offline" && robot.status !== "unknown";
@@ -66,7 +107,12 @@ function RobotCard({ robot }: { robot: Robot }) {
     }) : t("common.never");
 
     return (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md transition-shadow relative">
+            {pattern && (
+                <div className="absolute top-4 right-4 z-10">
+                    <BlinkStatus pattern={pattern} />
+                </div>
+            )}
             <div className="p-6">
                 <div className="flex items-start justify-between mb-4">
                     <div>
@@ -81,9 +127,11 @@ function RobotCard({ robot }: { robot: Robot }) {
                             </span>
                         </div>
                     </div>
-                    <div className="p-2 bg-gray-50 rounded-lg">
-                        <Signal size={20} className={isOnline ? "text-green-600" : "text-gray-400"} />
-                    </div>
+                    {!pattern && (
+                        <div className="p-2 bg-gray-50 rounded-lg">
+                            <Signal size={20} className={isOnline ? "text-green-600" : "text-gray-400"} />
+                        </div>
+                    )}
                 </div>
 
                 <div className="space-y-3">

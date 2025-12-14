@@ -114,11 +114,22 @@ func main() {
 			}
 			log.Printf("capture_image succeeded")
 		case "identify":
-			if err := agent.HandleIdentify(cfg); err != nil {
+			var payload agent.IdentifyData
+			if err := json.Unmarshal(cmd.Data, &payload); err != nil {
+				log.Printf("identify payload error: %v", err)
+				return
+			}
+			if err := agent.HandleIdentify(cfg, payload); err != nil {
 				log.Printf("identify failed: %v", err)
 				return
 			}
 			log.Printf("identify succeeded")
+		case "reboot":
+			if err := agent.HandleReboot(cfg); err != nil {
+				log.Printf("reboot failed: %v", err)
+				return
+			}
+			log.Printf("reboot initiated")
 		default:
 			log.Printf("unknown command type: %s", cmd.Type)
 		}

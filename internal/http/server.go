@@ -51,6 +51,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/settings/system", s.handleSystemConfig)
 	mux.HandleFunc("/api/robots", s.handleListRobots)
 	mux.HandleFunc("/api/robots/command/broadcast", s.handleRobotCommandBroadcast)
+	mux.HandleFunc("/api/robots/identify-all", s.handleIdentifyAll)
 	mux.HandleFunc("/api/robots/", s.handleRobotSubroutes)
 	mux.HandleFunc("/api/scenarios", s.handleScenariosCollection)
 	mux.HandleFunc("/api/scenarios/", s.handleScenarioItem)
@@ -609,4 +610,8 @@ func (s *Server) handleSystemConfig(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"demo_mode": demoMode,
 	})
+}
+
+func (s *Server) handleIdentifyAll(w http.ResponseWriter, r *http.Request) {
+	s.Controller.IdentifyAll(w, r)
 }

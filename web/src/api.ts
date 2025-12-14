@@ -248,3 +248,10 @@ export function deleteRobot(id: number | string): Promise<void> {
     method: 'DELETE',
   });
 }
+
+export function identifyAll(): Promise<Record<number, string>> {
+  return request<Record<number, string>>('/api/robots/identify-all', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+  });
+}

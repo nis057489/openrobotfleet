@@ -242,3 +242,69 @@ func (c *Controller) queueRobotCommand(ctx context.Context, robot db.Robot, cmd 
 	c.MQTT.Publish(topic, payload)
 	return job, nil
 }
+
+func (c *Controller) IdentifyAll(w http.ResponseWriter, r *http.Request) {
+	robots, err := c.DB.ListRobots(r.Context())
+	if err != nil {
+		log.Printf("list robots: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to list robots")
+		return
+	}
+
+	assignments := make(map[int64]string)
+	for i, robot := range robots {
+		if robot.AgentID == "" {
+			continue
+		}
+		pattern := generatePattern(i)
+		assignments[robot.ID] = pattern
+
+		// Send command directly via MQTT (ephemeral, no DB job needed)
+		cmd := agent.Command{
+			Type: "identify",
+		}
+		// Manually construct JSON to avoid struct definition here if possible,
+		// or use the struct from agent package if visible.
+		// We can use a map.
+		data := map[string]interface{}{
+			"duration": 10,
+			"pattern":  pattern,
+		}
+		dataBytes, _ := json.Marshal(data)
+		cmd.Data = dataBytes
+
+		payload, _ := json.Marshal(cmd)
+		topic := fmt.Sprintf("lab/commands/%s", robot.AgentID)
+		c.MQTT.Publish(topic, payload)
+	}
+	respondJSON(w, http.StatusOK, assignments)
+}
+
+func generatePattern(index int) string {
+	// Generate a 10-step pattern (2 seconds)
+	// 0=off, g=green, r=red, b=both
+	// We want distinct patterns.
+	// Strategy: Use binary representation of index?
+	// Or just a set of presets.
+
+	presets := []string{
+		"g0g0g0g0g0", // 0: Fast Green
+		"r0r0r0r0r0", // 1: Fast Red
+		"gggg000000", // 2: Slow Green
+		"rrrr000000", // 3: Slow Red
+		"grgrgrgrgr", // 4: Alternating
+		"gg00rr00gg", // 5: Mixed
+		"b0b0b0b0b0", // 6: Fast Both
+		"bbbb000000", // 7: Slow Both
+		"g000g000g0", // 8: Heartbeat Green
+		"r000r000r0", // 9: Heartbeat Red
+	}
+
+	if index < len(presets) {
+		return presets[index]
+	}
+
+	// Fallback for >10 robots: generate based on index
+	// e.g. just random or simple
+	return "b0b0b0b0b0"
+}
