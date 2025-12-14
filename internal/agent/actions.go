@@ -214,6 +214,8 @@ func identifyLaptop() error {
 func blinkPiLED(pattern string, duration int) {
 	led0Path := "/sys/class/leds/led0/brightness" // Green
 	led1Path := "/sys/class/leds/led1/brightness" // Red
+	led0Trigger := "/sys/class/leds/led0/trigger"
+	led1Trigger := "/sys/class/leds/led1/trigger"
 
 	// Check if at least one LED exists
 	_, err0 := os.Stat(led0Path)
@@ -222,8 +224,28 @@ func blinkPiLED(pattern string, duration int) {
 		return
 	}
 
+	// Helper to get current trigger
+	getTrigger := func(path string) string {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return "none"
+		}
+		// Format is "none [mmc0] heartbeat"
+		s := string(data)
+		start := strings.Index(s, "[")
+		end := strings.Index(s, "]")
+		if start != -1 && end != -1 && end > start {
+			return s[start+1 : end]
+		}
+		return "none"
+	}
+
+	// Save current state
+	origTrig0 := getTrigger(led0Trigger)
+	origTrig1 := getTrigger(led1Trigger)
+
 	go func() {
-		log.Printf("[agent] blinking Pi LEDs with pattern %s for %ds", pattern, duration)
+		log.Printf("[agent] blinking Pi LEDs with pattern %s for %ds (orig: %s, %s)", pattern, duration, origTrig0, origTrig1)
 
 		// Default pattern if empty
 		if pattern == "" {
@@ -260,12 +282,18 @@ func blinkPiLED(pattern string, duration int) {
 			}
 		}
 
-		// Restore default trigger (mmc0 for green, input for red usually)
-		_ = os.WriteFile("/sys/class/leds/led0/trigger", []byte("mmc0"), 0644)
-		_ = os.WriteFile("/sys/class/leds/led1/trigger", []byte("input"), 0644)
-		// Ensure off
-		_ = os.WriteFile(led0Path, []byte("0"), 0644)
-		_ = os.WriteFile(led1Path, []byte("0"), 0644)
+		// Restore triggers
+		_ = os.WriteFile(led0Trigger, []byte(origTrig0), 0644)
+		_ = os.WriteFile(led1Trigger, []byte(origTrig1), 0644)
+
+		// If trigger was "none" or "input" (often default for red), ensure it's ON if it was likely ON (red usually is)
+		// Actually, restoring trigger usually restores state.
+		// But if it was "default-on", we should be good.
+		// If it was "input", it might be off.
+		// Let's just ensure Red is ON if it's the power LED (led1 usually) and trigger is input/none
+		if origTrig1 == "input" || origTrig1 == "none" {
+			_ = os.WriteFile(led1Path, []byte("1"), 0644)
+		}
 	}()
 }
 
