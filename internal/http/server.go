@@ -50,7 +50,6 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/install-agent", s.handleInstallAgent)
 	mux.HandleFunc("/api/settings/install-defaults", s.handleInstallDefaults)
 	mux.HandleFunc("/api/settings/system", s.handleSystemConfig)
-	mux.HandleFunc("/api/version", s.handleVersion)
 	mux.HandleFunc("/api/robots", s.handleListRobots)
 	mux.HandleFunc("/api/robots/", s.handleRobotSubroutes)
 	mux.HandleFunc("/api/robots/command/broadcast", s.handleRobotCommandBroadcast)
@@ -619,10 +618,3 @@ func (s *Server) handleIdentifyAll(w http.ResponseWriter, r *http.Request) {
 	s.Controller.IdentifyAll(w, r)
 }
 
-func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		methodNotAllowed(w)
-		return
-	}
-	respondJSON(w, http.StatusOK, map[string]string{"commit_hash": s.CommitHash})
-}
