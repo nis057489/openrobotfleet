@@ -23,6 +23,7 @@ export const en = {
       building: "Building",
       ready: "Ready",
       scanNetwork: "Scan Network",
+      identifyAll: "Identify All",
       addRobot: "Add Robot",
       ipAddress: "IP Address",
       lastSeen: "Last Seen",

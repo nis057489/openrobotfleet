@@ -23,6 +23,7 @@ export const zh = {
       building: "构建中",
       ready: "就绪",
       scanNetwork: "扫描网络",
+      identifyAll: "识别所有",
       addRobot: "添加机器人",
       ipAddress: "IP 地址",
       lastSeen: "最后在线",
