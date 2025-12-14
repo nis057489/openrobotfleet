@@ -15,7 +15,24 @@ func (c *Controller) GetInstallDefaults(w http.ResponseWriter, r *http.Request) 
 		respondError(w, http.StatusInternalServerError, "failed to load defaults")
 		return
 	}
-	respondJSON(w, http.StatusOK, map[string]*db.InstallConfig{"install_config": cfg})
+
+	// Compute public key
+	pubKey := ""
+	if cfg != nil && cfg.SSHKey != "" {
+		pubKey, _ = prepareSSHKeys(cfg.SSHKey)
+	}
+
+	type response struct {
+		*db.InstallConfig
+		SSHPublicKey string `json:"ssh_public_key"`
+	}
+
+	resp := &response{
+		InstallConfig: cfg,
+		SSHPublicKey:  pubKey,
+	}
+
+	respondJSON(w, http.StatusOK, map[string]*response{"install_config": resp})
 }
 
 func (c *Controller) UpdateInstallDefaults(w http.ResponseWriter, r *http.Request) {

@@ -15,6 +15,8 @@ import (
 	"text/template"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
 	"example.com/turtlebot-fleet/internal/db"
 )
 
@@ -61,12 +63,14 @@ func (c *Controller) DownloadGoldenImage(w http.ResponseWriter, r *http.Request)
 		sshKey = installCfg.SSHKey
 	}
 
+	pubKey, _ := prepareSSHKeys(sshKey)
+
 	tmplData := struct {
 		*db.GoldenImageConfig
-		SSHKey string
+		SSHPublicKey string
 	}{
 		GoldenImageConfig: cfg,
-		SSHKey:            sshKey,
+		SSHPublicKey:      pubKey,
 	}
 
 	w.Header().Set("Content-Type", "text/yaml")
@@ -95,7 +99,7 @@ users:
     lock_passwd: false
     passwd: $6$rounds=4096$randomsalt$encryptedpassword
     ssh_authorized_keys:
-      - {{.SSHKey}}
+      {{if .SSHPublicKey}}- {{.SSHPublicKey}}{{end}}
 
 # Packages are pre-installed in the golden image.
 # We only handle runtime configuration here.
@@ -544,12 +548,14 @@ rm -rf /var/lib/apt/lists/*
 		sshKey = installCfg.SSHKey
 	}
 
+	pubKey, _ := prepareSSHKeys(sshKey)
+
 	tmplData := struct {
 		*db.GoldenImageConfig
-		SSHKey string
+		SSHPublicKey string
 	}{
 		GoldenImageConfig: cfg,
-		SSHKey:            sshKey,
+		SSHPublicKey:      pubKey,
 	}
 
 	tmpl, err := template.New("user-data").Parse(userDataTemplate)
@@ -611,4 +617,33 @@ func ensureDeviceNode(devicePath string) error {
 		return fmt.Errorf("mknod failed: %v %s", err, string(out))
 	}
 	return nil
+}
+
+func prepareSSHKeys(rawKey string) (pubKey string, privKeyIndented string) {
+	if rawKey == "" {
+		return "", ""
+	}
+
+	// Try to parse as private key
+	signer, err := ssh.ParsePrivateKey([]byte(rawKey))
+	if err == nil {
+		// It is a valid private key
+		pubKey = strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey())))
+		// We don't need the private key for the robot anymore
+		privKeyIndented = ""
+	} else {
+		// Parse failed.
+		// Check if it looks like a private key to avoid breaking YAML
+		if strings.Contains(rawKey, "PRIVATE KEY") || strings.Contains(rawKey, "\n") {
+			// It's multiline or looks like a private key, but we couldn't parse it.
+			// Do NOT use it as a public key, it will break cloud-init.
+			log.Printf("Warning: Failed to parse SSH key and it looks like a private key. Skipping.")
+			return "", ""
+		}
+
+		// Fallback: assume it is a public key (single line)
+		pubKey = strings.TrimSpace(rawKey)
+		privKeyIndented = ""
+	}
+	return
 }

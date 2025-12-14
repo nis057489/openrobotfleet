@@ -87,6 +87,8 @@ export const zh = {
       sshUser: "默认 SSH 用户",
       sshKey: "默认 SSH 私钥",
       sshKeyDesc: "直接粘贴私钥内容。",
+      sshPublicKey: "派生的公钥",
+      sshPublicKeyDesc: "此公钥源自上方的私钥，并将添加到机器人的 authorized_keys 中。",
       saveDefaults: "保存默认值",
       dbManagement: "数据库管理",
       dbManagementDesc: "备份和恢复控制器数据库。",

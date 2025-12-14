@@ -140,6 +140,24 @@ export function Settings() {
                             {t("settings.sshKeyDesc")}
                         </p>
                     </div>
+
+                    {config.ssh_public_key && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                {t("settings.sshPublicKey")}
+                            </label>
+                            <div className="relative">
+                                <textarea
+                                    readOnly
+                                    value={config.ssh_public_key}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 font-mono text-xs h-24 resize-none focus:outline-none"
+                                />
+                            </div>
+                            <p className="mt-1 text-xs text-gray-500">
+                                {t("settings.sshPublicKeyDesc")}
+                            </p>
+                        </div>
+                    )}
                 </div>
                 <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
                     <button

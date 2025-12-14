@@ -88,6 +88,8 @@ export const en = {
       sshUser: "Default SSH User",
       sshKey: "Default SSH Private Key",
       sshKeyDesc: "Paste the private key content directly.",
+      sshPublicKey: "Derived Public Key",
+      sshPublicKeyDesc: "This public key is derived from the private key above and will be added to the robots' authorized_keys.",
       saveDefaults: "Save Defaults",
       dbManagement: "Database Management",
       dbManagementDesc: "Backup and restore the controller database.",

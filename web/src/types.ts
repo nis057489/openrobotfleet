@@ -51,6 +51,7 @@ export interface InstallConfig {
   address: string;
   user: string;
   ssh_key: string;
+  ssh_public_key?: string;
 }
 
 export interface InstallDefaultsResponse {
