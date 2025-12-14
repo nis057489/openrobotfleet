@@ -35,6 +35,8 @@ export const zh = {
       noDescription: "未提供描述。",
       signIn: "登录",
       password: "密码",
+      logs: "日志",
+      manage: "管理",
     },
     dashboard: {
       title: "任务控制中心",

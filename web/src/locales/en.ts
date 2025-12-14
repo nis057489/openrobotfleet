@@ -36,6 +36,8 @@ export const en = {
       signIn: "Sign In",
       password: "Password",
       demoMode: "Demo Mode",
+      logs: "Logs",
+      manage: "Manage",
     },
     dashboard: {
       title: "Mission Control",

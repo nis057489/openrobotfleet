@@ -168,13 +168,13 @@ function RobotCard({ robot, pattern }: { robot: Robot, pattern?: string }) {
                     onClick={() => navigate(`/robots/${robot.id}`, { state: { tab: 'logs' } })}
                     className="text-sm font-medium text-gray-600 hover:text-gray-900 px-3 py-1.5 rounded-md hover:bg-gray-200 transition-colors"
                 >
-                    Logs
+                    {t("common.logs")}
                 </button>
                 <button
                     onClick={() => navigate(`/robots/${robot.id}`)}
                     className="text-sm font-medium text-blue-600 hover:text-blue-700 px-3 py-1.5 rounded-md hover:bg-blue-50 transition-colors"
                 >
-                    Manage
+                    {t("common.manage")}
                 </button>
             </div>
         </div>
