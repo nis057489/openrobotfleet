@@ -136,6 +136,7 @@ export const en = {
       enrolled: "Enrolled",
       portOpen: "Port {{port}} Open",
       setupRobot: "Setup Robot",
+      setupLaptop: "Setup Laptop",
       alreadyManaged: "Already Managed",
     },
     goldenImage: {

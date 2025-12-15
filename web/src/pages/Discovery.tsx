@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { scanNetwork } from "../api";
 import { DiscoveryCandidate } from "../types";
@@ -8,6 +8,9 @@ import { Search, Wifi, ArrowRight, Loader2, Turtle } from "lucide-react";
 export function Discovery() {
     const { t } = useTranslation();
     const navigate = useNavigate();
+    const location = useLocation();
+    const query = new URLSearchParams(location.search);
+    const type = query.get("type") || "robot";
     const [scanning, setScanning] = useState(false);
     const [candidates, setCandidates] = useState<DiscoveryCandidate[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -27,7 +30,7 @@ export function Discovery() {
     };
 
     const handleInstall = (ip: string) => {
-        navigate("/install", { state: { ip } });
+        navigate(`/install?type=${type}`, { state: { ip } });
     };
 
     return (
@@ -91,7 +94,7 @@ export function Discovery() {
                                         onClick={() => handleInstall(c.ip)}
                                         className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium text-sm px-3 py-2 hover:bg-blue-50 rounded-lg transition-colors"
                                     >
-                                        {t("discovery.setupRobot")} <ArrowRight size={16} />
+                                        {type === 'laptop' ? t("discovery.setupLaptop") : t("discovery.setupRobot")} <ArrowRight size={16} />
                                     </button>
                                 ) : (
                                     <button
