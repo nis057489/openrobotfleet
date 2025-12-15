@@ -153,7 +153,7 @@ function LaptopCard({ robot }: { robot: Robot }) {
                     onClick={() => navigate(`/laptops/${robot.id}`)}
                     className="text-sm font-medium text-gray-600 hover:text-gray-900"
                 >
-                    View Details
+                    {t("common.viewDetails")}
                 </button>
             </div>
         </div>

@@ -30,6 +30,7 @@ export const en = {
       ipAddress: "IP Address",
       lastSeen: "Last Seen",
       never: "Never",
+      viewDetails: "View Details",
       newScenario: "New Scenario",
       deploy: "Deploy",
       noDescription: "No description provided.",

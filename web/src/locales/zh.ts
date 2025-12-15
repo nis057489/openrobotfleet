@@ -30,6 +30,7 @@ export const zh = {
       ipAddress: "IP 地址",
       lastSeen: "最后在线",
       never: "从未",
+      viewDetails: "查看详情",
       newScenario: "新建场景",
       deploy: "部署",
       noDescription: "未提供描述。",
