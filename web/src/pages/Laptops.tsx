@@ -1,7 +1,7 @@
 import { useEffect, useState, MouseEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { getRobots, sendCommand } from "../api";
+import { getRobots, sendCommand, identifyAll } from "../api";
 import { Robot } from "../types";
 import { Signal, Wifi, Clock, Laptop as LaptopIcon, Lightbulb, Loader2, Check } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -21,6 +21,15 @@ export function Laptops() {
             .finally(() => setLoading(false));
     }, []);
 
+    const handleIdentifyAll = async () => {
+        try {
+            await identifyAll();
+        } catch (err) {
+            console.error("Failed to identify all:", err);
+            alert(t("common.error"));
+        }
+    };
+
     if (loading) return <div className="p-8 text-center text-gray-500">{t("laptops.loading")}</div>;
     if (error) return <div className="p-8 text-center text-red-500">{t("common.error")}: {error}</div>;
 
@@ -33,6 +42,13 @@ export function Laptops() {
                 </div>
                 <div className="flex gap-3 w-full md:w-auto">
                     <button
+                        onClick={handleIdentifyAll}
+                        className="flex-1 md:flex-none justify-center bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600 transition-colors font-medium flex items-center gap-2"
+                    >
+                        <Lightbulb size={18} />
+                        {t("common.identifyAll") || "Identify All"}
+                    </button>
+                    <button
                         onClick={() => navigate("/install?type=laptop")}
                         className="flex-1 md:flex-none justify-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
                     >
@@ -43,9 +59,9 @@ export function Laptops() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {laptops.map((laptop) => (
-                    <LaptopCard 
-                        key={laptop.id} 
-                        robot={laptop} 
+                    <LaptopCard
+                        key={laptop.id}
+                        robot={laptop}
                     />
                 ))}
             </div>
@@ -121,9 +137,8 @@ function LaptopCard({ robot }: { robot: Robot }) {
                 <button
                     onClick={handleIdentify}
                     disabled={identifying}
-                    className={`text-sm font-medium flex items-center gap-1 transition-colors ${
-                        success ? "text-green-600" : "text-blue-600 hover:text-blue-800"
-                    }`}
+                    className={`text-sm font-medium flex items-center gap-1 transition-colors ${success ? "text-green-600" : "text-blue-600 hover:text-blue-800"
+                        }`}
                 >
                     {identifying ? (
                         <Loader2 size={16} className="animate-spin" />

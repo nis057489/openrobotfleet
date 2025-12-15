@@ -38,6 +38,11 @@ type TestDriveData struct {
 
 // IdentifyData describes identification instructions.
 type IdentifyData struct {
-	Duration int    `json:"duration"` // seconds
-	Pattern  string `json:"pattern"`  // e.g. "g0r0b0"
+	Pattern  string `json:"pattern"`
+	Duration int    `json:"duration"`
+	// New fields for visual identification
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
+	IP   string `json:"ip,omitempty"`
+	URL  string `json:"url,omitempty"`
 }

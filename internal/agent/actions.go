@@ -145,7 +145,7 @@ func HandleIdentify(cfg Config, data IdentifyData) error {
 	blinkPiLED(data.Pattern, data.Duration)
 
 	if cfg.Type == "laptop" {
-		return identifyLaptop()
+		return identifyLaptop(data)
 	}
 
 	// 1. Beep
@@ -159,7 +159,7 @@ func HandleIdentify(cfg Config, data IdentifyData) error {
 	if out, err := beepCmd.CombinedOutput(); err != nil {
 		log.Printf("[agent] failed to beep via ROS: %v: %s", err, string(out))
 		// Fallback to laptop identification (system beep) if ROS fails
-		if err := identifyLaptop(); err != nil {
+		if err := identifyLaptop(data); err != nil {
 			log.Printf("[agent] fallback identify failed: %v", err)
 		}
 	}
@@ -190,24 +190,99 @@ func HandleIdentify(cfg Config, data IdentifyData) error {
 	return nil
 }
 
-func identifyLaptop() error {
-	// Try speaker-test (ALSA)
-	cmd := exec.Command("speaker-test", "-t", "sine", "-f", "1000", "-l", "1")
-	if err := cmd.Run(); err == nil {
-		return nil
+func identifyLaptop(data IdentifyData) error {
+	// Sound (fire and forget)
+	go func() {
+		// Try speaker-test (ALSA)
+		cmd := exec.Command("speaker-test", "-t", "sine", "-f", "1000", "-l", "1")
+		if err := cmd.Run(); err != nil {
+			// Try beep command
+			exec.Command("beep").Run()
+		}
+	}()
+
+	// Visual: TTY takeover (works even if not logged in)
+	if data.ID != "" {
+		go func() {
+			// Get current VT
+			out, _ := exec.Command("fgconsole").Output()
+			currentVT := strings.TrimSpace(string(out))
+			if currentVT == "" {
+				currentVT = "1"
+			}
+
+			// Switch to VT 6
+			exec.Command("chvt", "6").Run()
+
+			// Write to tty6
+			f, err := os.OpenFile("/dev/tty6", os.O_WRONLY, 0)
+			if err == nil {
+				// Clear screen
+				f.WriteString("\033[2J\033[H")
+				f.WriteString("\n\n")
+
+				if _, err := exec.LookPath("figlet"); err == nil {
+					cmd := exec.Command("figlet", "-w", "100", data.ID)
+					cmd.Stdout = f
+					cmd.Run()
+					fmt.Fprintf(f, "\n")
+					cmd = exec.Command("figlet", "-w", "100", data.Name)
+					cmd.Stdout = f
+					cmd.Run()
+					fmt.Fprintf(f, "\n")
+					cmd = exec.Command("figlet", "-w", "100", data.IP)
+					cmd.Stdout = f
+					cmd.Run()
+				} else {
+					fmt.Fprintf(f, "************************************\n")
+					fmt.Fprintf(f, "ID:   %s\n", data.ID)
+					fmt.Fprintf(f, "Name: %s\n", data.Name)
+					fmt.Fprintf(f, "IP:   %s\n", data.IP)
+					fmt.Fprintf(f, "************************************\n")
+				}
+				f.Close()
+			} else {
+				log.Printf("[agent] failed to open tty6: %v", err)
+			}
+
+			duration := data.Duration
+			if duration <= 0 {
+				duration = 10
+			}
+			time.Sleep(time.Duration(duration) * time.Second)
+
+			// Switch back
+			exec.Command("chvt", currentVT).Run()
+		}()
 	}
 
-	// Try beep command
-	cmd = exec.Command("beep")
-	if err := cmd.Run(); err == nil {
-		return nil
+	// Visual: Browser (works if logged in)
+	if data.URL != "" {
+		go func() {
+			// If running as root, this is hard.
+			// If running as user, this works.
+			if os.Geteuid() != 0 {
+				exec.Command("xdg-open", data.URL).Start()
+				return
+			}
+
+			// Attempt to find a user session
+			// This is a best-effort heuristic for Ubuntu/Gnome
+			users, _ := exec.Command("users").Output()
+			userList := strings.Fields(string(users))
+			if len(userList) > 0 {
+				user := userList[0] // Pick first user
+				// Try to open browser as user
+				// We need to guess DISPLAY. Usually :0 or :1
+				cmd := exec.Command("su", "-", user, "-c", fmt.Sprintf("export DISPLAY=:0; xdg-open '%s'", data.URL))
+				if err := cmd.Run(); err != nil {
+					// Try :1
+					exec.Command("su", "-", user, "-c", fmt.Sprintf("export DISPLAY=:1; xdg-open '%s'", data.URL)).Run()
+				}
+			}
+		}()
 	}
 
-	// Try sending bell character to all TTYs (requires root usually, or at least access to tty)
-	// This is a bit hacky but might work if the user is looking at the screen
-	// We'll just log it for now as a last resort
-	log.Println("[agent] *BEEP* (visual/log beep)")
-	fmt.Print("\a") // Bell to stdout of agent
 	return nil
 }
 

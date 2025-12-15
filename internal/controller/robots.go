@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -78,6 +79,25 @@ func (c *Controller) RobotCommand(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "command type required")
 		return
 	}
+
+	if req.Type == "identify" {
+		var data map[string]interface{}
+		if len(req.Data) > 0 {
+			if err := json.Unmarshal(req.Data, &data); err != nil {
+				data = make(map[string]interface{})
+			}
+		} else {
+			data = make(map[string]interface{})
+		}
+		data["id"] = fmt.Sprintf("%d", robot.ID)
+		data["name"] = robot.Name
+		data["ip"] = robot.IP
+		data["url"] = fmt.Sprintf("http://%s/identify?id=%d&name=%s&ip=%s", r.Host, robot.ID, url.QueryEscape(robot.Name), url.QueryEscape(robot.IP))
+
+		newData, _ := json.Marshal(data)
+		req.Data = newData
+	}
+
 	cmd := agent.Command{Type: req.Type, Data: req.Data}
 	job, err := c.queueRobotCommand(r.Context(), robot, cmd)
 	if err != nil {
@@ -269,6 +289,10 @@ func (c *Controller) IdentifyAll(w http.ResponseWriter, r *http.Request) {
 		data := map[string]interface{}{
 			"duration": 10,
 			"pattern":  pattern,
+			"id":       fmt.Sprintf("%d", robot.ID),
+			"name":     robot.Name,
+			"ip":       robot.IP,
+			"url":      fmt.Sprintf("http://%s/identify?id=%d&name=%s&ip=%s", r.Host, robot.ID, url.QueryEscape(robot.Name), url.QueryEscape(robot.IP)),
 		}
 		dataBytes, _ := json.Marshal(data)
 		cmd.Data = dataBytes

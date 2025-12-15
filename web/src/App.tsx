@@ -14,6 +14,7 @@ import { ScenarioEditor } from "./pages/ScenarioEditor";
 import { Discovery } from "./pages/Discovery";
 import { SemesterWizard } from "./pages/SemesterWizard";
 import { GoldenImage } from "./pages/GoldenImage";
+import { Identify } from "./pages/Identify";
 import { NotificationProvider } from "./contexts/NotificationContext";
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
             <BrowserRouter>
                 <Routes>
                     <Route path="/login" element={<Login />} />
+                    <Route path="/identify" element={<Identify />} />
 
                     <Route element={<AuthGuard />}>
                         <Route path="/" element={<Layout />}>
