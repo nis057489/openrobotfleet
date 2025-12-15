@@ -340,6 +340,11 @@ func (c *Controller) runBuild() {
 	// 6. Setup Loop Device
 	c.updateBuildProgress("Setting up loop device...", 40)
 	c.logBuild("setting up loop device...")
+
+	if err := ensureLoopDevices(); err != nil {
+		c.logBuild("warning: failed to ensure loop devices: %v", err)
+	}
+
 	out, err := exec.Command("losetup", "-fP", "--show", workImage).CombinedOutput()
 	if err != nil {
 		c.failBuild(fmt.Sprintf("losetup failed: %v: %s", err, string(out)))
@@ -646,4 +651,17 @@ func prepareSSHKeys(rawKey string) (pubKey string, privKeyIndented string) {
 		privKeyIndented = ""
 	}
 	return
+}
+
+func ensureLoopDevices() error {
+	for i := 0; i < 8; i++ {
+		devPath := fmt.Sprintf("/dev/loop%d", i)
+		if _, err := os.Stat(devPath); os.IsNotExist(err) {
+			cmd := exec.Command("mknod", devPath, "b", "7", fmt.Sprintf("%d", i))
+			if out, err := cmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("failed to create %s: %v %s", devPath, err, string(out))
+			}
+		}
+	}
+	return nil
 }
