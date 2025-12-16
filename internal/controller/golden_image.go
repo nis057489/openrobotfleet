@@ -161,6 +161,10 @@ runcmd:
   - echo 'export LDS_MODEL={{.LDSModel}}' >> /home/ubuntu/.bashrc
   {{end}}
 
+  # Fix ROS permissions
+  - mkdir -p /home/ubuntu/.ros
+  - chown -R ubuntu:ubuntu /home/ubuntu/.ros
+
   # Agent Service (Binary is pre-installed)
   - |
     cat <<EOF > /etc/systemd/system/turtlebot-agent.service
