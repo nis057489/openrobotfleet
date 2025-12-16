@@ -69,6 +69,9 @@ func (c *Controller) HandleTerminal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	addr := robot.InstallConfig.Address
+	if robot.IP != "" {
+		addr = robot.IP
+	}
 	if !strings.Contains(addr, ":") {
 		addr = addr + ":22"
 	}
