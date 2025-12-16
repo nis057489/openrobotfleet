@@ -12,6 +12,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	"golang.org/x/crypto/ssh"
+
+	"example.com/turtlebot-fleet/internal/db"
 )
 
 var upgrader = websocket.Upgrader{
@@ -43,7 +45,31 @@ func (c *Controller) HandleTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if robot.InstallConfig == nil || robot.InstallConfig.Address == "" || robot.InstallConfig.User == "" || robot.InstallConfig.SSHKey == "" {
+	// Ensure we have install config
+	if robot.InstallConfig == nil {
+		robot.InstallConfig = &db.InstallConfig{}
+	}
+
+	// Fallback to default credentials if missing
+	if robot.InstallConfig.User == "" || robot.InstallConfig.SSHKey == "" {
+		defaultCfg, err := c.DB.GetDefaultInstallConfig(r.Context())
+		if err == nil && defaultCfg != nil {
+			if robot.InstallConfig.User == "" {
+				robot.InstallConfig.User = defaultCfg.User
+			}
+			if robot.InstallConfig.SSHKey == "" {
+				robot.InstallConfig.SSHKey = defaultCfg.SSHKey
+			}
+		}
+	}
+
+	// Determine address: Prefer current IP, fallback to install config address
+	addr := robot.IP
+	if addr == "" {
+		addr = robot.InstallConfig.Address
+	}
+
+	if addr == "" || robot.InstallConfig.User == "" || robot.InstallConfig.SSHKey == "" {
 		http.Error(w, "robot ssh credentials missing", http.StatusBadRequest)
 		return
 	}
@@ -68,10 +94,6 @@ func (c *Controller) HandleTerminal(w http.ResponseWriter, r *http.Request) {
 		Timeout:         10 * time.Second,
 	}
 
-	addr := robot.InstallConfig.Address
-	if robot.IP != "" {
-		addr = robot.IP
-	}
 	if !strings.Contains(addr, ":") {
 		addr = addr + ":22"
 	}
