@@ -96,6 +96,8 @@ func InstallAgent(h HostSpec, cfg agent.Config, agentBinary []byte) error {
 		}
 	}
 	commands = append(commands,
+		"mkdir -p /home/ubuntu/.ros",
+		"chown -R ubuntu:ubuntu /home/ubuntu/.ros",
 		"systemctl daemon-reload",
 		"systemctl enable turtlebot-agent",
 		"systemctl restart turtlebot-agent",
