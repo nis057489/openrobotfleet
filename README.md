@@ -48,7 +48,7 @@ The easiest way to run the Fleet Manager is using Docker.
     docker compose up --build
     ```
 
-3. **Access the Dashboard**: Open your browser to `http://localhost:8080`.
+3. **Access the Dashboard**: Open your browser to `http://localhost`.
 
 ## How it Works
 
