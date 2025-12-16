@@ -3,16 +3,16 @@ import { useEffect, useState } from "react";
 import { getRobots, getScenarios, getSemesterStatus, getBuildStatus } from "../api";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { Robot } from "../types";
+import { useWebSocket, WSEvent } from "../contexts/WebSocketContext";
 
 export function Dashboard() {
     const { t } = useTranslation();
-    const [stats, setStats] = useState({
-        robots: { total: 0, active: 0 },
-        laptops: { total: 0, active: 0 },
-        scenarios: 0,
-        semester: { active: false, progress: "0/0" },
-        goldenImage: { status: "idle" },
-    });
+    const { addListener } = useWebSocket();
+    const [robots, setRobots] = useState<Robot[]>([]);
+    const [scenariosCount, setScenariosCount] = useState(0);
+    const [semesterStats, setSemesterStats] = useState({ active: false, progress: "0/0" });
+    const [buildStatus, setBuildStatus] = useState("idle");
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -21,26 +21,45 @@ export function Dashboard() {
             getScenarios(),
             getSemesterStatus(),
             getBuildStatus()
-        ]).then(([robots, scenarios, semester, build]) => {
-            const robotList = robots.filter(r => r.type !== 'laptop');
-            const laptopList = robots.filter(r => r.type === 'laptop');
-
-            const activeRobots = robotList.filter(r => r.status !== "offline" && r.status !== "unknown").length;
-            const activeLaptops = laptopList.filter(r => r.status !== "offline" && r.status !== "unknown").length;
-
-            setStats({
-                robots: { total: robotList.length, active: activeRobots },
-                laptops: { total: laptopList.length, active: activeLaptops },
-                scenarios: scenarios.length,
-                semester: {
-                    active: semester.active,
-                    progress: `${semester.completed}/${semester.total}`
-                },
-                goldenImage: { status: build.status || "idle" }
+        ]).then(([robotsData, scenariosData, semesterData, buildData]) => {
+            setRobots(robotsData);
+            setScenariosCount(scenariosData.length);
+            setSemesterStats({
+                active: semesterData.active,
+                progress: `${semesterData.completed}/${semesterData.total}`
             });
+            setBuildStatus(buildData.status || "idle");
             setLoading(false);
         }).catch(console.error);
     }, []);
+
+    useEffect(() => {
+        return addListener((event: WSEvent) => {
+            if (event.type === 'status_update') {
+                setRobots(prev => {
+                    const index = prev.findIndex(r => r.agent_id === event.agent_id);
+                    if (index !== -1) {
+                        const updated = [...prev];
+                        updated[index] = {
+                            ...updated[index],
+                            status: event.data.status,
+                            ip: event.data.ip,
+                            last_seen: event.data.ts,
+                        };
+                        return updated;
+                    }
+                    return prev;
+                });
+            } else if (event.type === 'build_update') {
+                setBuildStatus(event.data.status);
+            }
+        });
+    }, [addListener]);
+
+    const robotList = robots.filter(r => r.type !== 'laptop');
+    const laptopList = robots.filter(r => r.type === 'laptop');
+    const activeRobots = robotList.filter(r => r.status !== "offline" && r.status !== "unknown").length;
+    const activeLaptops = laptopList.filter(r => r.status !== "offline" && r.status !== "unknown").length;
 
     if (loading) {
         return <div className="p-8 text-center text-gray-500">{t("common.loading")}</div>;
@@ -57,23 +76,23 @@ export function Dashboard() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <StatCard
                     title={t("common.robots")}
-                    value={`${stats.robots.active}/${stats.robots.total}`}
+                    value={`${activeRobots}/${robotList.length}`}
                     icon={Bot}
-                    trend={stats.robots.active === stats.robots.total ? t("dashboard.allSystemsGo") : t("dashboard.offlineCount", { count: stats.robots.total - stats.robots.active })}
-                    trendColor={stats.robots.active === stats.robots.total ? "text-green-600" : "text-orange-600"}
+                    trend={activeRobots === robotList.length ? t("dashboard.allSystemsGo") : t("dashboard.offlineCount", { count: robotList.length - activeRobots })}
+                    trendColor={activeRobots === robotList.length ? "text-green-600" : "text-orange-600"}
                     to="/robots"
                 />
                 <StatCard
                     title={t("common.laptops")}
-                    value={`${stats.laptops.active}/${stats.laptops.total}`}
+                    value={`${activeLaptops}/${laptopList.length}`}
                     icon={Laptop}
-                    trend={stats.laptops.active === stats.laptops.total ? t("dashboard.allConnected") : t("dashboard.offlineCount", { count: stats.laptops.total - stats.laptops.active })}
+                    trend={activeLaptops === laptopList.length ? t("dashboard.allConnected") : t("dashboard.offlineCount", { count: laptopList.length - activeLaptops })}
                     trendColor="text-blue-600"
                     to="/laptops"
                 />
                 <StatCard
                     title={t("common.scenarios")}
-                    value={stats.scenarios}
+                    value={scenariosCount}
                     icon={FileText}
                     trend={t("dashboard.availableConfigurations")}
                     trendColor="text-gray-500"
@@ -85,19 +104,19 @@ export function Dashboard() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FeatureCard
                     title={t("common.semesterWizard")}
-                    description={stats.semester.active ? t("dashboard.batchOperationInProgress") : t("dashboard.readyToStartNewSemester")}
-                    status={stats.semester.active ? t("common.active") : t("common.idle")}
+                    description={semesterStats.active ? t("dashboard.batchOperationInProgress") : t("dashboard.readyToStartNewSemester")}
+                    status={semesterStats.active ? t("common.active") : t("common.idle")}
                     icon={GraduationCap}
                     to="/semester-wizard"
-                    extra={stats.semester.active ? t("dashboard.progress", { progress: stats.semester.progress }) : undefined}
+                    extra={semesterStats.active ? t("dashboard.progress", { progress: semesterStats.progress }) : undefined}
                 />
                 <FeatureCard
                     title={t("common.goldenImage")}
-                    description={stats.goldenImage.status === 'building' ? t("dashboard.buildingNewImage") : t("dashboard.manageOSImages")}
-                    status={stats.goldenImage.status === 'building' ? t("common.building") : t("common.ready")}
+                    description={buildStatus === 'building' ? t("dashboard.buildingNewImage") : t("dashboard.manageOSImages")}
+                    status={buildStatus === 'building' ? t("common.building") : t("common.ready")}
                     icon={Disc}
                     to="/golden-image"
-                    loading={stats.goldenImage.status === 'building'}
+                    loading={buildStatus === 'building'}
                 />
             </div>
         </div>
