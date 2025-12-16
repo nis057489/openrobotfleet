@@ -140,6 +140,11 @@ runcmd:
     hostnamectl set-hostname turtlebot-$SUFFIX
     sed -i "s/turtlebot/turtlebot-$SUFFIX/g" /etc/hosts
 
+  # Fix DNS (Docker/Systemd conflict)
+  - rm -f /etc/resolv.conf
+  - ln -s /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+  - systemctl restart systemd-resolved
+
   # Network setup
   - netplan apply
   - systemctl mask systemd-networkd-wait-online.service
