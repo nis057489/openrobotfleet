@@ -205,6 +205,9 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 					batchStatus.Unlock()
 
 					addr := robot.InstallConfig.Address
+					if robot.IP != "" {
+						addr = robot.IP
+					}
 					if !strings.Contains(addr, ":") {
 						addr = net.JoinHostPort(addr, "22")
 					}
