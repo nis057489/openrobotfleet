@@ -29,7 +29,7 @@ Define "Scenarios" (e.g., "Lab 1", "Midterm Project") that point to specific Git
 
 ### 🎓 Semester Wizard
 
-A dedicated tool for teaching assistants and instructors to batch-reset the fleet. Reinstall agents, wipe logs, and checkout the starter code for the new semester in one go.
+A dedicated tool for teaching assistants and instructors to batch-reset the fleet. Reinstall agents, wipe logs, update repositories, and apply specific scenarios (batch code deployment) for the new semester in one go.
 
 ### 💻 Laptop Support
 
@@ -79,6 +79,7 @@ Under the hood, this system uses:
 * **Go**: For a fast, reliable backend and agent.
 * **React**: For a responsive web interface.
 * **MQTT**: For real-time communication between robots and the server.
+* **Batch Architecture**: Commands are bundled and sent to agents for atomic, sequential execution, ensuring reliability even with intermittent network connectivity.
 * **SQLite**: For simple, self-contained data storage.
 
 ---
