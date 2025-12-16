@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { buildGoldenImage, getBuildStatus, getGoldenImageConfig, saveGoldenImageConfig } from "../api";
 import { GoldenImageConfig } from "../types";
-import { Save, Download, Wifi, Server, Radio, Hash, HardDrive, ChevronDown, ChevronRight } from "lucide-react";
+import { Save, Download, Wifi, Server, Radio, Hash, HardDrive, ChevronDown, ChevronRight, Eye, EyeOff } from "lucide-react";
 import { useNotification } from "../contexts/NotificationContext";
 import { useWebSocket, WSEvent } from "../contexts/WebSocketContext";
 
@@ -10,6 +10,7 @@ export function GoldenImage() {
     const { t } = useTranslation();
     const { success, error } = useNotification();
     const { addListener } = useWebSocket();
+    const [showWifiPassword, setShowWifiPassword] = useState(false);
     const [config, setConfig] = useState<GoldenImageConfig>({
         wifi_ssid: "",
         wifi_password: "",
@@ -172,14 +173,23 @@ export function GoldenImage() {
                                 </div>
                                 <div>
                                     <label className="block text-xs font-medium text-gray-700 mb-1">{t("goldenImage.wifiPassword")}</label>
-                                    <input
-                                        required
-                                        type="password"
-                                        value={config.wifi_password}
-                                        onChange={e => setConfig({ ...config, wifi_password: e.target.value })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                        placeholder="********"
-                                    />
+                                    <div className="relative">
+                                        <input
+                                            required
+                                            type={showWifiPassword ? "text" : "password"}
+                                            value={config.wifi_password}
+                                            onChange={e => setConfig({ ...config, wifi_password: e.target.value })}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none pr-10"
+                                            placeholder="********"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowWifiPassword(!showWifiPassword)}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                        >
+                                            {showWifiPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>

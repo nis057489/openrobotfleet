@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { installAgent, getInstallDefaults } from "../api";
-import { Loader2, Terminal } from "lucide-react";
+import { Loader2, Terminal, Eye, EyeOff } from "lucide-react";
 
 export function InstallAgent() {
     const { t } = useTranslation();
@@ -10,6 +10,7 @@ export function InstallAgent() {
     const location = useLocation();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [showSudoPassword, setShowSudoPassword] = useState(false);
     const [formData, setFormData] = useState({
         name: "",
         type: "robot",
@@ -165,13 +166,22 @@ export function InstallAgent() {
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                     {t("installAgent.sudoPassword")}
                                 </label>
-                                <input
-                                    type="password"
-                                    value={formData.sudo_password}
-                                    onChange={(e) => setFormData({ ...formData, sudo_password: e.target.value })}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                    placeholder={t("installAgent.sudoPlaceholder")}
-                                />
+                                <div className="relative">
+                                    <input
+                                        type={showSudoPassword ? "text" : "password"}
+                                        value={formData.sudo_password}
+                                        onChange={(e) => setFormData({ ...formData, sudo_password: e.target.value })}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none pr-10"
+                                        placeholder={t("installAgent.sudoPlaceholder")}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowSudoPassword(!showSudoPassword)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                    >
+                                        {showSudoPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>
