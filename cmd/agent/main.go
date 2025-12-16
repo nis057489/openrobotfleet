@@ -166,12 +166,14 @@ func buildStatusPayload(cfg agent.Config) []byte {
 		TS     string `json:"ts"`
 		IP     string `json:"ip"`
 		Type   string `json:"type,omitempty"`
+		Name   string `json:"name,omitempty"`
 	}
 	data := status{
 		Status: "ok",
 		TS:     time.Now().Format(time.RFC3339),
 		IP:     detectIPv4(),
 		Type:   cfg.Type,
+		Name:   cfg.AgentID,
 	}
 	buf, err := json.Marshal(data)
 	if err != nil {

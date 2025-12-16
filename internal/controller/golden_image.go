@@ -133,6 +133,13 @@ write_files:
       workspace_path: "/home/ubuntu/turtlebot3_ws/src"
 
 runcmd:
+  # Generate unique Agent ID and Hostname
+  - |
+    SUFFIX=$(head /dev/urandom | tr -dc a-z0-9 | head -c 6)
+    sed -i "s/TB-UNINITIALIZED/turtlebot-$SUFFIX/" /etc/turtlebot-agent/config.yaml
+    hostnamectl set-hostname turtlebot-$SUFFIX
+    sed -i "s/turtlebot/turtlebot-$SUFFIX/g" /etc/hosts
+
   # Network setup
   - netplan apply
   - systemctl mask systemd-networkd-wait-online.service
