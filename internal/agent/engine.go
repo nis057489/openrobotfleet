@@ -19,9 +19,10 @@ type AgentEngine struct {
 	Blackboard *behavior.Blackboard
 	Tree       behavior.Node
 
-	cmdChan       chan Command
-	lastIP        string
-	lastHeartbeat time.Time
+	cmdChan            chan Command
+	lastIP             string
+	lastHeartbeat      time.Time
+	lastConnectAttempt time.Time
 }
 
 func NewAgentEngine(cfg Config) *AgentEngine {
@@ -66,15 +67,22 @@ func (e *AgentEngine) Start(ctx context.Context) {
 }
 
 func (e *AgentEngine) connectMQTT() {
-	client := mqttc.NewClientWithBroker("agent-"+e.Config.AgentID, e.Config.MQTTBroker)
+	onConnect := func(c mqttlib.Client) {
+		log.Printf("MQTT Connected")
+		// Subscribe
+		topic := "lab/commands/" + e.Config.AgentID
+		log.Printf("Subscribing to %s", topic)
+		if token := c.Subscribe(topic, 0, e.mqttHandler); token.Wait() && token.Error() != nil {
+			log.Printf("subscribe error: %v", token.Error())
+		}
+		if token := c.Subscribe("lab/commands/all", 0, e.mqttHandler); token.Wait() && token.Error() != nil {
+			log.Printf("subscribe all error: %v", token.Error())
+		}
+	}
+
+	client := mqttc.NewClientWithHandler("agent-"+e.Config.AgentID, e.Config.MQTTBroker, onConnect)
 	e.MQTTClient = client
 	e.Blackboard.Set(behavior.KeyMQTTClient, client)
-
-	// Subscribe
-	topic := "lab/commands/" + e.Config.AgentID
-	log.Printf("Subscribing to %s", topic)
-	client.Subscribe(topic, e.mqttHandler)
-	client.Subscribe("lab/commands/all", e.mqttHandler)
 }
 
 func (e *AgentEngine) mqttHandler(_ mqttlib.Client, msg mqttlib.Message) {
@@ -96,10 +104,31 @@ func (e *AgentEngine) buildTree() behavior.Node {
 	return &behavior.Parallel{
 		Children: []behavior.Node{
 			&behavior.ActionNode{Action: e.checkNetwork},
+			&behavior.ActionNode{Action: e.maintainConnection},
 			&behavior.ActionNode{Action: e.processCommands},
 			&behavior.ActionNode{Action: e.sendHeartbeat},
 		},
 	}
+}
+
+func (e *AgentEngine) maintainConnection(ctx context.Context, bb *behavior.Blackboard) behavior.Status {
+	if e.MQTTClient == nil || e.MQTTClient.Client == nil {
+		return behavior.StatusFailure
+	}
+	if !e.MQTTClient.Client.IsConnected() {
+		if time.Since(e.lastConnectAttempt) > 5*time.Second {
+			log.Println("MQTT disconnected, attempting reconnect...")
+			go func() {
+				token := e.MQTTClient.Client.Connect()
+				if token.Wait() && token.Error() != nil {
+					log.Printf("reconnect failed: %v", token.Error())
+				}
+			}()
+			e.lastConnectAttempt = time.Now()
+		}
+		return behavior.StatusFailure
+	}
+	return behavior.StatusSuccess
 }
 
 // --- Leaf Nodes ---

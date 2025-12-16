@@ -19,6 +19,11 @@ func NewClient(clientID string) *Client {
 
 // NewClientWithBroker lets callers override the MQTT broker address.
 func NewClientWithBroker(clientID, broker string) *Client {
+	return NewClientWithHandler(clientID, broker, nil)
+}
+
+// NewClientWithHandler lets callers provide an OnConnect handler.
+func NewClientWithHandler(clientID, broker string, onConnect mqtt.OnConnectHandler) *Client {
 	if broker == "" {
 		broker = os.Getenv("MQTT_BROKER")
 		if broker == "" {
@@ -29,6 +34,10 @@ func NewClientWithBroker(clientID, broker string) *Client {
 		AddBroker(broker).
 		SetClientID(clientID).
 		SetConnectTimeout(5 * time.Second)
+
+	if onConnect != nil {
+		opts.SetOnConnectHandler(onConnect)
+	}
 
 	c := mqtt.NewClient(opts)
 	if token := c.Connect(); token.Wait() && token.Error() != nil {
