@@ -195,6 +195,7 @@ var (
 	buildStep      string   // Current step description
 	buildLogs      []string // New
 	buildImageName string   // New
+	lastLogUpdate  time.Time
 )
 
 func (c *Controller) logBuild(format string, v ...interface{}) {
@@ -208,7 +209,26 @@ func (c *Controller) logBuild(format string, v ...interface{}) {
 	if len(buildLogs) > 2000 {
 		buildLogs = buildLogs[len(buildLogs)-2000:]
 	}
+
+	// Throttle updates to frontend to avoid flooding
+	shouldUpdate := time.Since(lastLogUpdate) > 200*time.Millisecond
+	if shouldUpdate {
+		lastLogUpdate = time.Now()
+	}
+
+	// Capture state for callback
+	status := buildStatus
+	logs := make([]string, len(buildLogs))
+	copy(logs, buildLogs)
+	progress := buildProgress
+	step := buildStep
+	err := buildError
+	imageName := buildImageName
 	buildLock.Unlock()
+
+	if shouldUpdate && c.OnBuildUpdate != nil {
+		c.OnBuildUpdate(status, progress, step, logs, err, imageName)
+	}
 }
 
 func (c *Controller) BuildGoldenImage(w http.ResponseWriter, r *http.Request) {
@@ -246,12 +266,23 @@ func (c *Controller) GetBuildStatus(w http.ResponseWriter, r *http.Request) {
 
 func (c *Controller) updateBuildProgress(step string, progress int) {
 	buildLock.Lock()
-	defer buildLock.Unlock()
 	buildStep = step
 	buildProgress = progress
 	// Also log the step
 	ts := time.Now().Format("15:04:05")
 	buildLogs = append(buildLogs, fmt.Sprintf("[%s] >>> %s", ts, step))
+
+	// Capture state for callback
+	status := buildStatus
+	logs := make([]string, len(buildLogs))
+	copy(logs, buildLogs)
+	err := buildError
+	imageName := buildImageName
+	buildLock.Unlock()
+
+	if c.OnBuildUpdate != nil {
+		c.OnBuildUpdate(status, progress, step, logs, err, imageName)
+	}
 }
 
 func (c *Controller) runBuild() {
@@ -602,7 +633,16 @@ rm -rf /var/lib/apt/lists/*
 	buildProgress = 100
 	buildStep = fmt.Sprintf("Build complete! Image: %s", imageName)
 	buildImageName = imageName
+
+	// Capture state
+	logs := make([]string, len(buildLogs))
+	copy(logs, buildLogs)
 	buildLock.Unlock()
+
+	if c.OnBuildUpdate != nil {
+		c.OnBuildUpdate("success", 100, fmt.Sprintf("Build complete! Image: %s", imageName), logs, "", imageName)
+	}
+
 	c.logBuild("golden image build complete: %s", workImage)
 }
 
@@ -611,7 +651,18 @@ func (c *Controller) failBuild(msg string) {
 	buildLock.Lock()
 	buildStatus = "error"
 	buildError = msg
+
+	// Capture state
+	progress := buildProgress
+	step := buildStep
+	logs := make([]string, len(buildLogs))
+	copy(logs, buildLogs)
+	imageName := buildImageName
 	buildLock.Unlock()
+
+	if c.OnBuildUpdate != nil {
+		c.OnBuildUpdate("error", progress, step, logs, msg, imageName)
+	}
 }
 
 func ensureDeviceNode(devicePath string) error {

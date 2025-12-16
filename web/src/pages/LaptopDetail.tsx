@@ -6,7 +6,7 @@ import { Robot } from "../types";
 import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Plus, X, Lightbulb, Trash2, Edit2 } from "lucide-react";
 import { Terminal as TerminalView } from "../components/Terminal";
 import { useNotification } from "../contexts/NotificationContext";
-import { useSSE } from "../contexts/SSEContext";
+import { useWebSocket, WSEvent } from "../contexts/WebSocketContext";
 
 export function LaptopDetail() {
     const { t } = useTranslation();
@@ -14,7 +14,7 @@ export function LaptopDetail() {
     const navigate = useNavigate();
     const location = useLocation();
     const { success, error } = useNotification();
-    const { lastEvent } = useSSE();
+    const { addListener } = useWebSocket();
     const [robot, setRobot] = useState<Robot | null>(null);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<"overview" | "logs" | "terminal">("overview");
@@ -53,15 +53,17 @@ export function LaptopDetail() {
     }, [id]);
 
     useEffect(() => {
-        if (lastEvent && lastEvent.type === 'status_update' && robot && robot.agent_id === lastEvent.agent_id) {
-            setRobot(prev => prev ? ({
-                ...prev,
-                status: lastEvent.data.status,
-                ip: lastEvent.data.ip,
-                last_seen: lastEvent.data.ts,
-            }) : null);
-        }
-    }, [lastEvent, robot]);
+        return addListener((event: WSEvent) => {
+            if (event.type === 'status_update' && robot && robot.agent_id === event.agent_id) {
+                setRobot(prev => prev ? ({
+                    ...prev,
+                    status: event.data.status,
+                    ip: event.data.ip,
+                    last_seen: event.data.ts,
+                }) : null);
+            }
+        });
+    }, [addListener, robot]);
 
     const handleCommand = async (type: string, data: any = {}) => {
         if (!robot) return;

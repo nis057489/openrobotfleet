@@ -4,10 +4,12 @@ import { buildGoldenImage, getBuildStatus, getGoldenImageConfig, saveGoldenImage
 import { GoldenImageConfig } from "../types";
 import { Save, Download, Wifi, Server, Radio, Hash, HardDrive, ChevronDown, ChevronRight } from "lucide-react";
 import { useNotification } from "../contexts/NotificationContext";
+import { useWebSocket, WSEvent } from "../contexts/WebSocketContext";
 
 export function GoldenImage() {
     const { t } = useTranslation();
     const { success, error } = useNotification();
+    const { addListener } = useWebSocket();
     const [config, setConfig] = useState<GoldenImageConfig>({
         wifi_ssid: "",
         wifi_password: "",
@@ -55,28 +57,18 @@ export function GoldenImage() {
     }, []);
 
     useEffect(() => {
-        let interval: ReturnType<typeof setInterval>;
-        if (buildStatus === "building") {
-            interval = setInterval(async () => {
-                try {
-                    const status = await getBuildStatus();
-                    setBuildStatus(status.status);
-                    if (status.error) setBuildError(status.error);
-                    if (status.progress) setBuildProgress(status.progress);
-                    if (status.step) setBuildStep(status.step);
-                    if (status.logs) setBuildLogs(status.logs);
-                    if (status.image_name) setBuildImageName(status.image_name);
-
-                    if (status.status === "success" || status.status === "error") {
-                        clearInterval(interval);
-                    }
-                } catch (e) {
-                    console.error(e);
-                }
-            }, 2000);
-        }
-        return () => clearInterval(interval);
-    }, [buildStatus]);
+        return addListener((event: WSEvent) => {
+            if (event.type === 'build_update') {
+                const data = event.data;
+                setBuildStatus(data.status);
+                setBuildProgress(data.progress);
+                setBuildStep(data.step);
+                setBuildLogs(data.logs);
+                if (data.error) setBuildError(data.error);
+                if (data.image_name) setBuildImageName(data.image_name);
+            }
+        });
+    }, [addListener]);
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();

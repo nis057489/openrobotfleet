@@ -25,7 +25,7 @@ type Server struct {
 	DB         *db.DB
 	MQTT       *mqttc.Client
 	Controller *controller.Controller
-	SSE        *SSEBroker
+	Hub        *Hub
 }
 
 func NewServer(dbPath string) (*Server, error) {
@@ -35,8 +35,25 @@ func NewServer(dbPath string) (*Server, error) {
 	}
 	mqttClient := mqttc.NewClient("controller")
 	ctrl := controller.New(dbConn, mqttClient)
-	sse := NewSSEBroker()
-	s := &Server{DB: dbConn, MQTT: mqttClient, Controller: ctrl, SSE: sse}
+	hub := NewHub()
+	go hub.Run()
+
+	ctrl.OnBuildUpdate = func(status string, progress int, step string, logs []string, errorMsg string, imageName string) {
+		event := map[string]interface{}{
+			"type": "build_update",
+			"data": map[string]interface{}{
+				"status":     status,
+				"progress":   progress,
+				"step":       step,
+				"logs":       logs,
+				"error":      errorMsg,
+				"image_name": imageName,
+			},
+		}
+		hub.Broadcast(event)
+	}
+
+	s := &Server{DB: dbConn, MQTT: mqttClient, Controller: ctrl, Hub: hub}
 	go s.subscribeStatusUpdates()
 	return s, nil
 }
@@ -46,7 +63,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/api/login", s.handleLogin)
 	mux.HandleFunc("/api/auth/status", s.handleAuthStatus)
-	mux.HandleFunc("/api/events", s.SSE.ServeHTTP)
+	mux.HandleFunc("/api/ws", s.Hub.ServeHTTP)
 	mux.HandleFunc("/api/interest", s.handleInterest)
 
 	// Protected routes
@@ -485,15 +502,13 @@ func (s *Server) subscribeStatusUpdates() {
 			log.Printf("status: failed to upsert robot %s: %v", agentID, err)
 		}
 
-		// Broadcast SSE
+		// Broadcast WS
 		event := map[string]interface{}{
 			"type":     "status_update",
 			"agent_id": agentID,
 			"data":     payload,
 		}
-		if msgBytes, err := json.Marshal(event); err == nil {
-			s.SSE.Broadcast(string(msgBytes))
-		}
+		s.Hub.Broadcast(event)
 	}
 	s.MQTT.Subscribe(topic, h)
 }
@@ -542,9 +557,7 @@ func (s *Server) handleDiscoveryScan(w http.ResponseWriter, r *http.Request) {
 				"status":       status,
 			},
 		}
-		if msgBytes, err := json.Marshal(event); err == nil {
-			s.SSE.Broadcast(string(msgBytes))
-		}
+		s.Hub.Broadcast(event)
 	}
 
 	candidates, err := scan.ScanSubnet(onFound)

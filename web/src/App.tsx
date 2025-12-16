@@ -16,12 +16,12 @@ import { SemesterWizard } from "./pages/SemesterWizard";
 import { GoldenImage } from "./pages/GoldenImage";
 import { Identify } from "./pages/Identify";
 import { NotificationProvider } from "./contexts/NotificationContext";
-import { SSEProvider } from "./contexts/SSEContext";
+import { WebSocketProvider } from "./contexts/WebSocketContext";
 
 export default function App() {
     return (
         <NotificationProvider>
-            <SSEProvider>
+            <WebSocketProvider>
                 <BrowserRouter>
                     <Routes>
                         <Route path="/login" element={<Login />} />
@@ -46,7 +46,7 @@ export default function App() {
                         </Route>
                     </Routes>
                 </BrowserRouter>
-            </SSEProvider>
+            </WebSocketProvider>
         </NotificationProvider>
     );
 }

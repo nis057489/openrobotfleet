@@ -17,8 +17,9 @@ import (
 
 // Controller holds shared dependencies for HTTP handlers.
 type Controller struct {
-	DB   *db.DB
-	MQTT *mqttc.Client
+	DB            *db.DB
+	MQTT          *mqttc.Client
+	OnBuildUpdate func(status string, progress int, step string, logs []string, errorMsg string, imageName string)
 }
 
 func New(dbConn *db.DB, mqttClient *mqttc.Client) *Controller {
