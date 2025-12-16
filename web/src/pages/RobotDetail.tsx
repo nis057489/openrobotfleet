@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { getRobot, sendCommand, updateRobotTags, getSystemConfig, deleteRobot } from "../api";
+import { getRobot, sendCommand, updateRobotTags, getSystemConfig, deleteRobot, updateRobotName } from "../api";
 import { Robot } from "../types";
-import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Tag, Plus, X, Camera, Play, Lightbulb, Trash2 } from "lucide-react";
+import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Tag, Plus, X, Camera, Play, Lightbulb, Trash2, Edit2 } from "lucide-react";
 import { Terminal as TerminalView } from "../components/Terminal";
 import { useNotification } from "../contexts/NotificationContext";
 
@@ -28,6 +28,10 @@ export function RobotDetail() {
     // Tag state
     const [newTag, setNewTag] = useState("");
     const [isAddingTag, setIsAddingTag] = useState(false);
+
+    // Rename state
+    const [isEditingName, setIsEditingName] = useState(false);
+    const [newName, setNewName] = useState("");
 
     useEffect(() => {
         if (location.state && (location.state as any).tab === 'logs') {
@@ -81,6 +85,18 @@ export function RobotDetail() {
             setRobot(updated);
         } catch (err) {
             console.error("Failed to remove tag", err);
+        }
+    };
+
+    const handleRename = async () => {
+        if (!robot || !newName.trim()) return;
+        try {
+            const updated = await updateRobotName(robot.id, newName.trim());
+            setRobot(updated);
+            setIsEditingName(false);
+            success(t("robotDetail.renamed") || "Robot renamed");
+        } catch (err) {
+            error(err instanceof Error ? err.message : "Failed to rename");
         }
     };
 
@@ -156,7 +172,32 @@ export function RobotDetail() {
                 </button>
                 <div className="flex-1">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
-                        <h1 className="text-2xl font-bold text-gray-900">{robot.name}</h1>
+                        {isEditingName ? (
+                            <div className="flex items-center gap-2">
+                                <input
+                                    autoFocus
+                                    value={newName}
+                                    onChange={e => setNewName(e.target.value)}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') handleRename();
+                                        if (e.key === 'Escape') setIsEditingName(false);
+                                    }}
+                                    className="text-2xl font-bold text-gray-900 border border-gray-300 rounded px-2 py-1 w-64"
+                                />
+                                <button onClick={handleRename} className="p-1 text-green-600 hover:bg-green-50 rounded"><Save size={20} /></button>
+                                <button onClick={() => setIsEditingName(false)} className="p-1 text-gray-500 hover:bg-gray-100 rounded"><X size={20} /></button>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2 group">
+                                <h1 className="text-2xl font-bold text-gray-900">{robot.name}</h1>
+                                <button
+                                    onClick={() => { setNewName(robot.name); setIsEditingName(true); }}
+                                    className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-blue-600 transition-opacity"
+                                >
+                                    <Edit2 size={16} />
+                                </button>
+                            </div>
+                        )}
                         <div className="flex items-center gap-2 flex-wrap">
                             <button
                                 onClick={() => handleCommand("identify")}

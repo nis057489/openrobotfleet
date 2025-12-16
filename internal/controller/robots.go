@@ -332,3 +332,64 @@ func generatePattern(index int) string {
 	// e.g. just random or simple
 	return "b0b0b0b0b0"
 }
+
+func (c *Controller) UpdateRobotName(w http.ResponseWriter, r *http.Request) {
+	// Path: /api/robots/:id/name
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 4 || parts[0] != "api" || parts[1] != "robots" || parts[3] != "name" {
+		respondError(w, http.StatusBadRequest, "invalid path")
+		return
+	}
+	id, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid robot id")
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Name == "" {
+		respondError(w, http.StatusBadRequest, "name required")
+		return
+	}
+
+	// Get current robot to know the old AgentID
+	oldRobot, err := c.DB.GetRobotByID(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "robot not found")
+		return
+	}
+
+	if err := c.DB.UpdateRobotName(r.Context(), id, req.Name); err != nil {
+		log.Printf("update robot name: %v", err)
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") || strings.Contains(err.Error(), "constraint failed") {
+			respondError(w, http.StatusConflict, "name already taken")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "failed to update robot name")
+		return
+	}
+
+	// Send command to agent to update its config
+	if oldRobot.AgentID != "" {
+		cmd := commandRequest{
+			Type: "configure_agent",
+			Data: json.RawMessage(fmt.Sprintf(`{"agent_id": "%s"}`, req.Name)),
+		}
+		payload, _ := json.Marshal(cmd)
+		topic := fmt.Sprintf("lab/commands/%s", oldRobot.AgentID)
+		c.MQTT.Publish(topic, payload)
+	}
+
+	robot, err := c.DB.GetRobotByID(r.Context(), id)
+	if err != nil {
+		respondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+		return
+	}
+	respondJSON(w, http.StatusOK, robot)
+}

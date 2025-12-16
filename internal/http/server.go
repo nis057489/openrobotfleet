@@ -3,6 +3,7 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -244,6 +245,14 @@ func (s *Server) handleRobotSubroutes(w http.ResponseWriter, r *http.Request) {
 		s.Controller.UpdateRobotTags(w, r)
 		return
 	}
+	if strings.HasSuffix(trimmed, "/name") {
+		if r.Method != http.MethodPut {
+			methodNotAllowed(w)
+			return
+		}
+		s.Controller.UpdateRobotName(w, r)
+		return
+	}
 	if strings.HasSuffix(trimmed, "/terminal") {
 		s.Controller.HandleTerminal(w, r)
 		return
@@ -446,6 +455,29 @@ func (s *Server) subscribeStatusUpdates() {
 			name = agentID
 		}
 		log.Printf("status update from %s: status=%s ip=%s type=%s", agentID, payload.Status, payload.IP, payload.Type)
+
+		// Check if we have a pending rename (DB name != Agent name)
+		// We look up by AgentID because that's what the robot is currently using.
+		existing, err := s.DB.GetRobotByAgentID(context.Background(), agentID)
+		if err == nil && existing.Name != "" && existing.Name != name {
+			log.Printf("status: robot %s (agent_id=%s) reports name %s, but DB has %s. Sending rename command.", existing.Name, agentID, name, existing.Name)
+
+			// Send configure_agent command to rename the robot
+			cmd := map[string]interface{}{
+				"type": "configure_agent",
+				"data": map[string]string{"agent_id": existing.Name},
+			}
+			payloadBytes, _ := json.Marshal(cmd)
+			topic := fmt.Sprintf("lab/commands/%s", agentID)
+			s.MQTT.Publish(topic, payloadBytes)
+
+			// Update status but keep the DB name
+			if err := s.DB.UpsertRobotStatus(context.Background(), agentID, existing.Name, payload.IP, payload.Status, payload.Type); err != nil {
+				log.Printf("status: failed to upsert robot %s: %v", agentID, err)
+			}
+			return
+		}
+
 		if err := s.DB.UpsertRobotStatus(context.Background(), agentID, name, payload.IP, payload.Status, payload.Type); err != nil {
 			log.Printf("status: failed to upsert robot %s: %v", agentID, err)
 		}
@@ -616,4 +648,3 @@ func (s *Server) handleSystemConfig(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleIdentifyAll(w http.ResponseWriter, r *http.Request) {
 	s.Controller.IdentifyAll(w, r)
 }
-

@@ -46,3 +46,8 @@ type IdentifyData struct {
 	IP   string `json:"ip,omitempty"`
 	URL  string `json:"url,omitempty"`
 }
+
+// ConfigureAgentData describes agent configuration instructions.
+type ConfigureAgentData struct {
+	AgentID string `json:"agent_id"`
+}

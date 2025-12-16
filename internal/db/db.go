@@ -420,6 +420,59 @@ WHERE r.name = ?`)
 	return r, nil
 }
 
+func (d *DB) GetRobotByAgentID(ctx context.Context, agentID string) (Robot, error) {
+	stmt, err := d.SQL.PrepareContext(ctx, `SELECT r.id, r.name, r.agent_id, r.ip, r.last_seen, r.status, r.notes, s.id, s.name, r.ssh_address, r.ssh_user, r.ssh_key, r.tags, r.type
+FROM robots r
+LEFT JOIN scenarios s ON s.id = r.last_scenario_id
+WHERE r.agent_id = ?`)
+	if err != nil {
+		return Robot{}, err
+	}
+	defer stmt.Close()
+	var r Robot
+	var lastSeen sql.NullTime
+	var notes sql.NullString
+	var scenarioID sql.NullInt64
+	var scenarioName sql.NullString
+	var sshAddr, sshUser, sshKey sql.NullString
+	var tags sql.NullString
+	var rType sql.NullString
+	if err := stmt.QueryRowContext(ctx, agentID).Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes, &scenarioID, &scenarioName, &sshAddr, &sshUser, &sshKey, &tags, &rType); err != nil {
+		return Robot{}, err
+	}
+	if lastSeen.Valid {
+		r.LastSeen = lastSeen.Time
+	}
+	if notes.Valid {
+		r.Notes = notes.String
+	}
+	if scenarioID.Valid {
+		r.LastScenario = &ScenarioRef{ID: scenarioID.Int64, Name: scenarioName.String}
+	}
+	if tags.Valid && tags.String != "" {
+		r.Tags = strings.Split(tags.String, ",")
+	} else {
+		r.Tags = []string{}
+	}
+	if rType.Valid {
+		r.Type = rType.String
+	} else {
+		r.Type = "robot"
+	}
+	r.InstallConfig = buildInstallConfig(sshAddr, sshUser, sshKey)
+	return r, nil
+}
+
+func (d *DB) UpdateRobotName(ctx context.Context, id int64, name string) error {
+	stmt, err := d.SQL.PrepareContext(ctx, `UPDATE robots SET name = ? WHERE id = ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.ExecContext(ctx, name, id)
+	return err
+}
+
 func (d *DB) UpdateRobotScenario(ctx context.Context, robotID, scenarioID int64) error {
 	stmt, err := d.SQL.PrepareContext(ctx, `UPDATE robots SET last_scenario_id = ? WHERE id = ?`)
 	if err != nil {

@@ -14,7 +14,58 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
+
+// HandleConfigureAgent updates the agent configuration and restarts the service.
+func HandleConfigureAgent(cfg Config, data ConfigureAgentData) error {
+	if data.AgentID == "" {
+		return errors.New("agent_id required")
+	}
+
+	// Update config struct
+	cfg.AgentID = data.AgentID
+
+	// Write back to file
+	cfgPath := os.Getenv("AGENT_CONFIG_PATH")
+	if cfgPath == "" {
+		cfgPath = "/etc/turtlebot-agent/config.yaml"
+	}
+
+	// Read existing to preserve other fields if needed, but we have full config in memory usually.
+	// Actually cfg passed here is a copy.
+	// Let's just marshal the updated cfg.
+	// Wait, cfg passed to this function might be incomplete if we don't pass the full config around.
+	// But LoadConfig returns full config.
+	// Let's re-read to be safe or just use what we have.
+	// The cfg passed to HandleConfigureAgent comes from e.Config in engine.go, which is loaded at startup.
+
+	bytes, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(cfgPath, bytes, 0644); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+
+	log.Printf("[agent] updated config with new agent_id: %s", data.AgentID)
+
+	// Restart service
+	// We assume systemd
+	go func() {
+		time.Sleep(1 * time.Second)
+		cmd := exec.Command("systemctl", "restart", "turtlebot-agent")
+		if err := cmd.Run(); err != nil {
+			log.Printf("failed to restart agent: %v", err)
+			// Fallback: exit and let systemd restart us
+			os.Exit(0)
+		}
+	}()
+
+	return nil
+}
 
 // HandleUpdateRepo clones the requested git repository to the target directory.
 func HandleUpdateRepo(cfg Config, data UpdateRepoData) error {

@@ -51,6 +51,14 @@ export function getRobot(id: number | string): Promise<Robot> {
   return request<Robot>(`/api/robots/${id}`);
 }
 
+export function updateRobotName(id: number | string, name: string): Promise<Robot> {
+  return request<Robot>(`/api/robots/${id}/name`, {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ name }),
+  });
+}
+
 export function sendCommand(
   robotId: number | string,
   command: CommandRequest,

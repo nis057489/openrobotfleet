@@ -209,6 +209,12 @@ func (e *AgentEngine) mapCommandToAction(cmd Command) func() error {
 	cfg := e.Config
 
 	switch cmd.Type {
+	case "configure_agent":
+		var payload ConfigureAgentData
+		if err := json.Unmarshal(cmd.Data, &payload); err != nil {
+			return func() error { return err }
+		}
+		return func() error { return HandleConfigureAgent(cfg, payload) }
 	case "update_repo":
 		var payload UpdateRepoData
 		if err := json.Unmarshal(cmd.Data, &payload); err != nil {
