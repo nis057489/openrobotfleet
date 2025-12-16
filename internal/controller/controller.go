@@ -10,20 +10,53 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"example.com/turtlebot-fleet/internal/db"
 	mqttc "example.com/turtlebot-fleet/internal/mqtt"
 )
+
+type RobotJobState struct {
+	JobID     string
+	JobStatus string
+	JobError  string
+	UpdatedAt time.Time
+}
 
 // Controller holds shared dependencies for HTTP handlers.
 type Controller struct {
 	DB            *db.DB
 	MQTT          *mqttc.Client
 	OnBuildUpdate func(status string, progress int, step string, logs []string, errorMsg string, imageName string)
+
+	jobStates   map[string]RobotJobState
+	jobStatesMu sync.RWMutex
 }
 
 func New(dbConn *db.DB, mqttClient *mqttc.Client) *Controller {
-	return &Controller{DB: dbConn, MQTT: mqttClient}
+	return &Controller{
+		DB:        dbConn,
+		MQTT:      mqttClient,
+		jobStates: make(map[string]RobotJobState),
+	}
+}
+
+func (c *Controller) UpdateRobotJobStatus(agentID, jobID, status, errStr string) {
+	c.jobStatesMu.Lock()
+	defer c.jobStatesMu.Unlock()
+	c.jobStates[agentID] = RobotJobState{
+		JobID:     jobID,
+		JobStatus: status,
+		JobError:  errStr,
+		UpdatedAt: time.Now(),
+	}
+}
+
+func (c *Controller) GetRobotJobStatus(agentID string) RobotJobState {
+	c.jobStatesMu.RLock()
+	defer c.jobStatesMu.RUnlock()
+	return c.jobStates[agentID]
 }
 
 func (c *Controller) Health(w http.ResponseWriter, _ *http.Request) {

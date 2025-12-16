@@ -51,3 +51,8 @@ type IdentifyData struct {
 type ConfigureAgentData struct {
 	AgentID string `json:"agent_id"`
 }
+
+// BatchData describes a list of commands to execute sequentially.
+type BatchData struct {
+	Commands []Command `json:"commands"`
+}

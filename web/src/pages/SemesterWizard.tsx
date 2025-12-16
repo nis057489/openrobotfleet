@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getRobots, getInstallDefaults, startSemesterBatch, getSemesterStatus } from "../api";
-import { Robot, InstallConfig, SemesterStatus } from "../types";
-import { Check, RefreshCw, GitBranch, Trash2, AlertTriangle, ArrowRight, Clock, Terminal, XCircle, Activity } from "lucide-react";
+import { getRobots, getInstallDefaults, startSemesterBatch, getSemesterStatus, getScenarios } from "../api";
+import { Robot, InstallConfig, SemesterStatus, Scenario } from "../types";
+import { Check, RefreshCw, GitBranch, Trash2, AlertTriangle, ArrowRight, Clock, Terminal, XCircle, Activity, FileText } from "lucide-react";
 
 export function SemesterWizard() {
     const { t } = useTranslation();
     const [robots, setRobots] = useState<Robot[]>([]);
+    const [scenarios, setScenarios] = useState<Scenario[]>([]);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [loading, setLoading] = useState(true);
     const [executing, setExecuting] = useState(false);
@@ -16,6 +17,8 @@ export function SemesterWizard() {
     // Actions
     const [doResetLogs, setDoResetLogs] = useState(false);
     const [doUpdateRepo, setDoUpdateRepo] = useState(false);
+    const [doApplyScenario, setDoApplyScenario] = useState(false);
+    const [selectedScenarioIds, setSelectedScenarioIds] = useState<Set<number>>(new Set());
     const [doReinstall, setDoReinstall] = useState(false);
     const [doSelfTest, setDoSelfTest] = useState(false);
     const [repoUrl, setRepoUrl] = useState("https://github.com/turtlebot/turtlebot-agent.git");
@@ -24,9 +27,10 @@ export function SemesterWizard() {
     const [installDefaults, setInstallDefaults] = useState<InstallConfig | null>(null);
 
     useEffect(() => {
-        Promise.all([getRobots(), getInstallDefaults()])
-            .then(([robotsData, defaultsData]) => {
+        Promise.all([getRobots(), getInstallDefaults(), getScenarios()])
+            .then(([robotsData, defaultsData, scenariosData]) => {
                 setRobots(robotsData);
+                setScenarios(scenariosData);
                 setSelectedIds(new Set(robotsData.map(r => r.id)));
                 if (defaultsData.install_config) {
                     setInstallDefaults(defaultsData.install_config);
@@ -72,7 +76,7 @@ export function SemesterWizard() {
 
     const handleExecute = async () => {
         if (selectedIds.size === 0) return;
-        if (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest) return;
+        if (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario) return;
 
         setExecuting(true);
         try {
@@ -86,7 +90,9 @@ export function SemesterWizard() {
                     repo: repoUrl,
                     branch: "main",
                     path: ""
-                }
+                },
+                apply_scenarios: doApplyScenario,
+                scenario_ids: doApplyScenario ? Array.from(selectedScenarioIds) : []
             });
             setBatchStarted(true);
         } catch (err) {
@@ -263,7 +269,10 @@ export function SemesterWizard() {
                                         type="checkbox"
                                         className="hidden"
                                         checked={doUpdateRepo}
-                                        onChange={e => setDoUpdateRepo(e.target.checked)}
+                                        onChange={e => {
+                                            setDoUpdateRepo(e.target.checked);
+                                            if (e.target.checked) setDoApplyScenario(false);
+                                        }}
                                     />
                                 </div>
                                 <div className="flex-1">
@@ -279,6 +288,53 @@ export function SemesterWizard() {
                                             className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
                                             placeholder="https://github.com/..."
                                         />
+                                    )}
+                                </div>
+                            </label>
+
+                            <hr className="border-gray-100" />
+
+                            {/* Apply Scenario */}
+                            <label className="flex items-start gap-3 cursor-pointer">
+                                <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doApplyScenario ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
+                                    {doApplyScenario && <Check size={14} />}
+                                    <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={doApplyScenario}
+                                        onChange={e => {
+                                            setDoApplyScenario(e.target.checked);
+                                            if (e.target.checked) setDoUpdateRepo(false);
+                                        }}
+                                    />
+                                </div>
+                                <div className="flex-1">
+                                    <div className="font-medium text-gray-900 flex items-center gap-2">
+                                        <FileText size={16} /> {t("semesterWizard.applyScenario")}
+                                    </div>
+                                    <p className="text-sm text-gray-500 mb-2">{t("semesterWizard.applyScenarioDesc")}</p>
+                                    {doApplyScenario && (
+                                        <div className="border border-gray-200 rounded-md max-h-40 overflow-y-auto">
+                                            {scenarios.map(s => (
+                                                <label key={s.id} className="flex items-center p-2 hover:bg-gray-50 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="mr-2"
+                                                        checked={selectedScenarioIds.has(s.id)}
+                                                        onChange={e => {
+                                                            const next = new Set(selectedScenarioIds);
+                                                            if (e.target.checked) next.add(s.id);
+                                                            else next.delete(s.id);
+                                                            setSelectedScenarioIds(next);
+                                                        }}
+                                                    />
+                                                    <span className="text-sm text-gray-700">{s.name}</span>
+                                                </label>
+                                            ))}
+                                            {scenarios.length === 0 && (
+                                                <div className="p-2 text-sm text-gray-400 italic">No scenarios available</div>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                             </label>
@@ -308,8 +364,8 @@ export function SemesterWizard() {
 
                     <button
                         onClick={handleExecute}
-                        disabled={executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo && !doReinstall)}
-                        className={`w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 ${executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo && !doReinstall)
+                        disabled={executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario)}
+                        className={`w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 ${executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario)
                             ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                             : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
                             }`}

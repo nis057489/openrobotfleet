@@ -446,11 +446,14 @@ func methodNotAllowed(w http.ResponseWriter) {
 }
 
 type statusPayload struct {
-	Status string `json:"status"`
-	TS     string `json:"ts"`
-	IP     string `json:"ip"`
-	Name   string `json:"name"`
-	Type   string `json:"type"`
+	Status    string `json:"status"`
+	TS        string `json:"ts"`
+	IP        string `json:"ip"`
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	JobID     string `json:"job_id"`
+	JobStatus string `json:"job_status"`
+	JobError  string `json:"job_error"`
 }
 
 func (s *Server) subscribeStatusUpdates() {
@@ -474,7 +477,10 @@ func (s *Server) subscribeStatusUpdates() {
 		if name == "" {
 			name = agentID
 		}
-		log.Printf("status update from %s: status=%s ip=%s type=%s", agentID, payload.Status, payload.IP, payload.Type)
+		log.Printf("status update from %s: status=%s ip=%s type=%s job=%s/%s", agentID, payload.Status, payload.IP, payload.Type, payload.JobID, payload.JobStatus)
+
+		// Update job status in controller memory
+		s.Controller.UpdateRobotJobStatus(agentID, payload.JobID, payload.JobStatus, payload.JobError)
 
 		// Check if we have a pending rename (DB name != Agent name)
 		// We look up by AgentID because that's what the robot is currently using.
@@ -500,6 +506,11 @@ func (s *Server) subscribeStatusUpdates() {
 
 		if err := s.DB.UpsertRobotStatus(context.Background(), agentID, name, payload.IP, payload.Status, payload.Type); err != nil {
 			log.Printf("status: failed to upsert robot %s: %v", agentID, err)
+		}
+
+		// Update controller job state
+		if payload.JobID != "" {
+			s.Controller.UpdateRobotJobStatus(agentID, payload.JobID, payload.JobStatus, payload.JobError)
 		}
 
 		// Broadcast WS

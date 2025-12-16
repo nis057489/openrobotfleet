@@ -257,8 +257,28 @@ func (e *AgentEngine) mapCommandToAction(cmd Command) func() error {
 		return func() error { return HandleIdentify(cfg, payload) }
 	case "reboot":
 		return func() error { return HandleReboot(cfg) }
+	case "batch":
+		var payload BatchData
+		if err := json.Unmarshal(cmd.Data, &payload); err != nil {
+			return func() error { return err }
+		}
+		return func() error { return e.HandleBatch(payload) }
 	default:
 		log.Printf("unknown command type: %s", cmd.Type)
 		return nil
 	}
+}
+
+func (e *AgentEngine) HandleBatch(data BatchData) error {
+	for i, cmd := range data.Commands {
+		log.Printf("batch: executing command %d/%d: %s", i+1, len(data.Commands), cmd.Type)
+		action := e.mapCommandToAction(cmd)
+		if action == nil {
+			return fmt.Errorf("unknown command in batch: %s", cmd.Type)
+		}
+		if err := action(); err != nil {
+			return fmt.Errorf("batch failed at %s: %w", cmd.Type, err)
+		}
+	}
+	return nil
 }

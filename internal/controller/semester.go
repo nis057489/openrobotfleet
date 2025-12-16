@@ -14,16 +14,22 @@ import (
 
 	"example.com/turtlebot-fleet/internal/agent"
 	"example.com/turtlebot-fleet/internal/db"
+	"example.com/turtlebot-fleet/internal/scenario"
 	sshc "example.com/turtlebot-fleet/internal/ssh"
 )
 
 type semesterRequest struct {
-	RobotIDs    []int64              `json:"robot_ids"`
-	Reinstall   bool                 `json:"reinstall"`
-	ResetLogs   bool                 `json:"reset_logs"`
-	UpdateRepo  bool                 `json:"update_repo"`
-	RunSelfTest bool                 `json:"run_self_test"`
-	RepoConfig  agent.UpdateRepoData `json:"repo_config"`
+	RobotIDs       []int64              `json:"robot_ids"`
+	Reinstall      bool                 `json:"reinstall"`
+	ResetLogs      bool                 `json:"reset_logs"`
+	UpdateRepo     bool                 `json:"update_repo"`
+	RunSelfTest    bool                 `json:"run_self_test"`
+	RepoConfig     agent.UpdateRepoData `json:"repo_config"`
+	ApplyScenarios bool                 `json:"apply_scenarios"`
+	ScenarioIDs    []int64              `json:"scenario_ids"`
+
+	// Internal
+	ScenarioConfigs []agent.UpdateRepoData `json:"-"`
 }
 
 type SemesterBatchStatus struct {
@@ -71,6 +77,22 @@ func (c *Controller) HandleSemesterStart(w http.ResponseWriter, r *http.Request)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid payload")
 		return
+	}
+
+	if req.ApplyScenarios {
+		for _, sid := range req.ScenarioIDs {
+			s, err := c.DB.GetScenarioByID(r.Context(), sid)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid scenario id: %d", sid))
+				return
+			}
+			spec, err := scenario.Parse(s.ConfigYAML)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid scenario config for %s: %v", s.Name, err))
+				return
+			}
+			req.ScenarioConfigs = append(req.ScenarioConfigs, spec.Repo.ToUpdateRepo())
+		}
 	}
 
 	batchStatus.Lock()
@@ -250,7 +272,7 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 					}
 
 					// Wait for reconnect
-					if req.ResetLogs || req.UpdateRepo {
+					if req.ResetLogs || req.UpdateRepo || req.ApplyScenarios {
 						log.Printf("semester: waiting for %s to reconnect...", robot.Name)
 						batchStatus.Lock()
 						batchStatus.Robots[id] = "waiting_for_connection"
@@ -312,6 +334,41 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 					batchStatus.Completed++
 					batchStatus.Unlock()
 					return
+				}
+			}
+
+			if req.ApplyScenarios {
+				log.Printf("semester: applying scenarios for %s", robot.Name)
+				batchStatus.Lock()
+				batchStatus.Robots[id] = "applying_scenarios"
+				batchStatus.Unlock()
+
+				var commands []agent.Command
+				for _, config := range req.ScenarioConfigs {
+					data, _ := json.Marshal(config)
+					commands = append(commands, agent.Command{Type: "update_repo", Data: data})
+				}
+
+				batchData := agent.BatchData{Commands: commands}
+				batchPayload, _ := json.Marshal(batchData)
+				cmd := agent.Command{Type: "batch", Data: batchPayload}
+
+				if _, err := c.queueRobotCommand(ctx, robot, cmd); err != nil {
+					log.Printf("semester: failed to queue batch scenarios for %s: %v", robot.Name, err)
+					batchStatus.Lock()
+					batchStatus.Errors[id] = "failed to queue batch scenarios"
+					batchStatus.Robots[id] = "error"
+					batchStatus.Completed++
+					batchStatus.Unlock()
+					return
+				}
+
+				// Update DB to reflect the last scenario applied
+				if len(req.ScenarioIDs) > 0 {
+					lastID := req.ScenarioIDs[len(req.ScenarioIDs)-1]
+					if err := c.DB.UpdateRobotScenario(ctx, id, lastID); err != nil {
+						log.Printf("semester: failed to update robot scenario for %s: %v", robot.Name, err)
+					}
 				}
 			}
 

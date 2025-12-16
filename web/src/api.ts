@@ -198,6 +198,8 @@ export interface SemesterRequest {
     branch: string;
     path: string;
   };
+  apply_scenarios?: boolean;
+  scenario_ids?: number[];
 }
 
 export function startSemesterBatch(req: SemesterRequest): Promise<void> {
