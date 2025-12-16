@@ -25,6 +25,7 @@ type Server struct {
 	DB         *db.DB
 	MQTT       *mqttc.Client
 	Controller *controller.Controller
+	SSE        *SSEBroker
 }
 
 func NewServer(dbPath string) (*Server, error) {
@@ -34,7 +35,8 @@ func NewServer(dbPath string) (*Server, error) {
 	}
 	mqttClient := mqttc.NewClient("controller")
 	ctrl := controller.New(dbConn, mqttClient)
-	s := &Server{DB: dbConn, MQTT: mqttClient, Controller: ctrl}
+	sse := NewSSEBroker()
+	s := &Server{DB: dbConn, MQTT: mqttClient, Controller: ctrl, SSE: sse}
 	go s.subscribeStatusUpdates()
 	return s, nil
 }
@@ -43,7 +45,8 @@ func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/api/login", s.handleLogin)
-	mux.HandleFunc("/api/auth/status", s.handleAuthStatus) // Add this line
+	mux.HandleFunc("/api/auth/status", s.handleAuthStatus)
+	mux.HandleFunc("/api/events", s.SSE.ServeHTTP)
 	mux.HandleFunc("/api/interest", s.handleInterest)
 
 	// Protected routes
@@ -481,6 +484,16 @@ func (s *Server) subscribeStatusUpdates() {
 		if err := s.DB.UpsertRobotStatus(context.Background(), agentID, name, payload.IP, payload.Status, payload.Type); err != nil {
 			log.Printf("status: failed to upsert robot %s: %v", agentID, err)
 		}
+
+		// Broadcast SSE
+		event := map[string]interface{}{
+			"type":     "status_update",
+			"agent_id": agentID,
+			"data":     payload,
+		}
+		if msgBytes, err := json.Marshal(event); err == nil {
+			s.SSE.Broadcast(string(msgBytes))
+		}
 	}
 	s.MQTT.Subscribe(topic, h)
 }
@@ -498,12 +511,6 @@ func (s *Server) handleDiscoveryScan(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
-	candidates, err := scan.ScanSubnet()
-	if err != nil {
-		log.Printf("scan failed: %v", err)
-		respondError(w, http.StatusInternalServerError, "scan failed")
-		return
-	}
 
 	// Enrich with enrollment status
 	robots, err := s.DB.ListRobots(r.Context())
@@ -517,6 +524,34 @@ func (s *Server) handleDiscoveryScan(w http.ResponseWriter, r *http.Request) {
 		if r.IP != "" {
 			knownIPs[r.IP] = true
 		}
+	}
+
+	onFound := func(c scan.Candidate) {
+		status := "unenrolled"
+		if knownIPs[c.IP] {
+			status = "enrolled"
+		}
+		event := map[string]interface{}{
+			"type": "scan_result",
+			"data": map[string]interface{}{
+				"ip":           c.IP,
+				"port":         c.Port,
+				"mac":          c.MAC,
+				"manufacturer": c.Manufacturer,
+				"banner":       c.Banner,
+				"status":       status,
+			},
+		}
+		if msgBytes, err := json.Marshal(event); err == nil {
+			s.SSE.Broadcast(string(msgBytes))
+		}
+	}
+
+	candidates, err := scan.ScanSubnet(onFound)
+	if err != nil {
+		log.Printf("scan failed: %v", err)
+		respondError(w, http.StatusInternalServerError, "scan failed")
+		return
 	}
 
 	type EnrichedCandidate struct {

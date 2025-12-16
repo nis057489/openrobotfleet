@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { buildGoldenImage, getBuildStatus, getGoldenImageConfig, saveGoldenImageConfig } from "../api";
 import { GoldenImageConfig } from "../types";
-import { Save, Download, Wifi, Server, Radio, Hash, Loader2, HardDrive, ChevronDown, ChevronRight } from "lucide-react";
+import { Save, Download, Wifi, Server, Radio, Hash, HardDrive, ChevronDown, ChevronRight } from "lucide-react";
 import { useNotification } from "../contexts/NotificationContext";
 
 export function GoldenImage() {

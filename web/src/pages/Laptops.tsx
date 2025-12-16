@@ -6,6 +6,7 @@ import { Robot } from "../types";
 import { Signal, Wifi, Clock, Laptop as LaptopIcon, Lightbulb, Loader2, Check } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
+import { useSSE } from "../contexts/SSEContext";
 
 export function Laptops() {
     const { t } = useTranslation();
@@ -13,6 +14,7 @@ export function Laptops() {
     const [laptops, setLaptops] = useState<Robot[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const { lastEvent } = useSSE();
 
     useEffect(() => {
         getRobots()
@@ -20,6 +22,25 @@ export function Laptops() {
             .catch((err) => setError(err.message))
             .finally(() => setLoading(false));
     }, []);
+
+    useEffect(() => {
+        if (lastEvent && lastEvent.type === 'status_update') {
+            setLaptops(prev => {
+                const index = prev.findIndex(r => r.agent_id === lastEvent.agent_id);
+                if (index !== -1) {
+                    const updated = [...prev];
+                    updated[index] = {
+                        ...updated[index],
+                        status: lastEvent.data.status,
+                        ip: lastEvent.data.ip,
+                        last_seen: lastEvent.data.ts,
+                    };
+                    return updated;
+                }
+                return prev;
+            });
+        }
+    }, [lastEvent]);
 
     const handleIdentifyAll = async () => {
         try {

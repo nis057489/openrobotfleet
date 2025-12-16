@@ -16,34 +16,37 @@ import { SemesterWizard } from "./pages/SemesterWizard";
 import { GoldenImage } from "./pages/GoldenImage";
 import { Identify } from "./pages/Identify";
 import { NotificationProvider } from "./contexts/NotificationContext";
+import { SSEProvider } from "./contexts/SSEContext";
 
 export default function App() {
     return (
         <NotificationProvider>
-            <BrowserRouter>
-                <Routes>
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/identify" element={<Identify />} />
+            <SSEProvider>
+                <BrowserRouter>
+                    <Routes>
+                        <Route path="/login" element={<Login />} />
+                        <Route path="/identify" element={<Identify />} />
 
-                    <Route element={<AuthGuard />}>
-                        <Route path="/" element={<Layout />}>
-                            <Route index element={<Dashboard />} />
-                            <Route path="robots" element={<Robots />} />
-                            <Route path="laptops" element={<Laptops />} />
-                            <Route path="robots/:id" element={<RobotDetail />} />
-                            <Route path="laptops/:id" element={<LaptopDetail />} />
-                            <Route path="discovery" element={<Discovery />} />
-                            <Route path="semester-wizard" element={<SemesterWizard />} />
-                            <Route path="install" element={<InstallAgent />} />
-                            <Route path="scenarios" element={<Scenarios />} />
-                            <Route path="scenarios/new" element={<ScenarioEditor />} />
-                            <Route path="scenarios/:id" element={<ScenarioEditor />} />
-                            <Route path="settings" element={<Settings />} />
-                            <Route path="golden-image" element={<GoldenImage />} />
+                        <Route element={<AuthGuard />}>
+                            <Route path="/" element={<Layout />}>
+                                <Route index element={<Dashboard />} />
+                                <Route path="robots" element={<Robots />} />
+                                <Route path="laptops" element={<Laptops />} />
+                                <Route path="robots/:id" element={<RobotDetail />} />
+                                <Route path="laptops/:id" element={<LaptopDetail />} />
+                                <Route path="discovery" element={<Discovery />} />
+                                <Route path="semester-wizard" element={<SemesterWizard />} />
+                                <Route path="install" element={<InstallAgent />} />
+                                <Route path="scenarios" element={<Scenarios />} />
+                                <Route path="scenarios/new" element={<ScenarioEditor />} />
+                                <Route path="scenarios/:id" element={<ScenarioEditor />} />
+                                <Route path="settings" element={<Settings />} />
+                                <Route path="golden-image" element={<GoldenImage />} />
+                            </Route>
                         </Route>
-                    </Route>
-                </Routes>
-            </BrowserRouter>
+                    </Routes>
+                </BrowserRouter>
+            </SSEProvider>
         </NotificationProvider>
     );
 }

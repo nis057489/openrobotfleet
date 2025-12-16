@@ -6,6 +6,7 @@ import { Robot } from "../types";
 import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Tag, Plus, X, Camera, Play, Lightbulb, Trash2, Edit2 } from "lucide-react";
 import { Terminal as TerminalView } from "../components/Terminal";
 import { useNotification } from "../contexts/NotificationContext";
+import { useSSE } from "../contexts/SSEContext";
 
 export function RobotDetail() {
     const { t } = useTranslation();
@@ -13,6 +14,7 @@ export function RobotDetail() {
     const navigate = useNavigate();
     const location = useLocation();
     const { success, error } = useNotification();
+    const { lastEvent } = useSSE();
     const [robot, setRobot] = useState<Robot | null>(null);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<"overview" | "logs" | "terminal">("overview");
@@ -50,6 +52,17 @@ export function RobotDetail() {
                 .finally(() => setLoading(false));
         }
     }, [id]);
+
+    useEffect(() => {
+        if (lastEvent && lastEvent.type === 'status_update' && robot && robot.agent_id === lastEvent.agent_id) {
+            setRobot(prev => prev ? ({
+                ...prev,
+                status: lastEvent.data.status,
+                ip: lastEvent.data.ip,
+                last_seen: lastEvent.data.ts,
+            }) : null);
+        }
+    }, [lastEvent, robot]);
 
     const handleCommand = async (type: string, data: any = {}) => {
         if (!robot) return;

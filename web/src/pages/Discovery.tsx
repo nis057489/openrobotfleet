@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { scanNetwork } from "../api";
 import { DiscoveryCandidate } from "../types";
 import { Search, Wifi, ArrowRight, Loader2, Turtle } from "lucide-react";
+import { useSSE } from "../contexts/SSEContext";
 
 export function Discovery() {
     const { t } = useTranslation();
@@ -14,6 +15,18 @@ export function Discovery() {
     const [scanning, setScanning] = useState(false);
     const [candidates, setCandidates] = useState<DiscoveryCandidate[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const { lastEvent } = useSSE();
+
+    useEffect(() => {
+        if (lastEvent && lastEvent.type === 'scan_result') {
+            setCandidates(prev => {
+                if (prev.find(c => c.ip === lastEvent.data.ip)) {
+                    return prev;
+                }
+                return [...prev, lastEvent.data as DiscoveryCandidate];
+            });
+        }
+    }, [lastEvent]);
 
     const handleScan = async () => {
         setScanning(true);

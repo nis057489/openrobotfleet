@@ -100,7 +100,7 @@ func isTurtlebot(mac string) bool {
 
 // ScanSubnet scans all local subnets for devices with port 22 open.
 // It identifies all non-loopback IPv4 interfaces and scans their /24 ranges.
-func ScanSubnet() ([]Candidate, error) {
+func ScanSubnet(onFound func(Candidate)) ([]Candidate, error) {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		return nil, err
@@ -162,6 +162,10 @@ func ScanSubnet() ([]Candidate, error) {
 	// Limit concurrency to avoid file descriptor exhaustion
 	sem := make(chan struct{}, 100)
 
+	// Initial ARP table
+	arpTable := getARPTable()
+	var arpMu sync.Mutex
+
 	// Scan each subnet
 	for _, baseIP := range subnets {
 		log.Printf("[scan] scanning subnet %s/24...", baseIP)
@@ -190,40 +194,49 @@ func ScanSubnet() ([]Candidate, error) {
 					}
 					conn.Close()
 
+					// Construct candidate
+					c := Candidate{IP: targetIP, Port: 22, Banner: banner}
+
+					// Try to resolve MAC
+					arpMu.Lock()
+					mac, ok := arpTable[targetIP]
+					if !ok {
+						// Refresh ARP table if not found (maybe it just appeared)
+						// This is a bit expensive but happens only on success
+						arpTable = getARPTable()
+						mac = arpTable[targetIP]
+					}
+					arpMu.Unlock()
+
+					if mac != "" {
+						c.MAC = mac
+						if isTurtlebot(mac) {
+							c.Manufacturer = "Raspberry Pi"
+						}
+					}
+
+					// Fallback manufacturer check
+					if c.Manufacturer == "" && c.Banner != "" {
+						lowerBanner := strings.ToLower(c.Banner)
+						if strings.Contains(lowerBanner, "raspbian") || strings.Contains(lowerBanner, "ubuntu") {
+							c.Manufacturer = "Raspberry Pi"
+						}
+					}
+
 					mu.Lock()
-					candidates = append(candidates, Candidate{IP: targetIP, Port: 22, Banner: banner})
+					candidates = append(candidates, c)
 					mu.Unlock()
 					log.Printf("[scan] found candidate: %s (banner: %q)", targetIP, banner)
+
+					if onFound != nil {
+						onFound(c)
+					}
 				}
 			}(ip.String())
 		}
 	}
 
 	wg.Wait()
-
-	// Post-process candidates to add MAC info
-	arpTable := getARPTable()
-	for i := range candidates {
-		// Check MAC
-		if mac, ok := arpTable[candidates[i].IP]; ok {
-			candidates[i].MAC = mac
-			if isTurtlebot(mac) {
-				candidates[i].Manufacturer = "Raspberry Pi"
-				log.Printf("[scan] identified Turtlebot via MAC: %s (%s)", candidates[i].IP, mac)
-			}
-		} else {
-			log.Printf("[scan] no MAC found for %s", candidates[i].IP)
-		}
-
-		// Fallback: Check SSH Banner
-		if candidates[i].Manufacturer == "" && candidates[i].Banner != "" {
-			lowerBanner := strings.ToLower(candidates[i].Banner)
-			if strings.Contains(lowerBanner, "raspbian") || strings.Contains(lowerBanner, "ubuntu") {
-				candidates[i].Manufacturer = "Raspberry Pi"
-				log.Printf("[scan] identified Turtlebot via Banner: %s", candidates[i].IP)
-			}
-		}
-	}
 
 	log.Printf("[scan] complete. found %d candidates", len(candidates))
 	return candidates, nil

@@ -7,6 +7,7 @@ import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
 import { FleetActionsModal } from "../components/FleetActionsModal";
+import { useSSE } from "../contexts/SSEContext";
 
 export function Robots() {
     const navigate = useNavigate();
@@ -16,6 +17,7 @@ export function Robots() {
     const [error, setError] = useState<string | null>(null);
     const [patterns, setPatterns] = useState<Record<number, string>>({});
     const [showFleetActions, setShowFleetActions] = useState(false);
+    const { lastEvent } = useSSE();
 
     useEffect(() => {
         getRobots()
@@ -23,6 +25,30 @@ export function Robots() {
             .catch((err) => setError(err.message))
             .finally(() => setLoading(false));
     }, []);
+
+    useEffect(() => {
+        if (lastEvent && lastEvent.type === 'status_update') {
+            setRobots(prev => {
+                const index = prev.findIndex(r => r.agent_id === lastEvent.agent_id);
+                if (index !== -1) {
+                    const updated = [...prev];
+                    updated[index] = {
+                        ...updated[index],
+                        status: lastEvent.data.status,
+                        ip: lastEvent.data.ip,
+                        last_seen: lastEvent.data.ts,
+                        // If the name changed on the backend, we might want to update it,
+                        // but usually name changes come from DB updates, not status payloads (unless auto-rename).
+                        // The status payload has 'name', but it's what the agent reports.
+                    };
+                    return updated;
+                }
+                // If we want to auto-add new robots that appear, we could do it here.
+                // But for now, let's stick to updating existing ones.
+                return prev;
+            });
+        }
+    }, [lastEvent]);
 
     const handleIdentifyAll = async () => {
         try {
