@@ -58,10 +58,6 @@ func (c *Controller) CreateScenario(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "scenario name required")
 		return
 	}
-	if _, err := scenario.Parse(req.ConfigYAML); err != nil {
-		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid scenario config: %v", err))
-		return
-	}
 	scenario := db.Scenario{Name: req.Name, Description: req.Description, ConfigYAML: req.ConfigYAML}
 	id, err := c.DB.CreateScenario(r.Context(), scenario)
 	if err != nil {
@@ -87,10 +83,6 @@ func (c *Controller) UpdateScenario(w http.ResponseWriter, r *http.Request) {
 	scenario := db.Scenario{ID: id, Name: req.Name, Description: req.Description, ConfigYAML: req.ConfigYAML}
 	if scenario.Name == "" {
 		respondError(w, http.StatusBadRequest, "scenario name required")
-		return
-	}
-	if _, err := scenario.Parse(req.ConfigYAML); err != nil {
-		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid scenario config: %v", err))
 		return
 	}
 	if err := c.DB.UpdateScenario(r.Context(), scenario); err != nil {
