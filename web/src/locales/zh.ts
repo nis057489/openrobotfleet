@@ -279,6 +279,7 @@ export const zh = {
       updateRepoDesc: "从远程 git 仓库拉取最新代码。",
       reinstallAgent: "重装代理",
       reinstallAgentDesc: "使用存储的凭据通过 SSH 重新运行安装脚本。",
+      disabledInDemoMode: "演示模式下已停用",
       runSelfTest: "运行自检",
       runSelfTestDesc: "验证电机和相机功能。",
       repoUrl: "仓库 URL",

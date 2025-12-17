@@ -360,7 +360,7 @@ export function SemesterWizard() {
                                 <div>
                                     <div className="font-medium text-gray-900 flex items-center gap-2">
                                         <Terminal size={16} /> {t("semesterWizard.reinstallAgent")}
-                                        {isDemoMode && <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">Disabled in Demo Mode</span>}
+                                        {isDemoMode && <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">{t("semesterWizard.disabledInDemoMode")}</span>}
                                     </div>
                                     <p className="text-sm text-gray-500">{t("semesterWizard.reinstallAgentDesc")}</p>
                                 </div>

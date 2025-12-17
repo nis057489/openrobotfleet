@@ -286,6 +286,7 @@ export const en = {
       selectScenario: "Select a scenario...",
       reinstallAgent: "Reinstall Agent",
       reinstallAgentDesc: "Re-run the installation script via SSH using stored credentials.",
+      disabledInDemoMode: "Deactivated in Demo Mode",
       runSelfTest: "Run Self Test",
       runSelfTestDesc: "Verify motors and camera functionality.",
       repoUrl: "Repository URL",
