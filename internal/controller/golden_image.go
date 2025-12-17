@@ -232,6 +232,10 @@ func (c *Controller) logBuild(format string, v ...interface{}) {
 }
 
 func (c *Controller) BuildGoldenImage(w http.ResponseWriter, r *http.Request) {
+	if os.Getenv("DEMO_MODE") == "true" {
+		respondError(w, http.StatusForbidden, "Build feature is disabled in demo mode")
+		return
+	}
 	buildLock.Lock()
 	if buildStatus == "building" {
 		buildLock.Unlock()

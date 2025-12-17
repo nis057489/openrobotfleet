@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { buildGoldenImage, getBuildStatus, getGoldenImageConfig, saveGoldenImageConfig } from "../api";
+import { buildGoldenImage, getBuildStatus, getGoldenImageConfig, saveGoldenImageConfig, getSystemConfig } from "../api";
 import { GoldenImageConfig } from "../types";
 import { Save, Download, Wifi, Server, Radio, Hash, HardDrive, ChevronDown, ChevronRight, Eye, EyeOff } from "lucide-react";
 import { useNotification } from "../contexts/NotificationContext";
@@ -30,8 +30,11 @@ export function GoldenImage() {
     const [buildLogs, setBuildLogs] = useState<string[]>([]);
     const [buildImageName, setBuildImageName] = useState<string | null>(null);
     const [showLogs, setShowLogs] = useState(false);
+    const [demoMode, setDemoMode] = useState(false);
 
     useEffect(() => {
+        getSystemConfig().then(sys => setDemoMode(sys.demo_mode)).catch(console.error);
+
         getGoldenImageConfig()
             .then(data => {
                 if (data.config) {
@@ -289,7 +292,12 @@ export function GoldenImage() {
                                 <button
                                     type="button"
                                     onClick={handleBuild}
-                                    className="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
+                                    disabled={demoMode}
+                                    className={`px-6 py-2 rounded-lg transition-colors flex items-center gap-2 ${demoMode
+                                            ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                                            : "bg-purple-600 text-white hover:bg-purple-700"
+                                        }`}
+                                    title={demoMode ? "Disabled in Demo Mode" : ""}
                                 >
                                     <HardDrive size={18} />
                                     {t("goldenImage.buildImage")}
