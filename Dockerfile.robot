@@ -15,20 +15,27 @@ RUN apt-get update && apt-get install -y \
     iproute2 \
     net-tools \
     alsa-utils \
+    openssh-server \
     && rm -rf /var/lib/apt/lists/*
+
+# Configure SSH
+RUN mkdir /var/run/sshd && \
+    echo 'root:turtle2025' | chpasswd && \
+    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
 
 # Create entrypoint script
 RUN echo '#!/bin/bash\n\
-cat <<EOF > /app/agent.yaml\n\
-agent_id: ${AGENT_ID:-robot-$(hostname)}\n\
-type: robot\n\
-mqtt_broker: ${MQTT_BROKER:-tcp://mqtt:1883}\n\
-workspace_path: ${WORKSPACE_PATH:-/app/workspace}\n\
-workspace_owner: ${WORKSPACE_OWNER:-root}\n\
-EOF\n\
-\n\
-export AGENT_CONFIG_PATH=/app/agent.yaml\n\
-exec /app/agent\n\
-' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+    service ssh start\n\
+    cat <<EOF > /app/agent.yaml\n\
+    agent_id: ${AGENT_ID:-robot-$(hostname)}\n\
+    type: robot\n\
+    mqtt_broker: ${MQTT_BROKER:-tcp://mqtt:1883}\n\
+    workspace_path: ${WORKSPACE_PATH:-/app/workspace}\n\
+    workspace_owner: ${WORKSPACE_OWNER:-root}\n\
+    EOF\n\
+    \n\
+    export AGENT_CONFIG_PATH=/app/agent.yaml\n\
+    exec /app/agent\n\
+    ' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 CMD ["/app/entrypoint.sh"]
