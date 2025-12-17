@@ -5,6 +5,8 @@ import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { InterestSignup } from "./components/InterestSignup";
 import { useTranslation } from "react-i18next";
+import { useKonamiCode } from "./hooks/useKonamiCode";
+import { MatrixRain } from "./components/MatrixRain";
 
 function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
@@ -15,6 +17,7 @@ export function Layout() {
     const [mobileOpen, setMobileOpen] = useState(false);
     const location = useLocation();
     const { t, i18n } = useTranslation();
+    const [isMatrixMode, setIsMatrixMode] = useKonamiCode();
 
     // Close mobile menu on route change
     useEffect(() => {
@@ -153,8 +156,18 @@ export function Layout() {
             </aside>
 
             {/* Main Content */}
-            <main className="flex-1 overflow-auto pt-16 md:pt-0 w-full">
-                <div className="p-4 md:p-8 max-w-7xl mx-auto">
+            <main className="flex-1 overflow-auto pt-16 md:pt-0 w-full relative">
+                {isMatrixMode && <MatrixRain />}
+                {isMatrixMode && (
+                    <button
+                        onClick={() => setIsMatrixMode(false)}
+                        className="fixed bottom-8 right-8 z-50 bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-full shadow-lg font-bold transition-all hover:scale-105 flex items-center gap-2"
+                        title="Take the Blue Pill"
+                    >
+                        💊 Reality
+                    </button>
+                )}
+                <div className="p-4 md:p-8 max-w-7xl mx-auto relative z-10">
                     <Outlet />
                 </div>
             </main>

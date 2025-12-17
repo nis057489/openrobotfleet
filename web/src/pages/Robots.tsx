@@ -8,6 +8,7 @@ import { zhCN } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
 import { FleetActionsModal } from "../components/FleetActionsModal";
 import { useWebSocket, WSEvent } from "../contexts/WebSocketContext";
+import { getRobotMood } from "../utils/mood";
 
 export function Robots() {
     const navigate = useNavigate();
@@ -152,7 +153,9 @@ function RobotCard({ robot, pattern }: { robot: Robot, pattern?: string }) {
             <div className="p-6">
                 <div className="flex items-start justify-between mb-4">
                     <div>
-                        <h3 className="font-bold text-lg text-gray-900">{robot.name}</h3>
+                        <h3 className="font-bold text-lg text-gray-900">
+                            {robot.name}
+                        </h3>
                         <div className="flex items-center gap-2 mt-1">
                             <span
                                 className={`w-2 h-2 rounded-full ${isOnline ? "bg-green-500" : "bg-gray-300"
@@ -161,6 +164,7 @@ function RobotCard({ robot, pattern }: { robot: Robot, pattern?: string }) {
                             <span className="text-sm text-gray-500 capitalize">
                                 {t(`common.${(robot.status || '').toLowerCase()}`) || robot.status || t("common.unknown")}
                             </span>
+                            <span className="ml-2" title="Robot Mood">{getRobotMood(robot)}</span>
                         </div>
                     </div>
                     {!pattern && (
