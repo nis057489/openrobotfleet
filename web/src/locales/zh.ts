@@ -76,7 +76,7 @@ export const zh = {
       deleteConfirm: "您确定要删除此场景吗？",
     },
     login: {
-      title: "Turtlebot 车队",
+      title: "OpenRobotFleet",
       subtitle: "请登录以继续",
       placeholder: "输入管理员密码",
       invalid: "密码无效",

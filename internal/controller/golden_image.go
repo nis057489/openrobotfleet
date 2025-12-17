@@ -17,7 +17,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"example.com/turtlebot-fleet/internal/db"
+	"example.com/openrobot-fleet/internal/db"
 )
 
 func (c *Controller) GetGoldenImageConfig(w http.ResponseWriter, r *http.Request) {
@@ -89,7 +89,7 @@ func (c *Controller) DownloadGoldenImage(w http.ResponseWriter, r *http.Request)
 }
 
 const userDataTemplate = `#cloud-config
-hostname: turtlebot
+hostname: openrobot
 manage_etc_hosts: true
 users:
   - name: ubuntu
@@ -126,19 +126,19 @@ write_files:
       APT::Periodic::Update-Package-Lists "0";
       APT::Periodic::Unattended-Upgrade "0";
 
-  - path: /etc/turtlebot-agent/config.yaml
+  - path: /etc/openrobot-agent/config.yaml
     content: |
-      agent_id: "TB-UNINITIALIZED"
+      agent_id: "ROBOT-UNINITIALIZED"
       mqtt_broker: "{{.MQTTBroker}}"
-      workspace_path: "/home/ubuntu/turtlebot3_ws/src"
+      workspace_path: "/home/ubuntu/ros_ws/src"
 
 runcmd:
   # Generate unique Agent ID and Hostname
   - |
     SUFFIX=$(head /dev/urandom | tr -dc a-z0-9 | head -c 6)
-    sed -i "s/TB-UNINITIALIZED/turtlebot-$SUFFIX/" /etc/turtlebot-agent/config.yaml
-    hostnamectl set-hostname turtlebot-$SUFFIX
-    sed -i "s/turtlebot/turtlebot-$SUFFIX/g" /etc/hosts
+    sed -i "s/ROBOT-UNINITIALIZED/robot-$SUFFIX/" /etc/openrobot-agent/config.yaml
+    hostnamectl set-hostname robot-$SUFFIX
+    sed -i "s/openrobot/robot-$SUFFIX/g" /etc/hosts
 
   # Fix DNS (Docker/Systemd conflict)
   - rm -f /etc/resolv.conf
@@ -156,7 +156,7 @@ runcmd:
   {{else}}
   # TB3 Default
   - echo 'source /opt/ros/{{if eq .ROSVersion "Jazzy"}}jazzy{{else}}humble{{end}}/setup.bash' >> /home/ubuntu/.bashrc
-  - echo 'source /home/ubuntu/turtlebot3_ws/install/setup.bash' >> /home/ubuntu/.bashrc
+  - echo 'source /home/ubuntu/ros_ws/install/setup.bash' >> /home/ubuntu/.bashrc
   - echo 'export ROS_DOMAIN_ID={{.ROSDomainID}}' >> /home/ubuntu/.bashrc
   - echo 'export LDS_MODEL={{.LDSModel}}' >> /home/ubuntu/.bashrc
   {{end}}
@@ -167,24 +167,24 @@ runcmd:
 
   # Agent Service (Binary is pre-installed)
   - |
-    cat <<EOF > /etc/systemd/system/turtlebot-agent.service
+    cat <<EOF > /etc/systemd/system/openrobot-agent.service
     [Unit]
-    Description=Turtlebot Agent
+    Description=OpenRobot Agent
     After=network.target
 
     [Service]
-    ExecStart=/usr/local/bin/turtlebot-agent
+    ExecStart=/usr/local/bin/openrobot-agent
     Restart=always
     User=root
-    Environment=AGENT_CONFIG_PATH=/etc/turtlebot-agent/config.yaml
+    Environment=AGENT_CONFIG_PATH=/etc/openrobot-agent/config.yaml
 
     [Install]
     WantedBy=multi-user.target
     EOF
-  - systemctl enable turtlebot-agent
-  - systemctl start turtlebot-agent
+  - systemctl enable openrobot-agent
+  - systemctl start openrobot-agent
 
-final_message: "Turtlebot setup complete. Ready to roll!"
+final_message: "OpenRobot setup complete. Ready to roll!"
 `
 
 var (

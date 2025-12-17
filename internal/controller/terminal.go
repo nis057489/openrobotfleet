@@ -13,7 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 	"golang.org/x/crypto/ssh"
 
-	"example.com/turtlebot-fleet/internal/db"
+	"example.com/openrobot-fleet/internal/db"
 )
 
 var upgrader = websocket.Upgrader{

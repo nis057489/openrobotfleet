@@ -1,7 +1,7 @@
-# Turtlebot Fleet – Copilot Instructions
+# OpenRobotFleet – Copilot Instructions
 
 ## Project Overview
-Turtlebot Fleet is a robotics fleet management system. It consists of a central **Controller**, distributed **Agents** (on robots/laptops), and a **Web Dashboard**. It orchestrates code deployment ("Scenarios"), status monitoring, and remote commands via MQTT and HTTP.
+OpenRobotFleet is a robotics fleet management system. It consists of a central **Controller**, distributed **Agents** (on robots/laptops), and a **Web Dashboard**. It orchestrates code deployment ("Scenarios"), status monitoring, and remote commands via MQTT and HTTP.
 
 ## Architecture & Components
 

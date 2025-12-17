@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"example.com/turtlebot-fleet/internal/agent"
+	"example.com/openrobot-fleet/internal/agent"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
@@ -91,14 +91,14 @@ func InstallAgent(h HostSpec, cfg agent.Config, agentBinary []byte) error {
 		data []byte
 	}
 	files := []remoteFile{
-		{dst: "/usr/local/bin/turtlebot-agent", mode: 0o755, data: agentBinary},
-		{dst: "/etc/turtlebot-agent/config.yaml", mode: 0o644, data: cfgBytes},
-		{dst: "/etc/systemd/system/turtlebot-agent.service", mode: 0o644, data: []byte(systemdUnit)},
+		{dst: "/usr/local/bin/openrobot-agent", mode: 0o755, data: agentBinary},
+		{dst: "/etc/openrobot-agent/config.yaml", mode: 0o644, data: cfgBytes},
+		{dst: "/etc/systemd/system/openrobot-agent.service", mode: 0o644, data: []byte(systemdUnit)},
 	}
 
 	if h.UseSudo {
 		for i := range files {
-			files[i].tmp = fmt.Sprintf("/tmp/turtlebot-agent-%d-%d", time.Now().UnixNano(), i)
+			files[i].tmp = fmt.Sprintf("/tmp/openrobot-agent-%d-%d", time.Now().UnixNano(), i)
 			if err := writeRemoteFile(sftpClient, files[i].tmp, files[i].data, 0o600); err != nil {
 				return err
 			}
@@ -127,14 +127,14 @@ func InstallAgent(h HostSpec, cfg agent.Config, agentBinary []byte) error {
 		"mkdir -p /home/ubuntu/.ros",
 		"chown -R ubuntu:ubuntu /home/ubuntu/.ros",
 		"systemctl daemon-reload",
-		"systemctl enable turtlebot-agent",
-		"systemctl restart turtlebot-agent",
+		"systemctl enable openrobot-agent",
+		"systemctl restart openrobot-agent",
 	)
 	script := strings.Join(commands, " && ")
 	if err := runRemote(client, script, h.SudoPassword, h.UseSudo); err != nil {
 		return fmt.Errorf("run remote command: %w", err)
 	}
-	log.Printf("installed turtlebot-agent on %s", h.Addr)
+	log.Printf("installed openrobot-agent on %s", h.Addr)
 	return nil
 }
 
@@ -186,11 +186,11 @@ func runRemote(client *ssh.Client, script, sudoPassword string, useSudo bool) er
 }
 
 const systemdUnit = `[Unit]
-Description=Turtlebot Agent
+Description=OpenRobot Agent
 After=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/turtlebot-agent --config /etc/turtlebot-agent/config.yaml
+ExecStart=/usr/local/bin/openrobot-agent --config /etc/openrobot-agent/config.yaml
 Restart=always
 
 [Install]

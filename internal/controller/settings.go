@@ -5,7 +5,7 @@ import (
 	"log"
 	"net/http"
 
-	"example.com/turtlebot-fleet/internal/db"
+	"example.com/openrobot-fleet/internal/db"
 )
 
 func (c *Controller) GetInstallDefaults(w http.ResponseWriter, r *http.Request) {

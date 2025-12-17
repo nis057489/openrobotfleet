@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"example.com/turtlebot-fleet/internal/agent"
-	"example.com/turtlebot-fleet/internal/db"
+	"example.com/openrobot-fleet/internal/agent"
+	"example.com/openrobot-fleet/internal/db"
 )
 
 type commandRequest struct {

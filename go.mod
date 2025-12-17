@@ -1,4 +1,4 @@
-module example.com/turtlebot-fleet
+module example.com/openrobot-fleet
 
 go 1.25
 

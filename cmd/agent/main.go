@@ -7,7 +7,7 @@ import (
 "os/signal"
 "syscall"
 
-"example.com/turtlebot-fleet/internal/agent"
+"example.com/openrobot-fleet/internal/agent"
 )
 
 func main() {

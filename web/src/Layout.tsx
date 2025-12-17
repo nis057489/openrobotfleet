@@ -49,7 +49,7 @@ export function Layout() {
                     <Menu size={24} />
                 </button>
                 <span className="ml-3 font-bold text-lg text-blue-600">
-                    TurtleFleet
+                    OpenRobotFleet
                 </span>
             </div>
 
@@ -92,7 +92,7 @@ export function Layout() {
 
                         {isExpanded && (
                             <span className="ml-3 font-bold text-lg text-blue-600">
-                                TurtleFleet
+                                OpenRobotFleet
                             </span>
                         )}
                     </div>

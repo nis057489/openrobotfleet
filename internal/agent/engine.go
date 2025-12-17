@@ -7,8 +7,8 @@ import (
 	"log"
 	"time"
 
-	"example.com/turtlebot-fleet/internal/agent/behavior"
-	mqttc "example.com/turtlebot-fleet/internal/mqtt"
+	"example.com/openrobot-fleet/internal/agent/behavior"
+	mqttc "example.com/openrobot-fleet/internal/mqtt"
 	mqttlib "github.com/eclipse/paho.mqtt.golang"
 )
 

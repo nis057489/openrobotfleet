@@ -21,7 +21,7 @@ export function SemesterWizard() {
     const [selectedScenarioIds, setSelectedScenarioIds] = useState<Set<number>>(new Set());
     const [doReinstall, setDoReinstall] = useState(false);
     const [doSelfTest, setDoSelfTest] = useState(false);
-    const [repoUrl, setRepoUrl] = useState("https://github.com/turtlebot/turtlebot-agent.git");
+    const [repoUrl, setRepoUrl] = useState("https://github.com/openrobot-fleet/openrobot-agent.git");
 
     // Global install defaults
     const [installDefaults, setInstallDefaults] = useState<InstallConfig | null>(null);

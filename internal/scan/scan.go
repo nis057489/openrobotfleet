@@ -19,16 +19,16 @@ type Candidate struct {
 	Banner       string `json:"banner,omitempty"`
 }
 
-var defaultTurtlebotPrefixes = []string{
+var defaultRobotPrefixes = []string{
 	"28:CD:C1", "2C:CF:67", "B8:27:EB", "D8:3A:DD", "DC:A6:32", "E4:5F:01", "3A:35:41",
 }
 
 func getMACPrefixes() []string {
-	env := os.Getenv("TURTLEBOT_MAC_PREFIXES")
+	env := os.Getenv("ROBOT_MAC_PREFIXES")
 	if env == "" {
-		return defaultTurtlebotPrefixes
+		return defaultRobotPrefixes
 	}
-	return append(defaultTurtlebotPrefixes, strings.Split(env, ",")...)
+	return append(defaultRobotPrefixes, strings.Split(env, ",")...)
 }
 
 func getARPTable() map[string]string {
@@ -86,7 +86,7 @@ func getARPTable() map[string]string {
 	return arpTable
 }
 
-func isTurtlebot(mac string) bool {
+func isRobot(mac string) bool {
 	mac = strings.ToUpper(mac)
 	for _, prefix := range getMACPrefixes() {
 		cleanPrefix := strings.ReplaceAll(strings.ToUpper(prefix), ":", "")
@@ -210,7 +210,7 @@ func ScanSubnet(onFound func(Candidate)) ([]Candidate, error) {
 
 					if mac != "" {
 						c.MAC = mac
-						if isTurtlebot(mac) {
+						if isRobot(mac) {
 							c.Manufacturer = "Raspberry Pi"
 						}
 					}

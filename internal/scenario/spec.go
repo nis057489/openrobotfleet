@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"example.com/turtlebot-fleet/internal/agent"
+	"example.com/openrobot-fleet/internal/agent"
 	"gopkg.in/yaml.v3"
 )
 

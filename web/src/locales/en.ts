@@ -77,7 +77,7 @@ export const en = {
       deleteConfirm: "Are you sure you want to delete this scenario?",
     },
     login: {
-      title: "Turtlebot Fleet",
+      title: "OpenRobotFleet",
       subtitle: "Please sign in to continue",
       placeholder: "Enter admin password",
       invalid: "Invalid password",

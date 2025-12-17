@@ -14,10 +14,10 @@ import (
 
 	"time"
 
-	"example.com/turtlebot-fleet/internal/controller"
-	"example.com/turtlebot-fleet/internal/db"
-	mqttc "example.com/turtlebot-fleet/internal/mqtt"
-	"example.com/turtlebot-fleet/internal/scan"
+	"example.com/openrobot-fleet/internal/controller"
+	"example.com/openrobot-fleet/internal/db"
+	mqttc "example.com/openrobot-fleet/internal/mqtt"
+	"example.com/openrobot-fleet/internal/scan"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 

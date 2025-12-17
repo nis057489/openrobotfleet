@@ -13,10 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"example.com/turtlebot-fleet/internal/agent"
-	"example.com/turtlebot-fleet/internal/db"
-	"example.com/turtlebot-fleet/internal/scenario"
-	sshc "example.com/turtlebot-fleet/internal/ssh"
+	"example.com/openrobot-fleet/internal/agent"
+	"example.com/openrobot-fleet/internal/db"
+	"example.com/openrobot-fleet/internal/scenario"
+	sshc "example.com/openrobot-fleet/internal/ssh"
 )
 
 type semesterRequest struct {

@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	"example.com/turtlebot-fleet/internal/http"
+	"example.com/openrobot-fleet/internal/http"
 )
 
 func main() {

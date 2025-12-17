@@ -1,15 +1,15 @@
-# Turtlebot Fleet Manager
+# OpenRobotFleet
 
 **Effortless orchestration for your robotics classroom or lab.**
 
-Turtlebot Fleet Manager helps instructors and lab managers maintain control over a fleet of robots (and laptops). Instead of manually SSH-ing into 30 robots to pull the latest code or restart a service, you can manage everything from a single web dashboard.
+OpenRobotFleet helps instructors and lab managers maintain control over a fleet of robots (and laptops). Instead of manually SSH-ing into 30 robots to pull the latest code or restart a service, you can manage everything from a single web dashboard.
 
 ## Why use this?
 
 * **Save Time**: Push code updates to your entire fleet in seconds, not hours.
 * **Reduce Friction**: Reset robots for the next class with a "Semester Wizard" that wipes logs and updates code.
 * **Stay Informed**: See at a glance which robots are online, their battery status (if reported), and what code they are running.
-* **Unified Management**: Manage your Turtlebots and development laptops in one place.
+* **Unified Management**: Manage your robots and development laptops in one place.
 
 ## Key Features
 
@@ -42,13 +42,20 @@ The easiest way to run the Fleet Manager is using Docker.
 ### Using Docker
 
 1. **Prerequisites**: Ensure you have Docker and Docker Compose installed.
-2. **Start the System**:
+2. **Configure**:
+
+    ```bash
+    cp .env.example .env
+    # Edit .env if needed
+    ```
+
+3. **Start the System**:
 
     ```bash
     docker compose up --build
     ```
 
-3. **Access the Dashboard**: Open your browser to `http://localhost`.
+4. **Access the Dashboard**: Open your browser to `http://localhost`.
 
 ## How it Works
 
@@ -82,5 +89,17 @@ Under the hood, this system uses:
 * **Batch Architecture**: Commands are bundled and sent to agents for atomic, sequential execution, ensuring reliability even with intermittent network connectivity.
 * **SQLite**: For simple, self-contained data storage.
 
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for instructions on how to run the project locally for development.
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
 ---
-*Built for the Turtlebot 3 and 4, but compatible with most Ubuntu-based ROS 2 systems.*
+*Built for ROS 2 systems, including Turtlebots and most Ubuntu-based robots.*

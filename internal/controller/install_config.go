@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	"example.com/turtlebot-fleet/internal/db"
+	"example.com/openrobot-fleet/internal/db"
 )
 
 type installConfigRequest struct {
