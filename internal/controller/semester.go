@@ -175,9 +175,6 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 						if robot.InstallConfig.SSHKey == "" {
 							robot.InstallConfig.SSHKey = defaultCfg.SSHKey
 						}
-						if robot.InstallConfig.Password == "" {
-							robot.InstallConfig.Password = defaultCfg.Password
-						}
 					}
 					// If address is still missing, try to use the robot's IP
 					if (robot.InstallConfig == nil || robot.InstallConfig.Address == "") && robot.IP != "" {
@@ -188,13 +185,13 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 					}
 				}
 
-				if robot.InstallConfig == nil || robot.InstallConfig.Address == "" || robot.InstallConfig.User == "" || (robot.InstallConfig.SSHKey == "" && robot.InstallConfig.Password == "") {
+				if robot.InstallConfig == nil || robot.InstallConfig.Address == "" || robot.InstallConfig.User == "" || robot.InstallConfig.SSHKey == "" {
 					// If we are in demo mode, we can fake success for reinstall
 					if os.Getenv("DEMO_MODE") == "true" {
 						log.Printf("semester: demo mode, skipping reinstall for %s", robot.Name)
 						// Fall through to other steps
 					} else {
-						log.Printf("semester: robot %d missing install config (addr=%v, user=%v, key_len=%d, has_pass=%v)", id,
+						log.Printf("semester: robot %d missing install config (addr=%v, user=%v, key_len=%d)", id,
 							robot.InstallConfig != nil && robot.InstallConfig.Address != "",
 							robot.InstallConfig != nil && robot.InstallConfig.User != "",
 							func() int {
@@ -202,8 +199,7 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 									return len(robot.InstallConfig.SSHKey)
 								}
 								return 0
-							}(),
-							robot.InstallConfig != nil && robot.InstallConfig.Password != "")
+							}())
 						batchStatus.Lock()
 						batchStatus.Errors[id] = "missing install config"
 						batchStatus.Robots[id] = "error"
@@ -243,7 +239,6 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 						Addr:         addr,
 						User:         robot.InstallConfig.User,
 						PrivateKey:   []byte(robot.InstallConfig.SSHKey),
-						Password:     robot.InstallConfig.Password,
 						UseSudo:      useSudo,
 						SudoPassword: sudoPwd,
 					}
