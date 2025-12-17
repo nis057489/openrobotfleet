@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 
 	"example.com/openrobot-fleet/internal/db"
 )
@@ -32,7 +33,10 @@ func (c *Controller) GetInstallDefaults(w http.ResponseWriter, r *http.Request) 
 		SSHPublicKey:  pubKey,
 	}
 
-	respondJSON(w, http.StatusOK, map[string]*response{"install_config": resp})
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"install_config": resp,
+		"demo_mode":      os.Getenv("DEMO_MODE") == "true",
+	})
 }
 
 func (c *Controller) UpdateInstallDefaults(w http.ResponseWriter, r *http.Request) {

@@ -25,6 +25,7 @@ export function SemesterWizard() {
 
     // Global install defaults
     const [installDefaults, setInstallDefaults] = useState<InstallConfig | null>(null);
+    const [isDemoMode, setIsDemoMode] = useState(false);
 
     useEffect(() => {
         Promise.all([getRobots(), getInstallDefaults(), getScenarios()])
@@ -34,6 +35,9 @@ export function SemesterWizard() {
                 setSelectedIds(new Set(robotsData.map(r => r.id)));
                 if (defaultsData.install_config) {
                     setInstallDefaults(defaultsData.install_config);
+                }
+                if (defaultsData.demo_mode) {
+                    setIsDemoMode(true);
                 }
             })
             .finally(() => setLoading(false));
@@ -342,19 +346,21 @@ export function SemesterWizard() {
                             <hr className="border-gray-100" />
 
                             {/* Reinstall Agent */}
-                            <label className="flex items-start gap-3 cursor-pointer">
+                            <label className={`flex items-start gap-3 ${isDemoMode ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
                                 <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doReinstall ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
                                     {doReinstall && <Check size={14} />}
                                     <input
                                         type="checkbox"
                                         className="hidden"
                                         checked={doReinstall}
+                                        disabled={isDemoMode}
                                         onChange={e => setDoReinstall(e.target.checked)}
                                     />
                                 </div>
                                 <div>
                                     <div className="font-medium text-gray-900 flex items-center gap-2">
                                         <Terminal size={16} /> {t("semesterWizard.reinstallAgent")}
+                                        {isDemoMode && <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">Disabled in Demo Mode</span>}
                                     </div>
                                     <p className="text-sm text-gray-500">{t("semesterWizard.reinstallAgentDesc")}</p>
                                 </div>

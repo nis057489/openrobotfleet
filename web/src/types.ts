@@ -60,6 +60,7 @@ export interface InstallConfig {
 
 export interface InstallDefaultsResponse {
   install_config?: InstallConfig | null;
+  demo_mode?: boolean;
 }
 
 export interface DiscoveryCandidate {
