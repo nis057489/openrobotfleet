@@ -49,10 +49,22 @@ services:
       - controller-data:/data
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.controller.rule=Host(`demo.nbembedded.com`) || Host(`localhost`)"
+      
+      # Router for Production (Let's Encrypt)
+      - "traefik.http.routers.controller.rule=Host(`demo.nbembedded.com`)"
       - "traefik.http.routers.controller.entrypoints=websecure"
       - "traefik.http.routers.controller.tls.certresolver=myresolver"
+      - "traefik.http.routers.controller.middlewares=rate-limit,secure-headers"
+      
+      # Router for Localhost (Self-Signed fallback)
+      - "traefik.http.routers.controller-local.rule=Host(`localhost`)"
+      - "traefik.http.routers.controller-local.entrypoints=websecure"
+      - "traefik.http.routers.controller-local.tls=true"
+      - "traefik.http.routers.controller-local.middlewares=rate-limit,secure-headers"
+
+      # Service Definition
       - "traefik.http.services.controller.loadbalancer.server.port=8080"
+      
       # Security Middlewares
       - "traefik.http.middlewares.rate-limit.ratelimit.average=100"
       - "traefik.http.middlewares.rate-limit.ratelimit.burst=50"
@@ -61,7 +73,6 @@ services:
       - "traefik.http.middlewares.secure-headers.headers.browserxssfilter=true"
       - "traefik.http.middlewares.secure-headers.headers.contenttypenosniff=true"
       - "traefik.http.middlewares.secure-headers.headers.framedeny=true"
-      - "traefik.http.routers.controller.middlewares=rate-limit,secure-headers"
 
   robot1:
     build:
