@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -133,20 +134,6 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 	ctx := context.Background()
 	log.Printf("starting semester batch for %d robots", len(req.RobotIDs))
 
-	binaryPath := os.Getenv("AGENT_BINARY_PATH")
-	if binaryPath == "" {
-		binaryPath = "/app/agent"
-	}
-	var binary []byte
-	if req.Reinstall {
-		var err error
-		binary, err = os.ReadFile(binaryPath)
-		if err != nil {
-			log.Printf("semester: failed to read agent binary: %v", err)
-			return
-		}
-	}
-
 	workspace := os.Getenv("AGENT_WORKSPACE_PATH")
 	if workspace == "" {
 		workspace = "/home/ubuntu/ros_ws/src/course"
@@ -254,6 +241,37 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 						PrivateKey:   []byte(robot.InstallConfig.SSHKey),
 						UseSudo:      useSudo,
 						SudoPassword: sudoPwd,
+					}
+
+					arch, err := sshc.DetectArch(host)
+					if err != nil {
+						log.Printf("semester: failed to detect arch for %s: %v", robot.Name, err)
+						batchStatus.Lock()
+						batchStatus.Errors[id] = "failed to detect arch: " + err.Error()
+						batchStatus.Robots[id] = "error"
+						batchStatus.Completed++
+						batchStatus.Unlock()
+						return
+					}
+
+					binaryDir := os.Getenv("AGENT_BINARY_DIR")
+					if binaryDir == "" {
+						binaryDir = "/app"
+					}
+					binaryName := "agent-amd64"
+					if arch == "arm64" {
+						binaryName = "agent-arm64"
+					}
+					binaryPath := filepath.Join(binaryDir, binaryName)
+					binary, err := os.ReadFile(binaryPath)
+					if err != nil {
+						log.Printf("semester: failed to read agent binary: %v", err)
+						batchStatus.Lock()
+						batchStatus.Errors[id] = "agent binary unavailable"
+						batchStatus.Robots[id] = "error"
+						batchStatus.Completed++
+						batchStatus.Unlock()
+						return
 					}
 
 					installStart := time.Now()

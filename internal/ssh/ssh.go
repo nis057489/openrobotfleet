@@ -168,3 +168,45 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 `
+
+// DetectArch connects to the host and returns the architecture (amd64, arm64).
+func DetectArch(h HostSpec) (string, error) {
+	if h.Addr == "" || h.User == "" {
+		return "", fmt.Errorf("host addr and user required")
+	}
+	signer, err := ssh.ParsePrivateKey(bytes.TrimSpace(h.PrivateKey))
+	if err != nil {
+		return "", fmt.Errorf("parse private key: %w", err)
+	}
+	sshConfig := &ssh.ClientConfig{
+		User:            h.User,
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         10 * time.Second,
+	}
+	client, err := ssh.Dial("tcp", h.Addr, sshConfig)
+	if err != nil {
+		return "", fmt.Errorf("ssh dial %s: %w", h.Addr, err)
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("new session: %w", err)
+	}
+	defer session.Close()
+
+	out, err := session.Output("uname -m")
+	if err != nil {
+		return "", fmt.Errorf("uname -m: %w", err)
+	}
+	arch := strings.TrimSpace(string(out))
+	switch arch {
+	case "x86_64":
+		return "amd64", nil
+	case "aarch64", "arm64":
+		return "arm64", nil
+	default:
+		return arch, nil
+	}
+}

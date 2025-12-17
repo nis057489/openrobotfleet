@@ -541,12 +541,16 @@ rm -rf /var/lib/apt/lists/*
 
 	// Copy Agent Binary (assuming it's in current dir or path)
 	// We are running in /app, agent binary is ./agent (from Dockerfile)
-	if out, err := exec.Command("cp", "./agent", filepath.Join(mntDir, "usr/local/bin/turtlebot-agent")).CombinedOutput(); err != nil {
-		// Try finding it
-		if out2, err2 := exec.Command("cp", "/app/agent", filepath.Join(mntDir, "usr/local/bin/turtlebot-agent")).CombinedOutput(); err2 != nil {
-			c.logBuild("warning: could not copy agent binary: %v %s", err, string(out))
-			c.logBuild("warning: could not copy agent binary (try 2): %v %s", err2, string(out2))
-		}
+	// Golden images are always ARM64 (Raspberry Pi)
+	binaryName := "agent-arm64"
+	binaryPath := filepath.Join("/app", binaryName)
+	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
+		// Fallback to local dir if running locally
+		binaryPath = "./" + binaryName
+	}
+
+	if out, err := exec.Command("cp", binaryPath, filepath.Join(mntDir, "usr/local/bin/turtlebot-agent")).CombinedOutput(); err != nil {
+		c.logBuild("warning: could not copy agent binary: %v %s", err, string(out))
 	}
 	exec.Command("chmod", "+x", filepath.Join(mntDir, "usr/local/bin/turtlebot-agent")).Run()
 

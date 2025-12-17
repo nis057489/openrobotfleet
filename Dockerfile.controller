@@ -11,7 +11,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o controller ./cmd/controller \
-    && CGO_ENABLED=0 GOOS=linux go build -o agent ./cmd/agent
+    && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o agent-amd64 ./cmd/agent \
+    && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o agent-arm64 ./cmd/agent
 
 FROM debian:stable-slim
 RUN apt-get update && apt-get install -y \
@@ -27,11 +28,12 @@ RUN apt-get update && apt-get install -y \
     e2fsprogs \
     dosfstools \
     && rm -rf /var/lib/apt/lists/*
-WORKDIR /app
 COPY --from=go-build /app/controller /app/controller
-COPY --from=go-build /app/agent /app/agent
+COPY --from=go-build /app/agent-amd64 /app/agent-amd64
+COPY --from=go-build /app/agent-arm64 /app/agent-arm64
 COPY --from=web-build /web/dist /app/web/dist
 ENV WEB_ROOT=/app/web/dist
+ENV AGENT_BINARY_DIR=/app
 ENV AGENT_BINARY_PATH=/app/agent
 EXPOSE 8080
 CMD ["/app/controller"]

@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"example.com/turtlebot-fleet/internal/agent"
@@ -39,16 +40,6 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 	if rType == "" {
 		rType = "robot"
 	}
-	binaryPath := os.Getenv("AGENT_BINARY_PATH")
-	if binaryPath == "" {
-		binaryPath = "/app/agent"
-	}
-	binary, err := os.ReadFile(binaryPath)
-	if err != nil {
-		log.Printf("install agent: read binary: %v", err)
-		respondError(w, http.StatusInternalServerError, "agent binary unavailable")
-		return
-	}
 	workspace := os.Getenv("AGENT_WORKSPACE_PATH")
 	if workspace == "" {
 		workspace = "/home/ubuntu/ros_ws/src/course"
@@ -69,13 +60,7 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "sudo password required")
 		return
 	}
-	broker := agentBrokerURL()
-	cfg := agent.Config{
-		AgentID:        req.Name,
-		MQTTBroker:     broker,
-		WorkspacePath:  workspace,
-		WorkspaceOwner: determineWorkspaceOwner(req),
-	}
+
 	host := sshc.HostSpec{
 		Addr:         addr,
 		User:         req.User,
@@ -83,6 +68,40 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 		UseSudo:      useSudo,
 		SudoPassword: sudoPwd,
 	}
+
+	arch, err := sshc.DetectArch(host)
+	if err != nil {
+		log.Printf("install agent: detect arch: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to detect architecture: "+err.Error())
+		return
+	}
+
+	binaryDir := os.Getenv("AGENT_BINARY_DIR")
+	if binaryDir == "" {
+		binaryDir = "/app"
+	}
+
+	binaryName := "agent-amd64"
+	if arch == "arm64" {
+		binaryName = "agent-arm64"
+	}
+
+	binaryPath := filepath.Join(binaryDir, binaryName)
+	binary, err := os.ReadFile(binaryPath)
+	if err != nil {
+		log.Printf("install agent: read binary: %v", err)
+		respondError(w, http.StatusInternalServerError, "agent binary unavailable")
+		return
+	}
+
+	broker := agentBrokerURL()
+	cfg := agent.Config{
+		AgentID:        req.Name,
+		MQTTBroker:     broker,
+		WorkspacePath:  workspace,
+		WorkspaceOwner: determineWorkspaceOwner(req),
+	}
+
 	if err := sshc.InstallAgent(host, cfg, binary); err != nil {
 		log.Printf("install agent: ssh failure: %v", err)
 		msg := "failed to install agent"
