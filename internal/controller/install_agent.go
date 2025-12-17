@@ -17,13 +17,14 @@ import (
 )
 
 type installAgentRequest struct {
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	Address string `json:"address"`
-	User    string `json:"user"`
-	SSHKey  string `json:"ssh_key"`
-	Sudo    bool   `json:"sudo"`
-	SudoPwd string `json:"sudo_password"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Address  string `json:"address"`
+	User     string `json:"user"`
+	SSHKey   string `json:"ssh_key"`
+	Password string `json:"password"`
+	Sudo     bool   `json:"sudo"`
+	SudoPwd  string `json:"sudo_password"`
 }
 
 func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
@@ -32,8 +33,12 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.Name == "" || req.Address == "" || req.User == "" || req.SSHKey == "" {
-		respondError(w, http.StatusBadRequest, "name, address, user, and ssh_key required")
+	if req.Name == "" || req.Address == "" || req.User == "" {
+		respondError(w, http.StatusBadRequest, "name, address, and user required")
+		return
+	}
+	if req.SSHKey == "" && req.Password == "" {
+		respondError(w, http.StatusBadRequest, "ssh_key or password required")
 		return
 	}
 	rType := req.Type
@@ -65,6 +70,7 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 		Addr:         addr,
 		User:         req.User,
 		PrivateKey:   []byte(req.SSHKey),
+		Password:     req.Password,
 		UseSudo:      useSudo,
 		SudoPassword: sudoPwd,
 	}

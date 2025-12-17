@@ -45,12 +45,16 @@ export interface InstallAgentPayload {
   address: string;
   user: string;
   ssh_key: string;
+  password?: string;
+  sudo?: boolean;
+  sudo_password?: string;
 }
 
 export interface InstallConfig {
   address: string;
   user: string;
   ssh_key: string;
+  password?: string;
   ssh_public_key?: string;
 }
 

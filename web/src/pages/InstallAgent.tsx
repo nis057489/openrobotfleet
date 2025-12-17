@@ -11,12 +11,14 @@ export function InstallAgent() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showSudoPassword, setShowSudoPassword] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
     const [formData, setFormData] = useState({
         name: "",
         type: "robot",
         address: "",
         user: "ubuntu",
         ssh_key: "",
+        password: "",
         sudo: true,
         sudo_password: "",
     });
@@ -135,10 +137,32 @@ export function InstallAgent() {
 
                         <div className="col-span-2">
                             <label className="block text-sm font-medium text-gray-700 mb-1">
-                                {t("installAgent.sshKey")}
+                                SSH Password (Optional if Key provided)
+                            </label>
+                            <div className="relative">
+                                <input
+                                    type={showPassword ? "text" : "password"}
+                                    value={formData.password}
+                                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none pr-10"
+                                    placeholder="SSH Password"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                >
+                                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="col-span-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                {t("installAgent.sshKey")} (Optional if Password provided)
                             </label>
                             <textarea
-                                required
+                                required={!formData.password}
                                 value={formData.ssh_key}
                                 onChange={(e) => setFormData({ ...formData, ssh_key: e.target.value })}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm h-32"

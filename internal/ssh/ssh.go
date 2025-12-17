@@ -20,6 +20,7 @@ type HostSpec struct {
 	Addr         string
 	User         string
 	PrivateKey   []byte
+	Password     string
 	UseSudo      bool
 	SudoPassword string
 }
@@ -29,13 +30,25 @@ func InstallAgent(h HostSpec, cfg agent.Config, agentBinary []byte) error {
 	if h.Addr == "" || h.User == "" {
 		return fmt.Errorf("host addr and user required")
 	}
-	signer, err := ssh.ParsePrivateKey(bytes.TrimSpace(h.PrivateKey))
-	if err != nil {
-		return fmt.Errorf("parse private key: %w", err)
+
+	var authMethods []ssh.AuthMethod
+	if len(h.PrivateKey) > 0 {
+		signer, err := ssh.ParsePrivateKey(bytes.TrimSpace(h.PrivateKey))
+		if err != nil {
+			return fmt.Errorf("parse private key: %w", err)
+		}
+		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
+	if h.Password != "" {
+		authMethods = append(authMethods, ssh.Password(h.Password))
+	}
+	if len(authMethods) == 0 {
+		return fmt.Errorf("no auth methods provided")
+	}
+
 	sshConfig := &ssh.ClientConfig{
 		User:            h.User,
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         10 * time.Second,
 	}
@@ -44,6 +57,21 @@ func InstallAgent(h HostSpec, cfg agent.Config, agentBinary []byte) error {
 		return fmt.Errorf("ssh dial %s: %w", h.Addr, err)
 	}
 	defer client.Close()
+
+	// If we have a private key, try to install it to authorized_keys
+	if len(h.PrivateKey) > 0 {
+		signer, err := ssh.ParsePrivateKey(bytes.TrimSpace(h.PrivateKey))
+		if err == nil {
+			pubKey := ssh.MarshalAuthorizedKey(signer.PublicKey())
+			// Ensure .ssh directory exists and append key
+			cmd := fmt.Sprintf("mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '%s' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys", strings.TrimSpace(string(pubKey)))
+			if err := runRemote(client, cmd, "", false); err != nil {
+				log.Printf("warning: failed to install ssh key: %v", err)
+			} else {
+				log.Printf("installed ssh key on %s", h.Addr)
+			}
+		}
+	}
 
 	sftpClient, err := sftp.NewClient(client)
 	if err != nil {
@@ -174,13 +202,25 @@ func DetectArch(h HostSpec) (string, error) {
 	if h.Addr == "" || h.User == "" {
 		return "", fmt.Errorf("host addr and user required")
 	}
-	signer, err := ssh.ParsePrivateKey(bytes.TrimSpace(h.PrivateKey))
-	if err != nil {
-		return "", fmt.Errorf("parse private key: %w", err)
+
+	var authMethods []ssh.AuthMethod
+	if len(h.PrivateKey) > 0 {
+		signer, err := ssh.ParsePrivateKey(bytes.TrimSpace(h.PrivateKey))
+		if err != nil {
+			return "", fmt.Errorf("parse private key: %w", err)
+		}
+		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
+	if h.Password != "" {
+		authMethods = append(authMethods, ssh.Password(h.Password))
+	}
+	if len(authMethods) == 0 {
+		return "", fmt.Errorf("no auth methods provided")
+	}
+
 	sshConfig := &ssh.ClientConfig{
 		User:            h.User,
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         10 * time.Second,
 	}

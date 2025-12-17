@@ -1,4 +1,4 @@
-import { Save, Loader2, Download, Upload, Database } from "lucide-react";
+import { Save, Loader2, Download, Upload, Database, Eye, EyeOff } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import { getInstallDefaults, updateInstallDefaults, getSystemConfig } from "../api";
 import { InstallConfig } from "../types";
@@ -12,8 +12,10 @@ export function Settings() {
         address: "",
         user: "",
         ssh_key: "",
+        password: "",
     });
     const [demoMode, setDemoMode] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -107,7 +109,28 @@ export function Settings() {
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            {t("settings.sshKey")}
+                            SSH Password (Optional if Key provided)
+                        </label>
+                        <div className="relative">
+                            <input
+                                type={showPassword ? "text" : "password"}
+                                value={config.password || ""}
+                                onChange={(e) => setConfig({ ...config, password: e.target.value })}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-10"
+                                placeholder="SSH Password"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            >
+                                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {t("settings.sshKey")} (Optional if Password provided)
                         </label>
                         <textarea
                             value={config.ssh_key}

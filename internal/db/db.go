@@ -32,9 +32,10 @@ type Robot struct {
 }
 
 type InstallConfig struct {
-	Address string `json:"address"`
-	User    string `json:"user"`
-	SSHKey  string `json:"ssh_key"`
+	Address  string `json:"address"`
+	User     string `json:"user"`
+	SSHKey   string `json:"ssh_key"`
+	Password string `json:"password,omitempty"`
 }
 
 type ScenarioRef struct {
