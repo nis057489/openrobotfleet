@@ -58,15 +58,19 @@ func (c *Controller) CreateScenario(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "scenario name required")
 		return
 	}
-	scenario := db.Scenario{Name: req.Name, Description: req.Description, ConfigYAML: req.ConfigYAML}
-	id, err := c.DB.CreateScenario(r.Context(), scenario)
+	if _, err := scenario.Parse(req.ConfigYAML); err != nil {
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid scenario config: %v", err))
+		return
+	}
+	s := db.Scenario{Name: req.Name, Description: req.Description, ConfigYAML: req.ConfigYAML}
+	id, err := c.DB.CreateScenario(r.Context(), s)
 	if err != nil {
 		log.Printf("create scenario: %v", err)
 		respondError(w, http.StatusInternalServerError, "failed to create scenario")
 		return
 	}
-	scenario.ID = id
-	respondJSON(w, http.StatusCreated, scenario)
+	s.ID = id
+	respondJSON(w, http.StatusCreated, s)
 }
 
 func (c *Controller) UpdateScenario(w http.ResponseWriter, r *http.Request) {
@@ -80,17 +84,21 @@ func (c *Controller) UpdateScenario(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "invalid scenario payload")
 		return
 	}
-	scenario := db.Scenario{ID: id, Name: req.Name, Description: req.Description, ConfigYAML: req.ConfigYAML}
-	if scenario.Name == "" {
+	s := db.Scenario{ID: id, Name: req.Name, Description: req.Description, ConfigYAML: req.ConfigYAML}
+	if s.Name == "" {
 		respondError(w, http.StatusBadRequest, "scenario name required")
 		return
 	}
-	if err := c.DB.UpdateScenario(r.Context(), scenario); err != nil {
+	if _, err := scenario.Parse(req.ConfigYAML); err != nil {
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid scenario config: %v", err))
+		return
+	}
+	if err := c.DB.UpdateScenario(r.Context(), s); err != nil {
 		log.Printf("update scenario: %v", err)
 		respondError(w, http.StatusInternalServerError, "failed to update scenario")
 		return
 	}
-	respondJSON(w, http.StatusOK, scenario)
+	respondJSON(w, http.StatusOK, s)
 }
 
 func (c *Controller) DeleteScenario(w http.ResponseWriter, r *http.Request) {
