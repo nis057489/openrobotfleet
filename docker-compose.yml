@@ -32,23 +32,24 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.controller
+    image: nbembedded/turtlebot-controller:0.0.1
     container_name: turtlebot-controller
     privileged: true
     depends_on:
       - mqtt
     environment:
       - MQTT_BROKER=tcp://mqtt:1883
-      - AGENT_MQTT_BROKER=tcp://192.168.1.10:1883
+      - AGENT_MQTT_BROKER=tcp://demo.nbembedded.com:1883
       - DB_PATH=/data/controller.db
       - DEMO_MODE=false
       - ADMIN_PASSWORD=turtle2025
       # Optional: Manually specify subnets to scan if Docker hides host interfaces
-      - SCAN_SUBNETS=192.168.1.0/24,192.168.100.0/24
+      - SCAN_SUBNETS=192.168.1.0/24
     volumes:
       - controller-data:/data
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.controller.rule=Host(`192.168.1.10`) || Host(`localhost`)"
+      - "traefik.http.routers.controller.rule=Host(`demo.nbembedded.com`) || Host(`localhost`)"
       - "traefik.http.routers.controller.entrypoints=websecure"
       - "traefik.http.routers.controller.tls.certresolver=myresolver"
       - "traefik.http.services.controller.loadbalancer.server.port=8080"
@@ -62,71 +63,77 @@ services:
       - "traefik.http.middlewares.secure-headers.headers.framedeny=true"
       - "traefik.http.routers.controller.middlewares=rate-limit,secure-headers"
 
-  # robot1:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.robot
-  #   container_name: turtlebot-robot1
-  #   environment:
-  #     - AGENT_ID=robot1
-  #     - MQTT_BROKER=tcp://mqtt:1883
-  #   depends_on:
-  #     - mqtt
+  robot1:
+    build:
+      context: .
+      dockerfile: Dockerfile.robot
+    image: nbembedded/turtlebot-robot:0.0.1
+    container_name: turtlebot-robot1
+    environment:
+      - AGENT_ID=robot1
+      - MQTT_BROKER=tcp://mqtt:1883
+    depends_on:
+      - mqtt
 
-  # robot2:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.robot
-  #   container_name: turtlebot-robot2
-  #   environment:
-  #     - AGENT_ID=robot2
-  #     - MQTT_BROKER=tcp://mqtt:1883
-  #   depends_on:
-  #     - mqtt
+  robot2:
+    build:
+      context: .
+      dockerfile: Dockerfile.robot
+    image: nbembedded/turtlebot-robot:0.0.1
+    container_name: turtlebot-robot2
+    environment:
+      - AGENT_ID=robot2
+      - MQTT_BROKER=tcp://mqtt:1883
+    depends_on:
+      - mqtt
 
-  # robot3:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.robot
-  #   container_name: turtlebot-robot3
-  #   environment:
-  #     - AGENT_ID=robot3
-  #     - MQTT_BROKER=tcp://mqtt:1883
-  #   depends_on:
-  #     - mqtt
+  robot3:
+    build:
+      context: .
+      dockerfile: Dockerfile.robot
+    image: nbembedded/turtlebot-robot:0.0.1
+    container_name: turtlebot-robot3
+    environment:
+      - AGENT_ID=robot3
+      - MQTT_BROKER=tcp://mqtt:1883
+    depends_on:
+      - mqtt
 
-  # laptop1:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.laptop
-  #   container_name: turtlebot-laptop1
-  #   environment:
-  #     - AGENT_ID=laptop1
-  #     - MQTT_BROKER=tcp://mqtt:1883
-  #   depends_on:
-  #     - mqtt
+  laptop1:
+    build:
+      context: .
+      dockerfile: Dockerfile.laptop
+    image: nbembedded/turtlebot-laptop:0.0.1
+    container_name: turtlebot-laptop1
+    environment:
+      - AGENT_ID=laptop1
+      - MQTT_BROKER=tcp://mqtt:1883
+    depends_on:
+      - mqtt
 
-  # laptop2:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.laptop
-  #   container_name: turtlebot-laptop2
-  #   environment:
-  #     - AGENT_ID=laptop2
-  #     - MQTT_BROKER=tcp://mqtt:1883
-  #   depends_on:
-  #     - mqtt
+  laptop2:
+    build:
+      context: .
+      dockerfile: Dockerfile.laptop
+    container_name: turtlebot-laptop2
+    image: nbembedded/turtlebot-laptop:0.0.1
+    environment:
+      - AGENT_ID=laptop2
+      - MQTT_BROKER=tcp://mqtt:1883
+    depends_on:
+      - mqtt
 
-  # laptop3:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.laptop
-  #   container_name: turtlebot-laptop3
-  #   environment:
-  #     - AGENT_ID=laptop3
-  #     - MQTT_BROKER=tcp://mqtt:1883
-  #   depends_on:
-  #     - mqtt
+  laptop3:
+    build:
+      context: .
+      dockerfile: Dockerfile.laptop
+    image: nbembedded/turtlebot-laptop:0.0.1
+    container_name: turtlebot-laptop3
+    environment:
+      - AGENT_ID=laptop3
+      - MQTT_BROKER=tcp://mqtt:1883
+    depends_on:
+      - mqtt
 
 volumes:
   controller-data:
