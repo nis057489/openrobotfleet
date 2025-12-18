@@ -169,7 +169,7 @@ func agentBrokerURL() string {
 	if v := os.Getenv("MQTT_BROKER"); v != "" && !strings.Contains(v, "tcp://mqtt") {
 		return v
 	}
-	return "tcp://192.168.100.122:1883"
+	return "tcp://192.168.1.10:1883"
 }
 
 func determineWorkspaceOwner(req installAgentRequest) string {

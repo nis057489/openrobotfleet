@@ -27,7 +27,7 @@ func NewClientWithHandler(clientID, broker string, onConnect mqtt.OnConnectHandl
 	if broker == "" {
 		broker = os.Getenv("MQTT_BROKER")
 		if broker == "" {
-			broker = "tcp://192.168.100.122:1883"
+			broker = "tcp://192.168.1.10:1883"
 		}
 	}
 	opts := mqtt.NewClientOptions().
