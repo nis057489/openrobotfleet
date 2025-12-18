@@ -3,8 +3,11 @@ package controller
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -324,10 +327,20 @@ func (c *Controller) runBuild() {
 	// Determine Image URL based on ROS Version
 	baseImageURL := "https://cdimage.ubuntu.com/releases/22.04/release/ubuntu-22.04.5-preinstalled-server-arm64+raspi.img.xz"
 	baseImageName := "ubuntu-22.04-server-arm64.img.xz"
+
 	if cfg.ROSVersion == "Jazzy" {
 		baseImageURL = "https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.3-preinstalled-server-arm64+raspi.img.xz"
 		baseImageName = "ubuntu-24.04-server-arm64.img.xz"
 	}
+
+	// Fetch hash dynamically
+	c.logBuild("fetching upstream hash for verification...")
+	expectedSHA256, err := fetchRemoteHash(baseImageURL)
+	if err != nil {
+		c.failBuild(fmt.Sprintf("failed to fetch upstream hash: %v", err))
+		return
+	}
+	c.logBuild("upstream hash: %s", expectedSHA256)
 
 	// Cache it in /data/image-cache (persistent volume) if available, else /tmp
 	cacheDir := "/tmp/image-cache"
@@ -341,11 +354,30 @@ func (c *Controller) runBuild() {
 	}
 	baseImageXZ := filepath.Join(cacheDir, baseImageName)
 
-	if _, err := os.Stat(baseImageXZ); os.IsNotExist(err) {
+	// Check if file exists and verify hash
+	downloadNeeded := true
+	if _, err := os.Stat(baseImageXZ); err == nil {
+		c.logBuild("verifying existing image hash...")
+		if verifyHash(baseImageXZ, expectedSHA256) {
+			c.logBuild("hash verified, skipping download")
+			downloadNeeded = false
+		} else {
+			c.logBuild("hash mismatch, re-downloading...")
+			os.Remove(baseImageXZ)
+		}
+	}
+
+	if downloadNeeded {
 		c.logBuild("downloading base image from %s...", baseImageURL)
 		cmd := exec.Command("wget", "-O", baseImageXZ, baseImageURL)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			c.failBuild(fmt.Sprintf("download failed: %v: %s", err, string(out)))
+			return
+		}
+		// Verify after download
+		if !verifyHash(baseImageXZ, expectedSHA256) {
+			c.failBuild("downloaded file hash mismatch")
+			os.Remove(baseImageXZ)
 			return
 		}
 	}
@@ -728,6 +760,22 @@ func prepareSSHKeys(rawKey string) (pubKey string, privKeyIndented string) {
 	return
 }
 
+func verifyHash(filePath, expectedHash string) bool {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return false
+	}
+
+	actualHash := hex.EncodeToString(h.Sum(nil))
+	return actualHash == expectedHash
+}
+
 func ensureLoopDevices() error {
 	for i := 0; i < 8; i++ {
 		devPath := fmt.Sprintf("/dev/loop%d", i)
@@ -739,4 +787,37 @@ func ensureLoopDevices() error {
 		}
 	}
 	return nil
+}
+
+func fetchRemoteHash(imageURL string) (string, error) {
+	lastSlash := strings.LastIndex(imageURL, "/")
+	if lastSlash == -1 {
+		return "", fmt.Errorf("invalid url")
+	}
+	baseURL := imageURL[:lastSlash+1]
+	filename := imageURL[lastSlash+1:]
+	sumsURL := baseURL + "SHA256SUMS"
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(sumsURL)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("status %s", resp.Status)
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.Contains(line, filename) {
+			parts := strings.Fields(line)
+			if len(parts) > 0 {
+				return parts[0], nil
+			}
+		}
+	}
+	return "", fmt.Errorf("hash not found in SHA256SUMS")
 }
