@@ -50,6 +50,7 @@ We use Docker Compose for the infrastructure (MQTT, Database) but often run the 
 
 * **Go**: Follow standard Go conventions (`gofmt`, `go vet`).
 * **TypeScript**: We use ESLint and Prettier. Run `npm run lint` in the `web` directory.
+* **Fun**: Sunshine!
 
 ## Pull Requests
 
