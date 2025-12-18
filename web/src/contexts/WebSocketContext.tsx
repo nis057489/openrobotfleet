@@ -14,6 +14,7 @@ export interface StatusPayload {
 export interface StatusUpdateEvent {
     type: 'status_update';
     agent_id: string;
+    id?: number;
     data: StatusPayload;
 }
 

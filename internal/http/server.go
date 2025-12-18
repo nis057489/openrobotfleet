@@ -485,6 +485,13 @@ func (s *Server) subscribeStatusUpdates() {
 		// Check if we have a pending rename (DB name != Agent name)
 		// We look up by AgentID because that's what the robot is currently using.
 		existing, err := s.DB.GetRobotByAgentID(context.Background(), agentID)
+
+		var dbID int64
+		if err == nil {
+			dbID = existing.ID
+		}
+
+		targetName := name
 		if err == nil && existing.Name != "" && existing.Name != name {
 			log.Printf("status: robot %s (agent_id=%s) reports name %s, but DB has %s. Sending rename command.", existing.Name, agentID, name, existing.Name)
 
@@ -498,14 +505,10 @@ func (s *Server) subscribeStatusUpdates() {
 			topic := fmt.Sprintf("lab/commands/%s", agentID)
 			s.MQTT.Publish(topic, 1, true, payloadBytes)
 
-			// Update status but keep the DB name
-			if err := s.DB.UpsertRobotStatus(context.Background(), agentID, existing.Name, payload.IP, payload.Status, payload.Type); err != nil {
-				log.Printf("status: failed to upsert robot %s: %v", agentID, err)
-			}
-			return
+			targetName = existing.Name
 		}
 
-		if err := s.DB.UpsertRobotStatus(context.Background(), agentID, name, payload.IP, payload.Status, payload.Type); err != nil {
+		if err := s.DB.UpsertRobotStatus(context.Background(), agentID, targetName, payload.IP, payload.Status, payload.Type); err != nil {
 			log.Printf("status: failed to upsert robot %s: %v", agentID, err)
 		}
 
@@ -514,10 +517,18 @@ func (s *Server) subscribeStatusUpdates() {
 			s.Controller.UpdateRobotJobStatus(agentID, payload.JobID, payload.JobStatus, payload.JobError)
 		}
 
+		// If new robot, fetch ID
+		if dbID == 0 {
+			if r, err := s.DB.GetRobotByAgentID(context.Background(), agentID); err == nil {
+				dbID = r.ID
+			}
+		}
+
 		// Broadcast WS
 		event := map[string]interface{}{
 			"type":     "status_update",
 			"agent_id": agentID,
+			"id":       dbID,
 			"data":     payload,
 		}
 		s.Hub.Broadcast(event)

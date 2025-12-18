@@ -40,6 +40,26 @@ export function Laptops() {
                             job_error: event.data.job_error,
                         };
                         return updated;
+                    } else if (event.id && event.data.type === 'laptop') {
+                        // New laptop
+                        const newLaptop: Robot = {
+                            id: event.id,
+                            agent_id: event.agent_id,
+                            name: event.data.name || event.agent_id,
+                            type: 'laptop',
+                            status: event.data.status,
+                            ip: event.data.ip,
+                            last_seen: event.data.ts,
+                            job_id: event.data.job_id,
+                            job_status: event.data.job_status,
+                            job_error: event.data.job_error,
+                            notes: '',
+                            ssh_address: '',
+                            ssh_user: '',
+                            ssh_key: '',
+                            tags: [],
+                        };
+                        return [...prev, newLaptop];
                     }
                     return prev;
                 });
