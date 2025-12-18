@@ -15,7 +15,7 @@ OpenRobotFleet helps instructors and lab managers maintain control over a fleet 
 
 ### 🤖 Fleet Overview
 
-Instantly see the status of every robot in your lab. Know their IP addresses, last seen times, and current operational status without scanning the network.
+Instantly see the status of every robot in your lab. Know their IP addresses, last seen times, and current operational status (and mood!) without scanning the network.
 
 ### 📦 One-Click Code Deployment ("Scenarios")
 
@@ -88,6 +88,7 @@ Under the hood, this system uses:
 * **MQTT**: For real-time communication between robots and the server.
 * **Batch Architecture**: Commands are bundled and sent to agents for atomic, sequential execution, ensuring reliability even with intermittent network connectivity.
 * **SQLite**: For simple, self-contained data storage.
+* **Secrets**: The dashboard might respond to a classic cheat code...
 
 ## Development
 
