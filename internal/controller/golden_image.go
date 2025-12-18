@@ -194,10 +194,10 @@ var (
 	buildLock      sync.Mutex
 	buildStatus    = "idle" // idle, building, success, error
 	buildError     string
-	buildProgress  int      // 0-100
-	buildStep      string   // Current step description
-	buildLogs      []string // New
-	buildImageName string   // New
+	buildProgress  int    // 0-100
+	buildStep      string // Current step description
+	buildLogs      []string
+	buildImageName string
 	lastLogUpdate  time.Time
 )
 
