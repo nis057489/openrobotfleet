@@ -33,6 +33,7 @@ func NewClientWithHandler(clientID, broker string, onConnect mqtt.OnConnectHandl
 	opts := mqtt.NewClientOptions().
 		AddBroker(broker).
 		SetClientID(clientID).
+		SetCleanSession(false).
 		SetConnectTimeout(5 * time.Second)
 
 	if onConnect != nil {
@@ -50,7 +51,15 @@ func (c *Client) Publish(topic string, payload []byte) {
 	if c == nil || c.Client == nil {
 		return
 	}
-	token := c.Client.Publish(topic, 0, false, payload)
+	token := c.Client.Publish(topic, 1, false, payload)
+	token.Wait()
+}
+
+func (c *Client) PublishRetained(topic string, payload []byte) {
+	if c == nil || c.Client == nil {
+		return
+	}
+	token := c.Client.Publish(topic, 1, true, payload)
 	token.Wait()
 }
 
@@ -58,7 +67,7 @@ func (c *Client) Subscribe(topic string, handler mqtt.MessageHandler) {
 	if c == nil || c.Client == nil {
 		return
 	}
-	token := c.Client.Subscribe(topic, 0, handler)
+	token := c.Client.Subscribe(topic, 1, handler)
 	token.Wait()
 	if token.Error() != nil {
 		log.Printf("MQTT subscribe error: %v", token.Error())

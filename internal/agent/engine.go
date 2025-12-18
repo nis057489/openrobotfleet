@@ -167,7 +167,7 @@ func (e *AgentEngine) sendHeartbeat(ctx context.Context, bb *behavior.Blackboard
 	payload := e.buildStatusPayload()
 	if e.MQTTClient != nil && e.MQTTClient.Client != nil && e.MQTTClient.Client.IsConnected() {
 		topic := "lab/status/" + e.Config.AgentID
-		e.MQTTClient.Publish(topic, payload)
+		e.MQTTClient.PublishRetained(topic, payload)
 		e.lastHeartbeat = time.Now()
 	}
 
