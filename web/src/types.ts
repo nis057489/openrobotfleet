@@ -10,6 +10,9 @@ export interface Robot {
   last_scenario?: ScenarioRef;
   install_config?: InstallConfig;
   tags?: string[];
+  job_id?: string;
+  job_status?: string;
+  job_error?: string;
 }
 
 export interface ScenarioRef {

@@ -6,6 +6,9 @@ export interface StatusPayload {
     ip: string;
     name: string;
     type: string;
+    job_id?: string;
+    job_status?: string;
+    job_error?: string;
 }
 
 export interface StatusUpdateEvent {

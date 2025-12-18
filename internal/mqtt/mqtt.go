@@ -46,11 +46,11 @@ func NewClientWithHandler(clientID, broker string, onConnect mqtt.OnConnectHandl
 	return &Client{Client: c}
 }
 
-func (c *Client) Publish(topic string, payload []byte) {
+func (c *Client) Publish(topic string, qos byte, retained bool, payload []byte) {
 	if c == nil || c.Client == nil {
 		return
 	}
-	token := c.Client.Publish(topic, 0, false, payload)
+	token := c.Client.Publish(topic, qos, retained, payload)
 	token.Wait()
 }
 

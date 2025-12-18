@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getRobots, identifyAll } from "../api";
 import { Robot } from "../types";
-import { Signal, Wifi, Clock, Eye, Settings } from "lucide-react";
+import { Signal, Wifi, Clock, Eye, Settings, Activity } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
@@ -39,6 +39,9 @@ export function Robots() {
                             status: event.data.status,
                             ip: event.data.ip,
                             last_seen: event.data.ts,
+                            job_id: event.data.job_id,
+                            job_status: event.data.job_status,
+                            job_error: event.data.job_error,
                         };
                         return updated;
                     }
@@ -187,6 +190,21 @@ function RobotCard({ robot, pattern }: { robot: Robot, pattern?: string }) {
                         </span>
                         <span className="font-medium text-gray-700">{lastSeen}</span>
                     </div>
+                    {robot.job_status && (
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-500 flex items-center gap-2">
+                                <Activity size={16} /> Config
+                            </span>
+                            <span className={`font-medium ${robot.job_status === 'success' ? 'text-green-600' :
+                                robot.job_status === 'failed' ? 'text-red-600' :
+                                    'text-blue-600'
+                                }`}>
+                                {robot.job_status === 'success' ? 'Applied' :
+                                    robot.job_status === 'failed' ? 'Failed' :
+                                        'Applying...'}
+                            </span>
+                        </div>
+                    )}
                 </div>
             </div>
 

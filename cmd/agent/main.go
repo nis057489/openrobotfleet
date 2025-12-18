@@ -1,19 +1,19 @@
 package main
 
 import (
-"context"
-"log"
-"os"
-"os/signal"
-"syscall"
+	"context"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
-"example.com/openrobot-fleet/internal/agent"
+	"example.com/openrobot-fleet/internal/agent"
 )
 
 func main() {
 	cfgPath := os.Getenv("AGENT_CONFIG_PATH")
 	if cfgPath == "" {
-		cfgPath = "/etc/turtlebot-agent/config.yaml"
+		cfgPath = "/etc/openrobotfleet-agent/config.yaml"
 	}
 	cfg, err := agent.LoadConfig(cfgPath)
 	if err != nil {

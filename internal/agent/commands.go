@@ -4,6 +4,7 @@ import "encoding/json"
 
 // Command represents a controller-issued instruction handled by an agent.
 type Command struct {
+	ID   string          `json:"id"`
 	Type string          `json:"type"`
 	Data json.RawMessage `json:"data"`
 }

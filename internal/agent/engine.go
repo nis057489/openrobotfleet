@@ -19,10 +19,11 @@ type AgentEngine struct {
 	Blackboard *behavior.Blackboard
 	Tree       behavior.Node
 
-	cmdChan            chan Command
-	lastIP             string
-	lastHeartbeat      time.Time
-	lastConnectAttempt time.Time
+	cmdChan                chan Command
+	lastIP                 string
+	lastHeartbeat          time.Time
+	lastConnectAttempt     time.Time
+	lastProcessedCommandID string
 }
 
 func NewAgentEngine(cfg Config) *AgentEngine {
@@ -148,6 +149,12 @@ func (e *AgentEngine) checkNetwork(ctx context.Context, bb *behavior.Blackboard)
 func (e *AgentEngine) processCommands(ctx context.Context, bb *behavior.Blackboard) behavior.Status {
 	select {
 	case cmd := <-e.cmdChan:
+		if cmd.ID != "" && cmd.ID == e.lastProcessedCommandID {
+			log.Printf("Ignoring duplicate command ID: %s", cmd.ID)
+			return behavior.StatusSuccess
+		}
+		e.lastProcessedCommandID = cmd.ID
+
 		action := e.mapCommandToAction(cmd)
 		if action != nil {
 			jobID := fmt.Sprintf("%d", time.Now().UnixNano())
@@ -167,7 +174,7 @@ func (e *AgentEngine) sendHeartbeat(ctx context.Context, bb *behavior.Blackboard
 	payload := e.buildStatusPayload()
 	if e.MQTTClient != nil && e.MQTTClient.Client != nil && e.MQTTClient.Client.IsConnected() {
 		topic := "lab/status/" + e.Config.AgentID
-		e.MQTTClient.Publish(topic, payload)
+		e.MQTTClient.Publish(topic, 0, false, payload)
 		e.lastHeartbeat = time.Now()
 	}
 

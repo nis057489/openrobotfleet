@@ -30,7 +30,7 @@ func HandleConfigureAgent(cfg Config, data ConfigureAgentData) error {
 	// Write back to file
 	cfgPath := os.Getenv("AGENT_CONFIG_PATH")
 	if cfgPath == "" {
-		cfgPath = "/etc/turtlebot-agent/config.yaml"
+		cfgPath = "/etc/openrobotfleet-agent/config.yaml"
 	}
 
 	// Read existing to preserve other fields if needed, but we have full config in memory usually.
@@ -56,7 +56,7 @@ func HandleConfigureAgent(cfg Config, data ConfigureAgentData) error {
 	// We assume systemd
 	go func() {
 		time.Sleep(1 * time.Second)
-		cmd := exec.Command("systemctl", "restart", "turtlebot-agent")
+		cmd := exec.Command("systemctl", "restart", "openrobotfleet-agent")
 		if err := cmd.Run(); err != nil {
 			log.Printf("failed to restart agent: %v", err)
 			// Fallback: exit and let systemd restart us

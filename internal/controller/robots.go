@@ -141,8 +141,13 @@ func (c *Controller) BroadcastCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job.ID = jobID
+
+	// Update command with ID and re-marshal
+	cmd.ID = fmt.Sprintf("%d", jobID)
+	payload, _ = json.Marshal(cmd)
+
 	log.Printf("broadcast command %s queued to lab/commands/all", req.Type)
-	c.MQTT.Publish("lab/commands/all", payload)
+	c.MQTT.Publish("lab/commands/all", 1, true, payload)
 	respondJSON(w, http.StatusCreated, job)
 }
 
@@ -257,9 +262,14 @@ func (c *Controller) queueRobotCommand(ctx context.Context, robot db.Robot, cmd 
 		return db.Job{}, fmt.Errorf("create job: %w", err)
 	}
 	job.ID = jobID
+
+	// Update command with ID and re-marshal
+	cmd.ID = fmt.Sprintf("%d", jobID)
+	payload, _ = json.Marshal(cmd)
+
 	topic := fmt.Sprintf("lab/commands/%s", robot.AgentID)
 	log.Printf("command %s queued for robot %s (agent %s) topic %s", cmd.Type, robot.Name, robot.AgentID, topic)
-	c.MQTT.Publish(topic, payload)
+	c.MQTT.Publish(topic, 1, true, payload)
 	return job, nil
 }
 
@@ -282,6 +292,7 @@ func (c *Controller) IdentifyAll(w http.ResponseWriter, r *http.Request) {
 		// Send command directly via MQTT (ephemeral, no DB job needed)
 		cmd := agent.Command{
 			Type: "identify",
+			ID:   fmt.Sprintf("%d", time.Now().UnixNano()),
 		}
 		// Manually construct JSON to avoid struct definition here if possible,
 		// or use the struct from agent package if visible.
@@ -299,7 +310,7 @@ func (c *Controller) IdentifyAll(w http.ResponseWriter, r *http.Request) {
 
 		payload, _ := json.Marshal(cmd)
 		topic := fmt.Sprintf("lab/commands/%s", robot.AgentID)
-		c.MQTT.Publish(topic, payload)
+		c.MQTT.Publish(topic, 1, true, payload)
 	}
 	respondJSON(w, http.StatusOK, assignments)
 }
@@ -377,13 +388,18 @@ func (c *Controller) UpdateRobotName(w http.ResponseWriter, r *http.Request) {
 
 	// Send command to agent to update its config
 	if oldRobot.AgentID != "" {
-		cmd := commandRequest{
-			Type: "configure_agent",
-			Data: json.RawMessage(fmt.Sprintf(`{"agent_id": "%s"}`, req.Name)),
+		// We need to add ID to the commandRequest or use agent.Command
+		// commandRequest is defined locally or in types?
+		// It seems to be defined in robots.go or similar.
+		// Let's use a map to be safe and include ID.
+		cmdMap := map[string]interface{}{
+			"type": "configure_agent",
+			"id":   fmt.Sprintf("%d", time.Now().UnixNano()),
+			"data": map[string]string{"agent_id": req.Name},
 		}
-		payload, _ := json.Marshal(cmd)
+		payload, _ := json.Marshal(cmdMap)
 		topic := fmt.Sprintf("lab/commands/%s", oldRobot.AgentID)
-		c.MQTT.Publish(topic, payload)
+		c.MQTT.Publish(topic, 1, true, payload)
 	}
 
 	robot, err := c.DB.GetRobotByID(r.Context(), id)

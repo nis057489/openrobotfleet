@@ -129,7 +129,7 @@ write_files:
       APT::Periodic::Update-Package-Lists "0";
       APT::Periodic::Unattended-Upgrade "0";
 
-  - path: /etc/openrobot-agent/config.yaml
+  - path: /etc/openrobotfleet-agent/config.yaml
     content: |
       agent_id: "ROBOT-UNINITIALIZED"
       mqtt_broker: "{{.MQTTBroker}}"
@@ -139,7 +139,7 @@ runcmd:
   # Generate unique Agent ID and Hostname
   - |
     SUFFIX=$(head /dev/urandom | tr -dc a-z0-9 | head -c 6)
-    sed -i "s/ROBOT-UNINITIALIZED/robot-$SUFFIX/" /etc/openrobot-agent/config.yaml
+    sed -i "s/ROBOT-UNINITIALIZED/robot-$SUFFIX/" /etc/openrobotfleet-agent/config.yaml
     hostnamectl set-hostname robot-$SUFFIX
     sed -i "s/openrobot/robot-$SUFFIX/g" /etc/hosts
 
@@ -170,22 +170,22 @@ runcmd:
 
   # Agent Service (Binary is pre-installed)
   - |
-    cat <<EOF > /etc/systemd/system/openrobot-agent.service
+    cat <<EOF > /etc/systemd/system/openrobotfleet-agent.service
     [Unit]
     Description=OpenRobot Agent
     After=network.target
 
     [Service]
-    ExecStart=/usr/local/bin/openrobot-agent
+    ExecStart=/usr/local/bin/openrobotfleet-agent
     Restart=always
     User=root
-    Environment=AGENT_CONFIG_PATH=/etc/openrobot-agent/config.yaml
+    Environment=AGENT_CONFIG_PATH=/etc/openrobotfleet-agent/config.yaml
 
     [Install]
     WantedBy=multi-user.target
     EOF
-  - systemctl enable openrobot-agent
-  - systemctl start openrobot-agent
+  - systemctl enable openrobotfleet-agent
+  - systemctl start openrobotfleet-agent
 
 final_message: "OpenRobot setup complete. Ready to roll!"
 `
@@ -585,10 +585,10 @@ rm -rf /var/lib/apt/lists/*
 		binaryPath = "./" + binaryName
 	}
 
-	if out, err := exec.Command("cp", binaryPath, filepath.Join(mntDir, "usr/local/bin/turtlebot-agent")).CombinedOutput(); err != nil {
+	if out, err := exec.Command("cp", binaryPath, filepath.Join(mntDir, "usr/local/bin/openrobotfleet-agent")).CombinedOutput(); err != nil {
 		c.logBuild("warning: could not copy agent binary: %v %s", err, string(out))
 	}
-	exec.Command("chmod", "+x", filepath.Join(mntDir, "usr/local/bin/turtlebot-agent")).Run()
+	exec.Command("chmod", "+x", filepath.Join(mntDir, "usr/local/bin/openrobotfleet-agent")).Run()
 
 	// Run Script in Chroot
 	cmd = exec.Command("chroot", mntDir, "/bin/bash", "/tmp/install.sh")

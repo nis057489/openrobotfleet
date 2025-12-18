@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getRobots, sendCommand, identifyAll } from "../api";
 import { Robot } from "../types";
-import { Signal, Wifi, Clock, Laptop as LaptopIcon, Lightbulb, Loader2, Check } from "lucide-react";
+import { Signal, Wifi, Clock, Laptop as LaptopIcon, Lightbulb, Loader2, Check, Activity } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { useWebSocket, WSEvent } from "../contexts/WebSocketContext";
@@ -35,6 +35,9 @@ export function Laptops() {
                             status: event.data.status,
                             ip: event.data.ip,
                             last_seen: event.data.ts,
+                            job_id: event.data.job_id,
+                            job_status: event.data.job_status,
+                            job_error: event.data.job_error,
                         };
                         return updated;
                     }
@@ -159,6 +162,21 @@ function LaptopCard({ robot }: { robot: Robot }) {
                         </span>
                         <span className="font-medium text-gray-700">{lastSeen}</span>
                     </div>
+                    {robot.job_status && (
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-500 flex items-center gap-2">
+                                <Activity size={16} /> Config
+                            </span>
+                            <span className={`font-medium ${robot.job_status === 'success' ? 'text-green-600' :
+                                robot.job_status === 'failed' ? 'text-red-600' :
+                                    'text-blue-600'
+                                }`}>
+                                {robot.job_status === 'success' ? 'Applied' :
+                                    robot.job_status === 'failed' ? 'Failed' :
+                                        'Applying...'}
+                            </span>
+                        </div>
+                    )}
                 </div>
             </div>
 

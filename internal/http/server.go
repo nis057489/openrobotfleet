@@ -491,11 +491,12 @@ func (s *Server) subscribeStatusUpdates() {
 			// Send configure_agent command to rename the robot
 			cmd := map[string]interface{}{
 				"type": "configure_agent",
+				"id":   fmt.Sprintf("%d", time.Now().UnixNano()),
 				"data": map[string]string{"agent_id": existing.Name},
 			}
 			payloadBytes, _ := json.Marshal(cmd)
 			topic := fmt.Sprintf("lab/commands/%s", agentID)
-			s.MQTT.Publish(topic, payloadBytes)
+			s.MQTT.Publish(topic, 1, true, payloadBytes)
 
 			// Update status but keep the DB name
 			if err := s.DB.UpsertRobotStatus(context.Background(), agentID, existing.Name, payload.IP, payload.Status, payload.Type); err != nil {
