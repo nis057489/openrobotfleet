@@ -85,7 +85,7 @@ Under the hood, this system uses:
 
 * **Go**: For a fast, reliable backend and agent.
 * **React**: For a responsive web interface.
-* **MQTT**: For communication between robots and the server.
+* **MQTT**: For communication between robots, laptops and the server.
 * **Batch Architecture**: Commands are bundled and sent to agents for atomic, sequential execution, ensuring reliability even with intermittent network connectivity.
 * **SQLite**: For simple, self-contained data storage.
 * **Secrets**: The dashboard might respond to a classic cheat code...
