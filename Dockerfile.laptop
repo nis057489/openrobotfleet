@@ -1,36 +1,37 @@
-FROM golang:1.25 AS build
+FROM golang:1.25-alpine AS build
 WORKDIR /app
-COPY go.mod ./
-RUN go mod download
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
-RUN go build -o agent ./cmd/agent
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    go build -ldflags="-s -w" -trimpath -o agent ./cmd/agent
 
-FROM ubuntu:22.04
+FROM alpine:latest
 WORKDIR /app
 COPY --from=build /app/agent /app/agent
 
 # Install dependencies - laptops might have more tools
-RUN apt-get update && apt-get install -y \
+RUN apk add --no-cache \
     ca-certificates \
     iproute2 \
     net-tools \
     curl \
     vim \
     alsa-utils \
-    && rm -rf /var/lib/apt/lists/*
+    bash
 
 # Create entrypoint script
-RUN echo '#!/bin/bash\n\
-cat <<EOF > /app/agent.yaml\n\
-agent_id: ${AGENT_ID:-laptop-$(hostname)}\n\
-type: laptop\n\
-mqtt_broker: ${MQTT_BROKER:-tcp://mqtt:1883}\n\
-workspace_path: ${WORKSPACE_PATH:-/app/workspace}\n\
-workspace_owner: ${WORKSPACE_OWNER:-root}\n\
-EOF\n\
-\n\
-export AGENT_CONFIG_PATH=/app/agent.yaml\n\
-exec /app/agent\n\
-' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
+    echo 'cat <<EOF > /app/agent.yaml' >> /app/entrypoint.sh && \
+    echo 'agent_id: ${AGENT_ID:-laptop-$(hostname)}' >> /app/entrypoint.sh && \
+    echo 'type: laptop' >> /app/entrypoint.sh && \
+    echo 'mqtt_broker: ${MQTT_BROKER:-tcp://mqtt:1883}' >> /app/entrypoint.sh && \
+    echo 'workspace_path: ${WORKSPACE_PATH:-/app/workspace}' >> /app/entrypoint.sh && \
+    echo 'workspace_owner: ${WORKSPACE_OWNER:-root}' >> /app/entrypoint.sh && \
+    echo 'EOF' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo 'export AGENT_CONFIG_PATH=/app/agent.yaml' >> /app/entrypoint.sh && \
+    echo 'exec /app/agent' >> /app/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh
 
 CMD ["/app/entrypoint.sh"]
