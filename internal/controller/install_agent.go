@@ -152,11 +152,39 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Controller) DownloadAgentBinary(w http.ResponseWriter, r *http.Request) {
-	binaryPath := os.Getenv("AGENT_BINARY_PATH")
-	if binaryPath == "" {
-		binaryPath = "/app/agent"
+	basePath := os.Getenv("AGENT_BINARY_PATH")
+	if basePath == "" {
+		basePath = "/app/agent"
 	}
-	http.ServeFile(w, r, binaryPath)
+
+	// Check for arch param
+	arch := r.URL.Query().Get("arch")
+	if arch != "" {
+		// Try to find architecture specific binary
+		// e.g. /app/agent-arm64
+		archPath := basePath + "-" + arch
+		if _, err := os.Stat(archPath); err == nil {
+			http.ServeFile(w, r, archPath)
+			return
+		}
+		// Also try mapping common names
+		if arch == "aarch64" {
+			archPath = basePath + "-arm64"
+			if _, err := os.Stat(archPath); err == nil {
+				http.ServeFile(w, r, archPath)
+				return
+			}
+		}
+		if arch == "x86_64" {
+			archPath = basePath + "-amd64"
+			if _, err := os.Stat(archPath); err == nil {
+				http.ServeFile(w, r, archPath)
+				return
+			}
+		}
+	}
+
+	http.ServeFile(w, r, basePath)
 }
 
 func agentBrokerURL() string {
