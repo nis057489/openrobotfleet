@@ -2,6 +2,18 @@
 
 **Effortless orchestration for your robotics classroom or lab.**
 
+## Screenshots
+
+![OpenRobotFleet dashboard screenshot](img/1.png)
+
+![Robots view screenshot](img/2.png)
+
+![Robot detail screenshot](img/3.png)
+
+![Scenarios / deployment screenshot](img/4.png)
+
+![Golden Image Builder screenshot](img/5.png)
+
 OpenRobotFleet helps instructors and lab managers maintain control over a fleet of robots (and laptops). Instead of manually SSH-ing into 30 robots to pull the latest code or restart a service, you can manage everything from a single web dashboard.
 
 ## Why use this?
