@@ -63,9 +63,9 @@ The fastest way to get a lab fleet up and running is:
 
 1. Create a local env file:
 
-        ```bash
-        cp .env.example .env
-        ```
+```bash
+    cp .env.example .env
+```
 
 2. Edit `.env` (most important: the network(s) to scan):
 
@@ -76,13 +76,13 @@ The fastest way to get a lab fleet up and running is:
 
 3. Start the stack:
 
-        ```bash
-        docker compose up --build
-        ```
+```bash
+    docker compose up --build
+```
 
 4. Open the dashboard:
 
-        * Local: `https://localhost` (you may get a browser TLS warning)
+* Local: `https://localhost` (you may get a browser TLS warning)
 
 #### 2) Build + flash a Golden Image
 
@@ -106,16 +106,20 @@ Scenarios are small YAML snippets that declare what git repo each robot/laptop s
 
 Minimal example:
 
-                repo:
-                        url: https://github.com/your-org/your-repo.git
+```yaml
+repo:
+        url: https://github.com/your-org/your-repo.git
+```
 
 Optional fields:
 
-                repo:
-                        url: https://github.com/your-org/your-repo.git
-                        branch: main
-                        # Path is relative to the agent's workspace_path (robots default to /home/ubuntu/ros_ws/src)
-                        path: my-repo-folder
+```yaml
+repo:
+        url: https://github.com/your-org/your-repo.git
+        branch: main
+        # Path is relative to the agent's workspace_path (robots default to /home/ubuntu/ros_ws/src)
+        path: my-repo-folder
+```
 
 Create scenarios in the dashboard (**Scenarios**) and paste the YAML. Then apply the scenario to one robot to validate, and finally to the whole fleet.
 
