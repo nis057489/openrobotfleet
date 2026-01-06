@@ -108,7 +108,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for instructions on how to run the projec
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## License
 
