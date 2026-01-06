@@ -303,14 +303,6 @@ export const en = {
       processing: "Processing...",
       startReset: "Start Semester Reset",
     },
-    interest: {
-      thanks: "Thanks! We'll keep you posted.",
-      title: "Interested in this project?",
-      subtitle: "Leave your email to get notified when we release.",
-      compactTitle: "Get notified on release:",
-      notifyMe: "Notify Me",
-      error: "Error. Try again?",
-    },
     deployModal: {
       title: "Deploy Scenario",
       target: "Target: {{name}}",

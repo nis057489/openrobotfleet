@@ -296,14 +296,6 @@ export const zh = {
       processing: "处理中...",
       startReset: "开始学期重置",
     },
-    interest: {
-      thanks: "谢谢！我们会随时通知您。",
-      title: "对这个项目感兴趣？",
-      subtitle: "留下您的邮箱，我们发布时会通知您。",
-      compactTitle: "发布时获取通知：",
-      notifyMe: "通知我",
-      error: "错误。请重试？",
-    },
     deployModal: {
       title: "部署场景",
       target: "目标：{{name}}",

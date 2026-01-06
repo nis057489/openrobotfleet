@@ -148,12 +148,6 @@ func migrate(db *sql.DB) error {
 			ip TEXT,
 			user_agent TEXT
 		);`,
-		`CREATE TABLE IF NOT EXISTS interest_signups (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			email TEXT NOT NULL,
-			timestamp TIMESTAMP,
-			ip TEXT
-		);`,
 	}
 	for _, s := range stmts {
 		if _, err := db.ExecContext(ctx, s); err != nil {
@@ -724,12 +718,6 @@ func (d *DB) ListJobs(ctx context.Context, target string) ([]Job, error) {
 func (db *DB) RecordLogin(ctx context.Context, ip, userAgent string) error {
 	query := `INSERT INTO login_events (timestamp, ip, user_agent) VALUES (?, ?, ?)`
 	_, err := db.SQL.ExecContext(ctx, query, time.Now(), ip, userAgent)
-	return err
-}
-
-func (db *DB) RecordInterest(ctx context.Context, email, ip string) error {
-	query := `INSERT INTO interest_signups (email, timestamp, ip) VALUES (?, ?, ?)`
-	_, err := db.SQL.ExecContext(ctx, query, email, time.Now(), ip)
 	return err
 }
 

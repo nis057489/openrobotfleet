@@ -64,7 +64,6 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/login", s.handleLogin)
 	mux.HandleFunc("/api/auth/status", s.handleAuthStatus)
 	mux.HandleFunc("/api/ws", s.Hub.ServeHTTP)
-	mux.HandleFunc("/api/interest", s.handleInterest)
 
 	// Protected routes
 	mux.HandleFunc("/api/install-agent", s.handleInstallAgent)
@@ -179,39 +178,6 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"authenticated":true}`))
-}
-
-func (s *Server) handleInterest(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w)
-		return
-	}
-
-	var payload struct {
-		Email string `json:"email"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
-		return
-	}
-
-	if payload.Email == "" {
-		http.Error(w, "Email required", http.StatusBadRequest)
-		return
-	}
-
-	ip := r.RemoteAddr
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		ip = fwd
-	}
-
-	if err := s.DB.RecordInterest(r.Context(), payload.Email, ip); err != nil {
-		log.Printf("failed to record interest: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) Start() error {

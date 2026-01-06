@@ -3,7 +3,6 @@ import { useState, useEffect } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { InterestSignup } from "./components/InterestSignup";
 import { useTranslation } from "react-i18next";
 import { useKonamiCode } from "./hooks/useKonamiCode";
 import { MatrixRain } from "./components/MatrixRain";
@@ -123,12 +122,6 @@ export function Layout() {
                 </nav>
 
                 <div className="p-4 border-t border-gray-100">
-                    {isExpanded && (
-                        <div className="mb-4 pb-4 border-b border-gray-100">
-                            <InterestSignup compact={true} />
-                        </div>
-                    )}
-
                     <button
                         onClick={toggleLanguage}
                         className="flex items-center w-full p-2 mb-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
