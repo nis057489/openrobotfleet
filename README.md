@@ -4,7 +4,6 @@
 
 ## Screenshots
 
-
 ![Robots view screenshot](img/1.png)
 
 ![Robot detail screenshot](img/2.png)
@@ -48,25 +47,87 @@ Manage lab laptops just like robots. Push code updates and manage WiFi profiles 
 
 ## Getting Started
 
-The easiest way to run the Fleet Manager is using Docker.
+The fastest way to get a lab fleet up and running is:
 
-### Using Docker
+1) build a **Golden Image**, 2) flash it onto every robot, 3) ensure everything is on the same **Layer 2** network, 4) define **YAML Scenarios** for the code you want deployed, then 5) manage the fleet from the dashboard.
 
-1. **Prerequisites**: Ensure you have Docker and Docker Compose installed.
-2. **Configure**:
+### Quick Start (Golden Image + Scenarios)
 
-    ```bash
-    cp .env.example .env
-    # Edit .env if needed
-    ```
+#### 0) Prerequisites
 
-3. **Start the System**:
+* A machine to run the Controller (same network as the fleet)
+* Docker + Docker Compose
+* Your robots/laptops are reachable on the same Layer 2 network (same WiFi/VLAN/subnet)
 
-    ```bash
-    docker compose up --build
-    ```
+#### 1) Configure and start the Controller (Docker)
 
-4. **Access the Dashboard**: Open your browser to `http://localhost`.
+1. Create a local env file:
+
+        ```bash
+        cp .env.example .env
+        ```
+
+2. Edit `.env` (most important: the network(s) to scan):
+
+        - `SCAN_SUBNETS` controls what the Controller scans for SSH-able hosts (comma-separated).
+            Example: `SCAN_SUBNETS=192.168.1.0/24,10.0.0.0/24`
+        - `ADMIN_PASSWORD` sets the dashboard admin password.
+        - If you set a real public domain, also set `ACME_EMAIL` to a real email (Let’s Encrypt rejects `example.com`).
+
+3. Start the stack:
+
+        ```bash
+        docker compose up --build
+        ```
+
+4. Open the dashboard:
+
+        * Local: `https://localhost` (you may get a browser TLS warning)
+
+#### 2) Build + flash a Golden Image
+
+1. In the dashboard, go to **Golden Image**.
+2. Fill in WiFi + Controller/MQTT settings.
+3. Click **Build** (this produces the base image) and/or **Download** (this downloads the `user-data` cloud-init config used by the image).
+4. Flash the resulting image onto every robot.
+
+The Golden Image config bakes in the Agent configuration so robots come up pre-connected (no per-robot SSH install step).
+
+#### 3) Power on robots on the same Layer 2 network
+
+* Put the Controller machine and all robots/laptops on the same WiFi/VLAN/subnet.
+* Ensure the Controller can reach them (and they can reach the Controller’s MQTT broker).
+
+Once powered on, robots should start appearing in the dashboard as they connect and send status.
+
+#### 4) Create YAML Scenarios (code deployment)
+
+Scenarios are small YAML snippets that declare what git repo each robot/laptop should have.
+
+Minimal example:
+
+                repo:
+                        url: https://github.com/your-org/your-repo.git
+
+Optional fields:
+
+                repo:
+                        url: https://github.com/your-org/your-repo.git
+                        branch: main
+                        # Path is relative to the agent's workspace_path (robots default to /home/ubuntu/ros_ws/src)
+                        path: my-repo-folder
+
+Create scenarios in the dashboard (**Scenarios**) and paste the YAML. Then apply the scenario to one robot to validate, and finally to the whole fleet.
+
+### 5) Install the Agent onto Laptops (and any non-golden imaged Robots)
+
+* Use the **Scan Network** button under **Laptops** or **Robots** pages to find and enrol new devices
+
+#### 6) Use the app
+
+* Use **Robots** / **Laptops** to monitor status.
+* Use **Scenarios** to deploy code.
+* Use tools like **Semester Wizard** / **Restart ROS** / **Reset Logs** as needed.
 
 ## How it Works
 
