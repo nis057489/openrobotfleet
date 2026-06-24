@@ -578,17 +578,35 @@ rm -rf /var/lib/apt/lists/*
 set -e
 export DEBIAN_FRONTEND=noninteractive
 
-# Bring the base image's packages up to date before adding any third-party repos.
-# Ubuntu security updates are released as coordinated sets (runtime lib + dev package
-# together), so a full upgrade here ensures all packages are in a consistent state
-# before ROS deps are introduced.
+# Set locale (required by ROS 2 install docs)
 apt-get update
-apt-get upgrade -y
-apt-get install -y software-properties-common curl gnupg lsb-release
+apt-get install -y locales
+locale-gen en_US en_US.UTF-8
+update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+export LANG=en_US.UTF-8
 
-# Add ROS 2 repo and install
-curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(source /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
+# The preinstalled Pi image may only list 'noble' in its apt Suites, missing
+# noble-updates and noble-backports. Per the ROS 2 Jazzy install docs, missing
+# these suites causes dependency conflicts. Add them before doing anything else.
+if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+    if ! grep -q "noble-updates" /etc/apt/sources.list.d/ubuntu.sources; then
+        sed -i 's/^Suites: noble$/Suites: noble noble-updates noble-backports/' /etc/apt/sources.list.d/ubuntu.sources
+    fi
+fi
+
+# Full-upgrade (not just upgrade) so held-back packages with new deps are also updated.
+apt-get clean
+apt-get update
+apt-get full-upgrade -y
+
+# Enable Universe repo
+apt-get install -y software-properties-common curl
+add-apt-repository universe -y
+
+# Add ROS 2 repo via the official ros2-apt-source package (per ROS 2 Jazzy install docs)
+ROS_APT_SOURCE_VERSION=$(curl -s https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest | grep -F "tag_name" | awk -F'"' '{print $4}')
+curl -L -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.$(. /etc/os-release && echo ${UBUNTU_CODENAME:-${VERSION_CODENAME}})_all.deb"
+dpkg -i /tmp/ros2-apt-source.deb
 apt-get update
 
 apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver ros-%s-slam-toolbox ros-%s-navigation2 ros-%s-nav2-bringup ros-%s-cartographer-ros ros-%s-teleop-twist-keyboard ros-%s-teleop-twist-joy ros-%s-joy ros-%s-robot-state-publisher ros-%s-joint-state-publisher ros-%s-tf2-tools ros-%s-laser-geometry ros-%s-diagnostic-updater libudev-dev build-essential git python3-colcon-common-extensions
