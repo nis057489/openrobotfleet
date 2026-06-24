@@ -177,6 +177,8 @@ export const zh = {
       buildFailed: "构建失败：",
       startBuildFailed: "启动构建失败",
       saving: "正在保存...",
+      includeExtras: "包含导航与 SLAM 软件包",
+      includeExtrasHelp: "安装 slam-toolbox、Nav2、Cartographer 及遥控软件包，镜像约增加 2 GB。",
     },
     installAgent: {
       title: "添加新 {{type}}",

@@ -435,7 +435,7 @@ func (c *Controller) runBuild() {
 	// 5. Expand Image (+4GB)
 	c.updateBuildProgress("Expanding image...", 35)
 	c.logBuild("expanding image by 4GB...")
-	if err := exec.Command("truncate", "-s", "+4G", workImage).Run(); err != nil {
+	if err := exec.Command("truncate", "-s", "+8G", workImage).Run(); err != nil {
 		c.failBuild(fmt.Sprintf("truncate failed: %v", err))
 		return
 	}
@@ -574,6 +574,10 @@ rm -rf /var/lib/apt/lists/*
 		if cfg.ROSVersion == "Jazzy" {
 			rosDistro = "jazzy"
 		}
+		includeExtras := "true"
+		if cfg.IncludeExtras != nil && !*cfg.IncludeExtras {
+			includeExtras = "false"
+		}
 		installScript = fmt.Sprintf(`#!/bin/bash
 set -e
 export DEBIAN_FRONTEND=noninteractive
@@ -609,7 +613,11 @@ curl -L -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-a
 dpkg -i /tmp/ros2-apt-source.deb
 apt-get update
 
-apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver ros-%s-slam-toolbox ros-%s-navigation2 ros-%s-nav2-bringup ros-%s-cartographer-ros ros-%s-teleop-twist-keyboard ros-%s-teleop-twist-joy ros-%s-joy ros-%s-robot-state-publisher ros-%s-joint-state-publisher ros-%s-tf2-tools ros-%s-laser-geometry ros-%s-diagnostic-updater libudev-dev build-essential git python3-colcon-common-extensions
+apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver ros-%s-robot-state-publisher ros-%s-joint-state-publisher ros-%s-tf2-tools ros-%s-laser-geometry ros-%s-diagnostic-updater libudev-dev build-essential git python3-colcon-common-extensions
+
+if [ "%s" = "true" ]; then
+    apt-get install -y ros-%s-slam-toolbox ros-%s-navigation2 ros-%s-nav2-bringup ros-%s-cartographer-ros ros-%s-teleop-twist-keyboard ros-%s-teleop-twist-joy ros-%s-joy
+fi
 
 # Setup Workspace
 if ! id -u ubuntu >/dev/null 2>&1; then
@@ -642,7 +650,7 @@ systemctl enable docker
 rm -f /tmp/install.sh
 apt-get clean
 rm -rf /var/lib/apt/lists/*
-`, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro)
+`, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, includeExtras, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro)
 	}
 	if err := os.WriteFile(filepath.Join(mntDir, "tmp/install.sh"), []byte(installScript), 0755); err != nil {
 		c.failBuild(fmt.Sprintf("write install script failed: %v", err))

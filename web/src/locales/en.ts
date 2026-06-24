@@ -179,6 +179,8 @@ export const en = {
       buildFailed: "Build failed:",
       startBuildFailed: "Failed to start build",
       saving: "Saving...",
+      includeExtras: "Include navigation & SLAM packages",
+      includeExtrasHelp: "Installs slam-toolbox, Nav2, Cartographer, and teleop packages. Adds ~2 GB to the image.",
     },
     installAgent: {
       title: "Add New {{type}}",
