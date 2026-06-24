@@ -61,14 +61,15 @@ type Job struct {
 }
 
 type GoldenImageConfig struct {
-	WifiSSID      string `json:"wifi_ssid"`
-	WifiPassword  string `json:"wifi_password"`
-	ControllerURL string `json:"controller_url"`
-	MQTTBroker    string `json:"mqtt_broker"`
-	LDSModel      string `json:"lds_model"`
-	ROSDomainID   int    `json:"ros_domain_id"`
-	RobotModel    string `json:"robot_model"` // "TB3" or "TB4"
-	ROSVersion    string `json:"ros_version"` // "Humble" or "Jazzy"
+	WifiSSID       string `json:"wifi_ssid"`
+	WifiPassword   string `json:"wifi_password"`
+	ControllerURL  string `json:"controller_url"`
+	MQTTBroker     string `json:"mqtt_broker"`
+	LDSModel       string `json:"lds_model"`
+	ROSDomainID    int    `json:"ros_domain_id"`
+	RobotModel     string `json:"robot_model"`     // "TB3" or "TB4"
+	ROSVersion     string `json:"ros_version"`     // "Humble" or "Jazzy"
+	UbuntuPassword string `json:"ubuntu_password"` // plaintext, written via cloud-init chpasswd
 }
 
 type LoginEvent struct {

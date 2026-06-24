@@ -146,6 +146,8 @@ export const en = {
       saveError: "Failed to save configuration",
       wifiSsid: "WiFi SSID",
       wifiPassword: "WiFi Password",
+      ubuntuPassword: "Ubuntu Password",
+      ubuntuPasswordHelp: "Optional. If set, password login will work in addition to SSH key auth.",
       controllerUrl: "Controller URL",
       mqttBroker: "MQTT Broker",
       ldsModel: "LDS Model",

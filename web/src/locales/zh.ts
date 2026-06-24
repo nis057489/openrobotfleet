@@ -144,6 +144,8 @@ export const zh = {
       saveError: "保存配置失败",
       wifiSsid: "WiFi SSID",
       wifiPassword: "WiFi 密码",
+      ubuntuPassword: "Ubuntu 密码",
+      ubuntuPasswordHelp: "可选。设置后，除 SSH 密钥外还可使用密码登录。",
       controllerUrl: "控制器 URL",
       mqttBroker: "MQTT 代理",
       ldsModel: "LDS 型号",

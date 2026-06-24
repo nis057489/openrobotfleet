@@ -100,14 +100,27 @@ users:
     shell: /bin/bash
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
     lock_passwd: false
-    passwd: $6$rounds=4096$randomsalt$encryptedpassword
     ssh_authorized_keys:
       {{if .SSHPublicKey}}- {{.SSHPublicKey}}{{end}}
-
+{{if .UbuntuPassword}}
+chpasswd:
+  expire: false
+  list:
+    - ubuntu:{{.UbuntuPassword}}
+{{end}}
 # Packages are pre-installed in the golden image.
 # We only handle runtime configuration here.
 
 write_files:
+  - path: /usr/local/bin/openrobotfleet-agent-start
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      for setup in /opt/ros/*/setup.bash; do
+        [ -f "$setup" ] && source "$setup" && break
+      done
+      exec /usr/local/bin/openrobotfleet-agent
+
   - path: /etc/netplan/50-cloud-init.yaml
     content: |
       network:
@@ -164,7 +177,8 @@ runcmd:
   - echo 'export LDS_MODEL={{.LDSModel}}' >> /home/ubuntu/.bashrc
   {{end}}
 
-  # Fix ROS permissions
+  # Fix home directory and ROS permissions
+  - chown ubuntu:ubuntu /home/ubuntu
   - mkdir -p /home/ubuntu/.ros
   - chown -R ubuntu:ubuntu /home/ubuntu/.ros
 
@@ -176,7 +190,7 @@ runcmd:
     After=network.target
 
     [Service]
-    ExecStart=/usr/local/bin/openrobotfleet-agent
+    ExecStart=/usr/local/bin/openrobotfleet-agent-start
     Restart=always
     User=root
     Environment=AGENT_CONFIG_PATH=/etc/openrobotfleet-agent/config.yaml
@@ -293,9 +307,15 @@ func (c *Controller) updateBuildProgress(step string, progress int) {
 }
 
 func (c *Controller) runBuild() {
+	var workImage string
+	buildSucceeded := false
 	defer func() {
 		if r := recover(); r != nil {
 			c.failBuild(fmt.Sprintf("panic: %v", r))
+		}
+		if !buildSucceeded && workImage != "" {
+			c.logBuild("cleaning up failed work image: %s", workImage)
+			os.Remove(workImage)
 		}
 	}()
 
@@ -395,7 +415,7 @@ func (c *Controller) runBuild() {
 		rosVersion = "Humble"
 	}
 	imageName := fmt.Sprintf("turtlebot-%s-%s-golden.img", strings.ToLower(robotModel), strings.ToLower(rosVersion))
-	workImage := filepath.Join(imagesDir, imageName)
+	workImage = filepath.Join(imagesDir, imageName)
 
 	c.logBuild("decompressing to %s...", workImage)
 	cmd := exec.Command("xz", "-d", "-k", "-c", baseImageXZ)
@@ -531,44 +551,52 @@ export -f sudo
 apt-get update
 apt-get install -y wget curl git
 
-# Run official setup script
-wget -qO - https://raw.githubusercontent.com/turtlebot/turtlebot4_setup/%s/scripts/turtlebot4_setup.sh | bash
+# Download and run official setup script
+wget -qO /tmp/turtlebot4_setup.sh https://raw.githubusercontent.com/turtlebot/turtlebot4_setup/%s/scripts/turtlebot4_setup.sh
+bash /tmp/turtlebot4_setup.sh
 
 # Cleanup
+rm -f /tmp/turtlebot4_setup.sh /tmp/install.sh
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 `, branch)
 	} else {
-		// TB3 Logic (Existing)
-		installScript = `#!/bin/bash
+		// TB3 Logic
+		rosDistro := "humble"
+		if cfg.ROSVersion == "Jazzy" {
+			rosDistro = "jazzy"
+		}
+		installScript = fmt.Sprintf(`#!/bin/bash
 set -e
 export DEBIAN_FRONTEND=noninteractive
 
-# Install ROS 2 Humble
+# Install ROS 2
 apt-get update
 apt-get install -y software-properties-common curl gnupg lsb-release
 curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(source /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
 apt-get update
-apt-get install -y ros-humble-ros-base ros-humble-turtlebot3-msgs ros-humble-dynamixel-sdk ros-humble-xacro ros-humble-hls-lfcd-lds-driver libudev-dev build-essential git python3-colcon-common-extensions
+apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver libudev-dev build-essential git python3-colcon-common-extensions
 
 # Setup Workspace
-mkdir -p /home/ubuntu/turtlebot3_ws/src
-cd /home/ubuntu/turtlebot3_ws/src
-git clone -b humble https://github.com/ROBOTIS-GIT/turtlebot3.git
-git clone -b humble https://github.com/ROBOTIS-GIT/ld08_driver.git
-cd /home/ubuntu/turtlebot3_ws
-source /opt/ros/humble/setup.bash
+mkdir -p /home/ubuntu/ros_ws/src
+cd /home/ubuntu/ros_ws/src
+git clone -b %s https://github.com/ROBOTIS-GIT/turtlebot3.git
+git clone -b %s https://github.com/ROBOTIS-GIT/ld08_driver.git
+cd /home/ubuntu/ros_ws
+source /opt/ros/%s/setup.bash
 colcon build --symlink-install --parallel-workers 1
-chown -R 1000:1000 /home/ubuntu/turtlebot3_ws
+chown -R ubuntu:ubuntu /home/ubuntu/ros_ws
+chown ubuntu:ubuntu /home/ubuntu
 
 # Udev Rules
-cp /home/ubuntu/turtlebot3_ws/src/turtlebot3/turtlebot3_bringup/script/99-turtlebot3-cdc.rules /etc/udev/rules.d/
+cp /home/ubuntu/ros_ws/src/turtlebot3/turtlebot3_bringup/script/99-turtlebot3-cdc.rules /etc/udev/rules.d/
 
 # Cleanup
+rm -f /tmp/install.sh
 apt-get clean
 rm -rf /var/lib/apt/lists/*
-`
+`, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro)
 	}
 	if err := os.WriteFile(filepath.Join(mntDir, "tmp/install.sh"), []byte(installScript), 0755); err != nil {
 		c.failBuild(fmt.Sprintf("write install script failed: %v", err))
@@ -628,6 +656,14 @@ rm -rf /var/lib/apt/lists/*
 		return
 	}
 
+	// Clean up build artifacts left in the image
+	os.Remove(filepath.Join(mntDir, "usr/bin/qemu-aarch64-static"))
+	os.Remove(filepath.Join(mntDir, "tmp/install.sh"))
+
+	// Restore resolv.conf to the Ubuntu default symlink (we replaced it with the build host's copy)
+	os.Remove(filepath.Join(mntDir, "etc/resolv.conf"))
+	os.Symlink("/run/systemd/resolve/stub-resolv.conf", filepath.Join(mntDir, "etc/resolv.conf"))
+
 	// 11. Write User Data (Cloud Init)
 	c.updateBuildProgress("Injecting configuration...", 90)
 	c.logBuild("writing user-data...")
@@ -666,6 +702,8 @@ rm -rf /var/lib/apt/lists/*
 		return
 	}
 	f.Close()
+
+	buildSucceeded = true
 
 	// Success
 	buildLock.Lock()

@@ -91,4 +91,5 @@ export interface GoldenImageConfig {
     ros_domain_id: number;
     robot_model?: string;
     ros_version?: string;
+    ubuntu_password?: string;
 }

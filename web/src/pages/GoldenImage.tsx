@@ -19,8 +19,10 @@ export function GoldenImage() {
         lds_model: "LDS-02",
         ros_domain_id: 30,
         robot_model: "TB3",
-        ros_version: "Humble"
+        ros_version: "Humble",
+        ubuntu_password: ""
     });
+    const [showUbuntuPassword, setShowUbuntuPassword] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [buildStatus, setBuildStatus] = useState<string>("idle");
@@ -193,6 +195,26 @@ export function GoldenImage() {
                                             {showWifiPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                         </button>
                                     </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">{t("goldenImage.ubuntuPassword")}</label>
+                                    <div className="relative">
+                                        <input
+                                            type={showUbuntuPassword ? "text" : "password"}
+                                            value={config.ubuntu_password || ""}
+                                            onChange={e => setConfig({ ...config, ubuntu_password: e.target.value })}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none pr-10"
+                                            placeholder={t("common.optional") || "optional"}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowUbuntuPassword(!showUbuntuPassword)}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                        >
+                                            {showUbuntuPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-1">{t("goldenImage.ubuntuPasswordHelp")}</p>
                                 </div>
                             </div>
                         </div>
