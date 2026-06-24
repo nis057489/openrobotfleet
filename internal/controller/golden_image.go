@@ -586,6 +586,9 @@ apt-get install -y --fix-broken
 apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver libudev-dev build-essential git python3-colcon-common-extensions
 
 # Setup Workspace
+if ! id -u ubuntu >/dev/null 2>&1; then
+    useradd --create-home --shell /bin/bash --groups sudo ubuntu
+fi
 mkdir -p /home/ubuntu/ros_ws/src
 cd /home/ubuntu/ros_ws/src
 git clone -b %s https://github.com/ROBOTIS-GIT/turtlebot3.git
@@ -595,6 +598,8 @@ source /opt/ros/%s/setup.bash
 colcon build --symlink-install --parallel-workers 1
 chown -R ubuntu:ubuntu /home/ubuntu/ros_ws
 chown ubuntu:ubuntu /home/ubuntu
+mkdir -p /home/ubuntu/.ros
+chown -R ubuntu:ubuntu /home/ubuntu/.ros
 
 # Udev Rules
 cp /home/ubuntu/ros_ws/src/turtlebot3/turtlebot3_bringup/script/99-turtlebot3-cdc.rules /etc/udev/rules.d/
