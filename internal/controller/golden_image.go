@@ -576,6 +576,13 @@ apt-get install -y software-properties-common curl gnupg lsb-release
 curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(source /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
 apt-get update
+
+# Work around a package-version mismatch on Ubuntu Noble/arm64 that can block
+# ROS dependency resolution with libzstd during golden-image builds.
+if ! apt-get install -y --allow-downgrades libzstd1=1.5.5+dfsg2-2build1 libzstd-dev=1.5.5+dfsg2-2build1; then
+    echo "warning: could not pin libzstd versions; continuing with the standard dependency resolution"
+fi
+apt-get install -y --fix-broken
 apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver libudev-dev build-essential git python3-colcon-common-extensions
 
 # Setup Workspace
