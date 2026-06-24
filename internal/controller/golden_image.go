@@ -578,17 +578,19 @@ rm -rf /var/lib/apt/lists/*
 set -e
 export DEBIAN_FRONTEND=noninteractive
 
-# Install ROS 2
+# Bring the base image's packages up to date before adding any third-party repos.
+# Ubuntu security updates are released as coordinated sets (runtime lib + dev package
+# together), so a full upgrade here ensures all packages are in a consistent state
+# before ROS deps are introduced.
 apt-get update
+apt-get upgrade -y
 apt-get install -y software-properties-common curl gnupg lsb-release
+
+# Add ROS 2 repo and install
 curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(source /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
 apt-get update
 
-# Upgrade all already-installed packages so their versions match the repo's current
-# security-patched levels. Without this, -dev packages can pin exact versions that
-# conflict with what apt wants to install (libbsd0, libdbus-1-3, libicu74, etc.).
-apt-get upgrade -y
 apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver ros-%s-slam-toolbox ros-%s-navigation2 ros-%s-nav2-bringup ros-%s-cartographer-ros ros-%s-teleop-twist-keyboard ros-%s-teleop-twist-joy ros-%s-joy ros-%s-robot-state-publisher ros-%s-joint-state-publisher ros-%s-tf2-tools ros-%s-laser-geometry ros-%s-diagnostic-updater libudev-dev build-essential git python3-colcon-common-extensions
 
 # Setup Workspace
