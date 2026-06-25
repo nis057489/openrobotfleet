@@ -20,7 +20,8 @@ export function GoldenImage() {
         ros_domain_id: 30,
         robot_model: "TB3",
         ros_version: "Humble",
-        ubuntu_password: ""
+        ubuntu_password: "",
+        include_extras: true
     });
     const [showUbuntuPassword, setShowUbuntuPassword] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -44,7 +45,8 @@ export function GoldenImage() {
                     setConfig({
                         ...data.config,
                         robot_model: data.config.robot_model || "TB3",
-                        ros_version: data.config.ros_version || "Humble"
+                        ros_version: data.config.ros_version || "Humble",
+                        include_extras: data.config.include_extras ?? true
                     });
                 }
             })
@@ -281,6 +283,24 @@ export function GoldenImage() {
                                 </div>
                             </div>
                         </div>
+
+                        {/* Extras */}
+                        {config.robot_model !== "TB4" && (
+                            <div className="col-span-2">
+                                <label className="flex items-center gap-3 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={config.include_extras ?? true}
+                                        onChange={e => setConfig({ ...config, include_extras: e.target.checked })}
+                                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <div>
+                                        <span className="text-sm font-medium text-gray-900">{t("goldenImage.includeExtras")}</span>
+                                        <p className="text-xs text-gray-500">{t("goldenImage.includeExtrasHelp")}</p>
+                                    </div>
+                                </label>
+                            </div>
+                        )}
                     </div>
 
                     <div className="pt-4 border-t border-gray-100">

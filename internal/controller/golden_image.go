@@ -435,7 +435,7 @@ func (c *Controller) runBuild() {
 	// 5. Expand Image (+4GB)
 	c.updateBuildProgress("Expanding image...", 35)
 	c.logBuild("expanding image by 4GB...")
-	if err := exec.Command("truncate", "-s", "+4G", workImage).Run(); err != nil {
+	if err := exec.Command("truncate", "-s", "+8G", workImage).Run(); err != nil {
 		c.failBuild(fmt.Sprintf("truncate failed: %v", err))
 		return
 	}
@@ -555,6 +555,14 @@ apt-get install -y wget curl git
 wget -qO /tmp/turtlebot4_setup.sh https://raw.githubusercontent.com/turtlebot/turtlebot4_setup/%s/scripts/turtlebot4_setup.sh
 bash /tmp/turtlebot4_setup.sh
 
+# Install Docker
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+usermod -aG docker ubuntu
+systemctl enable docker
+
 # Cleanup
 rm -f /tmp/turtlebot4_setup.sh /tmp/install.sh
 apt-get clean
@@ -566,24 +574,50 @@ rm -rf /var/lib/apt/lists/*
 		if cfg.ROSVersion == "Jazzy" {
 			rosDistro = "jazzy"
 		}
+		includeExtras := "true"
+		if cfg.IncludeExtras != nil && !*cfg.IncludeExtras {
+			includeExtras = "false"
+		}
 		installScript = fmt.Sprintf(`#!/bin/bash
 set -e
 export DEBIAN_FRONTEND=noninteractive
 
-# Install ROS 2
+# Set locale (required by ROS 2 install docs)
 apt-get update
-apt-get install -y software-properties-common curl gnupg lsb-release
-curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(source /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
+apt-get install -y locales
+locale-gen en_US en_US.UTF-8
+update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+export LANG=en_US.UTF-8
+
+# The preinstalled Pi image may only list 'noble' in its apt Suites, missing
+# noble-updates and noble-backports. Per the ROS 2 Jazzy install docs, missing
+# these suites causes dependency conflicts. Add them before doing anything else.
+if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+    if ! grep -q "noble-updates" /etc/apt/sources.list.d/ubuntu.sources; then
+        sed -i 's/^Suites: noble$/Suites: noble noble-updates noble-backports/' /etc/apt/sources.list.d/ubuntu.sources
+    fi
+fi
+
+# Full-upgrade (not just upgrade) so held-back packages with new deps are also updated.
+apt-get clean
+apt-get update
+apt-get full-upgrade -y
+
+# Enable Universe repo
+apt-get install -y software-properties-common curl
+add-apt-repository universe -y
+
+# Add ROS 2 repo via the official ros2-apt-source package (per ROS 2 Jazzy install docs)
+ROS_APT_SOURCE_VERSION=$(curl -s https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest | grep -F "tag_name" | awk -F'"' '{print $4}')
+curl -L -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.$(. /etc/os-release && echo ${UBUNTU_CODENAME:-${VERSION_CODENAME}})_all.deb"
+dpkg -i /tmp/ros2-apt-source.deb
 apt-get update
 
-# Work around a package-version mismatch on Ubuntu Noble/arm64 that can block
-# ROS dependency resolution with libzstd during golden-image builds.
-if ! apt-get install -y --allow-downgrades libzstd1=1.5.5+dfsg2-2build1 libzstd-dev=1.5.5+dfsg2-2build1; then
-    echo "warning: could not pin libzstd versions; continuing with the standard dependency resolution"
+apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver ros-%s-robot-state-publisher ros-%s-joint-state-publisher ros-%s-tf2-tools ros-%s-laser-geometry ros-%s-diagnostic-updater libudev-dev build-essential git python3-colcon-common-extensions
+
+if [ "%s" = "true" ]; then
+    apt-get install -y ros-%s-slam-toolbox ros-%s-navigation2 ros-%s-nav2-bringup ros-%s-cartographer-ros ros-%s-teleop-twist-keyboard ros-%s-teleop-twist-joy ros-%s-joy
 fi
-apt-get install -y --fix-broken
-apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver libudev-dev build-essential git python3-colcon-common-extensions
 
 # Setup Workspace
 if ! id -u ubuntu >/dev/null 2>&1; then
@@ -604,11 +638,19 @@ chown -R ubuntu:ubuntu /home/ubuntu/.ros
 # Udev Rules
 cp /home/ubuntu/ros_ws/src/turtlebot3/turtlebot3_bringup/script/99-turtlebot3-cdc.rules /etc/udev/rules.d/
 
+# Install Docker
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+usermod -aG docker ubuntu
+systemctl enable docker
+
 # Cleanup
 rm -f /tmp/install.sh
 apt-get clean
 rm -rf /var/lib/apt/lists/*
-`, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro)
+`, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, includeExtras, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro)
 	}
 	if err := os.WriteFile(filepath.Join(mntDir, "tmp/install.sh"), []byte(installScript), 0755); err != nil {
 		c.failBuild(fmt.Sprintf("write install script failed: %v", err))
