@@ -1,182 +1,287 @@
 # OpenRobotFleet
 
-**Effortless orchestration for your robotics classroom or lab.**
+> **Manage an entire robotics lab from one browser.**
+>
+> Deploy code, monitor robots, prepare practical classes, and reset your fleet in minutes—not hours.
 
-## Screenshots
+OpenRobotFleet is a fleet management platform for ROS 2 teaching laboratories and research groups. It removes the repetitive work involved in maintaining multiple robots so instructors, researchers and teaching assistants can spend more time teaching and experimenting.
 
-![Robots view screenshot](img/1.png)
+Whether you're running 6 TurtleBots for a lab class or dozens of robots across multiple projects, OpenRobotFleet helps keep every machine in a known, consistent state.
 
-![Robot detail screenshot](img/2.png)
+---
 
-![Scenarios / deployment screenshot](img/3.png)
+## Built for robotics labs
 
-![Golden Image Builder screenshot](img/4.png)
+Managing a robotics fleet usually means:
 
-OpenRobotFleet helps instructors and lab managers maintain control over a fleet of robots (and laptops). Instead of manually SSH-ing into 30 robots to pull the latest code or restart a service, you can manage everything from a single web dashboard.
+- SSH-ing into every robot before class
+- Pulling Git repositories one machine at a time
+- Restarting ROS when something breaks
+- Resetting robots after every practical
+- Wondering which robot is running which code
 
-## Why use this?
+OpenRobotFleet automates these everyday tasks.
 
-* **Save Time**: Push code updates to your entire fleet in seconds, not hours.
-* **Reduce Friction**: Reset robots for the next class with a "Semester Wizard" that wipes logs and updates code.
-* **Stay Informed**: See at a glance which robots are online, their battery status (if reported), and what code they are running.
-* **Unified Management**: Manage your robots and development laptops in one place.
+Instead of managing robots individually, you manage the fleet.
 
-## Key Features
+---
 
-### 🤖 Fleet Overview
+# Get started in under 30 minutes
 
-Instantly see the status of every robot in your lab. Know their IP addresses, last seen times, and current operational status (and mood!) without scanning the network.
+Most labs can be running in four steps.
 
-### 📦 One-Click Code Deployment ("Scenarios")
+### 1. Start OpenRobotFleet
 
-Define "Scenarios" (e.g., "Lab 1", "Midterm Project") that point to specific Git repositories and branches. Apply these scenarios to one robot or the whole fleet to ensure everyone is running the correct code.
-
-### 🔄 Remote Control
-
-* **Restart ROS**: specific services or the whole stack.
-* **Reset Logs**: Clear out old log files to free up space.
-* **WiFi Configuration**: Connect laptops/robots to the network remotely.
-
-### 🎓 Semester Wizard
-
-A dedicated tool for teaching assistants and instructors to batch-reset the fleet. Reinstall agents, wipe logs, update repositories, and apply specific scenarios (batch code deployment) for the new semester in one go.
-
-### 💻 Laptop Support
-
-Manage lab laptops just like robots. Push code updates and manage WiFi profiles on Ubuntu-based development machines.
-
-## Getting Started
-
-The fastest way to get a lab fleet up and running is:
-
-1) build a **Golden Image**, 2) flash it onto every robot, 3) ensure everything is on the same **Layer 2** network, 4) define **YAML Scenarios** for the code you want deployed, then 5) manage the fleet from the dashboard.
-
-### Quick Start (Golden Image + Scenarios)
-
-#### 0) Prerequisites
-
-* A machine to run the Controller (same network as the fleet)
-* Docker + Docker Compose
-* Your robots/laptops are reachable on the same Layer 2 network (same WiFi/VLAN/subnet)
-
-#### 1) Configure and start the Controller (Docker)
-
-1. Create a local env file:
+Run the Controller using Docker.
 
 ```bash
-    cp .env.example .env
+cp .env.example .env
+docker compose up --build
 ```
 
-2. Edit `.env` (most important: the network(s) to scan):
+### 2. Build a Golden Image
 
-        - `SCAN_SUBNETS` controls what the Controller scans for SSH-able hosts (comma-separated).
-            Example: `SCAN_SUBNETS=192.168.1.0/24,10.0.0.0/24`
-        - `ADMIN_PASSWORD` sets the dashboard admin password.
-        - If you set a real public domain, also set `ACME_EMAIL` to a real email (Let’s Encrypt rejects `example.com`).
+Use the built-in image builder to create a preconfigured robot image.
 
-3. Start the stack:
+Flash that image onto each robot.
+
+### 3. Power on your robots
+
+Robots automatically connect to the Controller and appear in the dashboard.
+
+No manual installation or SSH setup required.
+
+### 4. Deploy your course or research code
+
+Create a Scenario pointing at your Git repository.
+
+Click **Deploy**.
+
+Every selected robot updates itself automatically.
+
+---
+
+# Screenshots
+
+![Fleet Overview](img/1.png)
+
+![Robot Details](img/2.png)
+
+![Deployment Scenarios](img/3.png)
+
+![Golden Image Builder](img/4.png)
+
+---
+
+# Why academics use OpenRobotFleet
+
+## Save hours before every laboratory
+
+Deploy software updates to every robot simultaneously instead of repeating the same commands dozens of times.
+
+---
+
+## Start every class from a known state
+
+The Semester Wizard prepares an entire fleet by:
+
+- updating repositories
+- clearing logs
+- reinstalling agents
+- applying teaching scenarios
+
+Perfect for practical classes.
+
+---
+
+## Know what's happening at a glance
+
+See every robot from one dashboard.
+
+Monitor:
+
+- online/offline status
+- battery level
+- deployed software
+- last contact time
+- IP address
+- health information
+
+---
+
+## Keep students on the same software version
+
+Scenarios ensure every robot receives exactly the same code.
+
+No more "it works on Robot 4 but not Robot 7."
+
+---
+
+## Manage robots and laptops together
+
+Ubuntu development laptops appear alongside robots, making it easy to keep an entire teaching lab synchronised.
+
+---
+
+# Features
+
+## Fleet Dashboard
+
+Monitor every robot from a single web interface.
+
+---
+
+## Scenarios
+
+Reusable deployment profiles for:
+
+- laboratory exercises
+- assignments
+- demonstrations
+- research experiments
+
+Each Scenario simply references a Git repository and optional branch.
+
+Deploy to one robot or the whole fleet.
+
+---
+
+## Golden Image Builder
+
+Create a reusable base image containing:
+
+- WiFi configuration
+- Controller settings
+- Fleet agent
+
+Flash once and every robot automatically joins the fleet.
+
+---
+
+## Semester Wizard
+
+Prepare an entire laboratory for a new semester with a single operation.
+
+---
+
+## Remote Administration
+
+Without opening SSH you can:
+
+- restart ROS
+- clear logs
+- configure WiFi
+- deploy software
+- monitor robot status
+
+---
+
+# Typical workflows
+
+## Before a practical class
+
+1. Deploy the "Lab 4" Scenario.
+2. Wait for updates.
+3. Verify every robot is online.
+
+Done.
+
+---
+
+## Between student groups
+
+Run Semester Wizard.
+
+Every robot is reset and ready for the next class.
+
+---
+
+## During research
+
+Deploy experimental branches to selected robots while leaving the rest of the fleet untouched.
+
+Track exactly which robot is running which experiment.
+
+---
+
+# Installation
+
+## Requirements
+
+- Docker + Docker Compose
+- Ubuntu-based robots or laptops
+- Layer-2 network (same WiFi/VLAN/subnet)
+
+### Configure
 
 ```bash
-    docker compose up --build
+cp .env.example .env
 ```
 
-4. Open the dashboard:
+Edit:
 
-* Local: `https://localhost` (you may get a browser TLS warning)
+- `SCAN_SUBNETS`
+- `ADMIN_PASSWORD`
 
-#### 2) Build + flash a Golden Image
+Then launch:
 
-1. In the dashboard, go to **Golden Image**.
-2. Fill in WiFi + Controller/MQTT settings.
-3. Click **Build** (this produces the base image) and/or **Download** (this downloads the `user-data` cloud-init config used by the image).
-4. Flash the resulting image onto every robot.
+```bash
+docker compose up --build
+```
 
-The Golden Image config bakes in the Agent configuration so robots come up pre-connected (no per-robot SSH install step).
+Visit
 
-#### 3) Power on robots on the same Layer 2 network
+```
+https://localhost
+```
 
-* Put the Controller machine and all robots/laptops on the same WiFi/VLAN/subnet.
-* Ensure the Controller can reach them (and they can reach the Controller’s MQTT broker).
+---
 
-Once powered on, robots should start appearing in the dashboard as they connect and send status.
-
-#### 4) Create YAML Scenarios (code deployment)
-
-Scenarios are small YAML snippets that declare what git repo each robot/laptop should have.
+# Creating a Scenario
 
 Minimal example:
 
 ```yaml
 repo:
-        url: https://github.com/your-org/your-repo.git
+  url: https://github.com/your-org/your-repository.git
 ```
 
-Optional fields:
+With optional branch:
 
 ```yaml
 repo:
-        url: https://github.com/your-org/your-repo.git
-        branch: main
-        # Path is relative to the agent's workspace_path (robots default to /home/ubuntu/ros_ws/src)
-        path: my-repo-folder
+  url: https://github.com/your-org/your-repository.git
+  branch: main
+  path: my-package
 ```
 
-Create scenarios in the dashboard (**Scenarios**) and paste the YAML. Then apply the scenario to one robot to validate, and finally to the whole fleet.
+---
 
-### 5) Install the Agent onto Laptops (and any non-golden imaged Robots)
+# Under the hood
 
-* Use the **Scan Network** button under **Laptops** or **Robots** pages to find and enrol new devices
+OpenRobotFleet is built using:
 
-#### 6) Use the app
+- Go
+- React
+- MQTT
+- SQLite
 
-* Use **Robots** / **Laptops** to monitor status.
-* Use **Scenarios** to deploy code.
-* Use tools like **Semester Wizard** / **Restart ROS** / **Reset Logs** as needed.
-
-## How it Works
-
-1. **Install the Agent**: Use the "Add Robot" or "Add Laptop" tab in the dashboard. You'll need the IP address and SSH credentials of the target machine once. The system will install a lightweight agent that runs in the background.
-2. **The Agent**: This small program runs on the robot, keeping it connected to your dashboard and listening for your commands.
-3. **The Dashboard**: Your command center. It talks to the robots via a central server (included in the Docker setup).
-
-## Common Tasks
-
-### Adding a New Robot
-
-Navigate to the **Robots** tab and click **Add Robot**. Enter the IP address, username (usually `ubuntu`), and SSH key/password. The manager will handle the rest.
-
-### Deploying Code for a Class
-
-1. Go to **Scenarios** and create a new Scenario.
-2. Enter the Git URL (e.g., `https://github.com/your-course/lab1.git`) and the branch name.
-3. Click **Apply**, select the robots, and watch them update.
-
-### Fixing a "Stuck" Robot
-
-If a robot is behaving strangely, try the **Restart ROS** command from the robot's detail page. If that fails, you can use the **Terminal** view (if configured) or check the logs remotely.
-
-## Technical Details (For the curious)
-
-Under the hood, this system uses:
-
-* **Go**: For a fast, reliable backend and agent.
-* **React**: For a responsive web interface.
-* **MQTT**: For communication between robots, laptops and the server.
-* **Batch Architecture**: Commands are bundled and sent to agents for atomic, sequential execution, ensuring reliability even with intermittent network connectivity.
-* **SQLite**: For simple, self-contained data storage.
-* **Secrets**: The dashboard might respond to a classic cheat code...
-
-## Development
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for instructions on how to run the project locally for development.
-
-## Contributing
-
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Agents communicate with the Controller using reliable batch-based execution, allowing commands to complete even when connectivity is intermittent.
 
 ---
-*Built for ROS 2 systems, including Turtlebots and most Ubuntu-based robots.*
+
+# Contributing
+
+Contributions are welcome.
+
+See `CONTRIBUTING.md`.
+
+---
+
+# License
+
+MIT
+
+---
+
+*Designed for ROS 2 teaching laboratories, research groups and Ubuntu-based robot fleets.*
