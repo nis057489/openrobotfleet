@@ -49,13 +49,13 @@ services:
       - controller-data:/data
     labels:
       - "traefik.enable=true"
-      
+
       # Router for Production (Let's Encrypt)
       - "traefik.http.routers.controller.rule=Host(`demo.nbembedded.com`)"
       - "traefik.http.routers.controller.entrypoints=websecure"
       - "traefik.http.routers.controller.tls.certresolver=myresolver"
       - "traefik.http.routers.controller.middlewares=rate-limit,secure-headers"
-      
+
       # Router for Localhost (Self-Signed fallback)
       - "traefik.http.routers.controller-local.rule=Host(`localhost`)"
       - "traefik.http.routers.controller-local.entrypoints=websecure"
@@ -64,7 +64,7 @@ services:
 
       # Service Definition
       - "traefik.http.services.controller.loadbalancer.server.port=8080"
-      
+
       # Security Middlewares
       - "traefik.http.middlewares.rate-limit.ratelimit.average=100"
       - "traefik.http.middlewares.rate-limit.ratelimit.burst=50"
@@ -74,71 +74,71 @@ services:
       - "traefik.http.middlewares.secure-headers.headers.contenttypenosniff=true"
       - "traefik.http.middlewares.secure-headers.headers.framedeny=true"
 
-  robot1:
-    build:
-      context: .
-      dockerfile: Dockerfile.robot
-    image: nbembedded/openrobot-robot:0.0.1
-    container_name: openrobot-robot1
-    environment:
-      - AGENT_ID=robot1
-      - AGENT_TYPE=robot
-      - MQTT_BROKER=tcp://mqtt:1883
-    depends_on:
-      - mqtt
+  # robot1:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.robot
+  #   image: nbembedded/openrobot-robot:0.0.1
+  #   container_name: openrobot-robot1
+  #   environment:
+  #     - AGENT_ID=robot1
+  #     - AGENT_TYPE=robot
+  #     - MQTT_BROKER=tcp://mqtt:1883
+  #   depends_on:
+  #     - mqtt
 
-  robot2:
-    image: nbembedded/openrobot-robot:0.0.1
-    container_name: openrobot-robot2
-    environment:
-      - AGENT_ID=robot2
-      - AGENT_TYPE=robot
-      - MQTT_BROKER=tcp://mqtt:1883
-    depends_on:
-      - mqtt
+  # robot2:
+  #   image: nbembedded/openrobot-robot:0.0.1
+  #   container_name: openrobot-robot2
+  #   environment:
+  #     - AGENT_ID=robot2
+  #     - AGENT_TYPE=robot
+  #     - MQTT_BROKER=tcp://mqtt:1883
+  #   depends_on:
+  #     - mqtt
 
-  robot3:
-    image: nbembedded/openrobot-robot:0.0.1
-    container_name: openrobot-robot3
-    environment:
-      - AGENT_ID=robot3
-      - AGENT_TYPE=robot
-      - MQTT_BROKER=tcp://mqtt:1883
-    depends_on:
-      - mqtt
+  # robot3:
+  #   image: nbembedded/openrobot-robot:0.0.1
+  #   container_name: openrobot-robot3
+  #   environment:
+  #     - AGENT_ID=robot3
+  #     - AGENT_TYPE=robot
+  #     - MQTT_BROKER=tcp://mqtt:1883
+  #   depends_on:
+  #     - mqtt
 
-  laptop1:
-    build:
-      context: .
-      dockerfile: Dockerfile.laptop
-    image: nbembedded/openrobot-laptop:0.0.1
-    container_name: openrobot-laptop1
-    environment:
-      - AGENT_ID=laptop1
-      - AGENT_TYPE=laptop
-      - MQTT_BROKER=tcp://mqtt:1883
-    depends_on:
-      - mqtt
+  # laptop1:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.laptop
+  #   image: nbembedded/openrobot-laptop:0.0.1
+  #   container_name: openrobot-laptop1
+  #   environment:
+  #     - AGENT_ID=laptop1
+  #     - AGENT_TYPE=laptop
+  #     - MQTT_BROKER=tcp://mqtt:1883
+  #   depends_on:
+  #     - mqtt
 
-  laptop2:
-    container_name: openrobot-laptop2
-    image: nbembedded/openrobot-laptop:0.0.1
-    environment:
-      - AGENT_ID=laptop2
-      - AGENT_TYPE=laptop
-      - MQTT_BROKER=tcp://mqtt:1883
-    depends_on:
-      - mqtt
+  # laptop2:
+  #   container_name: openrobot-laptop2
+  #   image: nbembedded/openrobot-laptop:0.0.1
+  #   environment:
+  #     - AGENT_ID=laptop2
+  #     - AGENT_TYPE=laptop
+  #     - MQTT_BROKER=tcp://mqtt:1883
+  #   depends_on:
+  #     - mqtt
 
-  laptop3:
-    image: nbembedded/openrobot-laptop:0.0.1
-    container_name: openrobot-laptop3
-    environment:
-      - AGENT_ID=laptop3
-      - AGENT_TYPE=laptop
-      - MQTT_BROKER=tcp://mqtt:1883
-    depends_on:
-      - mqtt
+  # laptop3:
+  #   image: nbembedded/openrobot-laptop:0.0.1
+  #   container_name: openrobot-laptop3
+  #   environment:
+  #     - AGENT_ID=laptop3
+  #     - AGENT_TYPE=laptop
+  #     - MQTT_BROKER=tcp://mqtt:1883
+  #   depends_on:
+  #     - mqtt
 
 volumes:
   controller-data:
