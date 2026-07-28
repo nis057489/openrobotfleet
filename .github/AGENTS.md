@@ -45,19 +45,30 @@ OpenRobotFleet is a robotics fleet management system. It consists of a central *
 ## Developer Workflows
 
 ### Running Locally
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for the full walkthrough. Short version:
 ```bash
-# 1. Infrastructure (MQTT)
-docker compose up mosquitto
+# 1. Infrastructure (MQTT broker service is named `mqtt`, not `mosquitto`)
+docker compose up -d mqtt
 
 # 2. Controller
 export MQTT_BROKER=tcp://localhost:1883
-export DB_PATH=controller.db
+export DB_PATH=./controller.db
+export ADMIN_PASSWORD=turtle2025
 go run ./cmd/controller
 
-# 3. Agent (Simulated)
-export AGENT_CONFIG_PATH=./agent.local.yaml
-go run ./cmd/agent
+# 3. Web dashboard (separate terminal)
+cd web && npm install && npm run dev
+
+# 4. Agent (simulated, config via env vars — not a config file)
+go build -o agent ./cmd/agent
+AGENT_ID=dev1 AGENT_TYPE=robot MQTT_BROKER=tcp://localhost:1883 ./agent
 ```
+
+### Container Images & CI
+- `Dockerfile.controller` is a multi-stage build (Node web build → Go build → Debian runtime). The Go stage is **cross-compile aware**: it uses `--platform=$BUILDPLATFORM` plus `ARG TARGETOS`/`TARGETARCH` so `docker buildx` produces a correctly-architected `controller` binary per target platform. Don't reintroduce a hardcoded `GOOS=linux go build` for the controller binary — that silently ships an amd64 binary inside arm64 images.
+- `Dockerfile.agent`, `Dockerfile.laptop`, `Dockerfile.robot` are separate images for those roles; only `Dockerfile.controller` is currently built by CI.
+- `.github/workflows/docker.yml` builds `Dockerfile.controller` on push to `main` and on `v*` tags, for `linux/amd64` + `linux/arm64`, and pushes to `ghcr.io/nis057489/openrobotfleet-controller` (`latest`, `sha-<short>`, and `vX.Y.Z` tags).
+- `docker-compose.yml`'s `controller` service pulls that GHCR image (`image:`), it does not `build:` locally. To test Dockerfile changes, build locally first: `docker build -f Dockerfile.controller -t openrobotfleet-controller:dev .` (see CONTRIBUTING.md).
 
 ### Database
 - **Driver**: `modernc.org/sqlite` (Pure Go).

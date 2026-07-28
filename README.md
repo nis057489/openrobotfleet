@@ -52,7 +52,8 @@ Run the Controller using Docker.
 
 ```bash
 cp .env.example .env
-docker compose up --build
+docker compose pull
+docker compose up -d
 ```
 
 ### 2. Build a preconfigured robot image
@@ -254,10 +255,19 @@ SCAN_SUBNETS=192.168.1.0/24,10.0.0.0/24
 
 ## 2. Start the Controller
 
-Launch OpenRobotFleet:
+The Controller image is built by GitHub Actions and published to GitHub Container Registry, so you only need to pull it — no local Go/Node/SQLite toolchain required. It's a multi-arch image (`linux/amd64` + `linux/arm64`), so the right variant is pulled automatically whether you're on an x86_64 server or an ARM64 board (e.g. Raspberry Pi, GL-MT6000).
 
 ```bash
-docker compose up --build
+docker compose pull
+docker compose up -d
+```
+
+To update after a new release:
+
+```bash
+docker compose pull controller
+docker compose up -d controller
+docker image prune -f
 ```
 
 Then open:
@@ -282,6 +292,22 @@ Configure:
 Then build or download the generated image.
 
 The resulting image can be flashed onto each robot so that every machine boots with the correct OpenRobotFleet configuration.
+
+## Container images
+
+Every push to `main` and every `v*` tag is built by [.github/workflows/docker.yml](.github/workflows/docker.yml) and published to GHCR:
+
+```text
+ghcr.io/nis057489/openrobotfleet-controller:latest    # tracks main
+ghcr.io/nis057489/openrobotfleet-controller:v0.1.0    # immutable release tag
+ghcr.io/nis057489/openrobotfleet-controller:sha-abc1234
+```
+
+Images are multi-arch (`linux/amd64`, `linux/arm64`) and public, so `docker compose pull` works without authentication. For production deployments, prefer pinning to a `vX.Y.Z` tag over `latest` so a new push to `main` doesn't silently replace the running Controller.
+
+## Development
+
+Changing OpenRobotFleet's code, not just running it? See [CONTRIBUTING.md](CONTRIBUTING.md) for running the Controller/frontend/agent locally and building the container image yourself.
 
 ---
 

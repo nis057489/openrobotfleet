@@ -15,36 +15,65 @@ Thank you for your interest in contributing to OpenRobotFleet! We welcome contri
 
 ### Running Locally
 
-We use Docker Compose for the infrastructure (MQTT, Database) but often run the Controller and Agent locally for faster iteration.
+#### Option A: run the backend and frontend directly
 
-1. **Start Infrastructure**:
+Start a broker (the repo's Mosquitto config is the easiest way):
 
-    ```bash
-    docker compose up mosquitto
-    ```
+```bash
+docker compose up -d mqtt
+```
 
-2. **Run Controller**:
+Run the Controller with `go run`. It needs `MQTT_BROKER`, `DB_PATH`, and `ADMIN_PASSWORD` at minimum:
 
-    ```bash
-    export MQTT_BROKER=tcp://localhost:1883
-    export DB_PATH=controller.db
-    go run ./cmd/controller
-    ```
+```bash
+export MQTT_BROKER=tcp://localhost:1883
+export DB_PATH=./controller.db
+export ADMIN_PASSWORD=turtle2025
+export SCAN_SUBNETS=192.168.1.0/24
+go run ./cmd/controller
+```
 
-3. **Run Web Dashboard**:
+In a second terminal, run the frontend dev server against it (Vite proxies API calls to the Go server — check `web/vite.config.ts` if you need to point it at a different Controller address):
 
-    ```bash
-    cd web
-    npm install
-    npm run dev
-    ```
+```bash
+cd web
+npm install
+npm run dev
+```
 
-4. **Run Agent (Simulated)**:
+Open the URL Vite prints (typically `http://localhost:5173`).
 
-    ```bash
-    export AGENT_CONFIG_PATH=./agent.local.yaml
-    go run ./cmd/agent
-    ```
+The agent binary can be run the same way for testing against a local Controller:
+
+```bash
+go build -o agent ./cmd/agent
+AGENT_ID=dev1 AGENT_TYPE=robot MQTT_BROKER=tcp://localhost:1883 ./agent
+```
+
+#### Option B: build the full container image locally
+
+This mirrors exactly what CI builds and is the best way to test Dockerfile changes before pushing:
+
+```bash
+docker build -f Dockerfile.controller -t openrobotfleet-controller:dev .
+```
+
+To run the whole stack (mqtt, traefik, controller) from that local image instead of pulling from GHCR, temporarily point `docker-compose.yml`'s `controller.image` at your local tag, or override it inline:
+
+```bash
+docker compose up -d mqtt
+docker run --rm -it \
+  --network openrobotfleet_default \
+  -p 8080:8080 \
+  -e MQTT_BROKER=tcp://openrobot-mqtt:1883 \
+  -e DB_PATH=/data/controller.db \
+  -e ADMIN_PASSWORD=turtle2025 \
+  -e SCAN_SUBNETS=192.168.1.0/24 \
+  -v controller-dev-data:/data \
+  openrobotfleet-controller:dev
+```
+
+Pushing to `main` triggers the same build via [.github/workflows/docker.yml](.github/workflows/docker.yml) — building locally first lets you catch Dockerfile or cross-compilation issues before CI does.
 
 ## Code Style
 
