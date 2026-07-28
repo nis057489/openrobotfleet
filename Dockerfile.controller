@@ -18,18 +18,15 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -trimpath -o agent-arm64 ./cmd/agent
 
 FROM debian:stable-slim
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    mtools \
     wget \
     xz-utils \
     qemu-user-static \
-    fdisk \
     mount \
     parted \
-    udev \
     e2fsprogs \
-    dosfstools \
+    && find /usr/bin -maxdepth 1 -name 'qemu-*-static' ! -name 'qemu-aarch64-static' -delete \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=go-build /app/controller /app/controller
 COPY --from=go-build /app/agent-amd64 /app/agent-amd64
