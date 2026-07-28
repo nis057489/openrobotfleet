@@ -29,10 +29,7 @@ services:
       - traefik-certificates:/letsencrypt
 
   controller:
-    build:
-      context: .
-      dockerfile: Dockerfile.controller
-    image: nbembedded/openrobot-controller:0.0.1
+    image: ghcr.io/nis057489/openrobotfleet-controller:latest
     container_name: openrobot-controller
     privileged: true
     depends_on:
