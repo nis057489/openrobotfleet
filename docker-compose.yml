@@ -59,6 +59,13 @@ services:
       - "traefik.http.routers.controller-local.tls=true"
       - "traefik.http.routers.controller-local.middlewares=rate-limit,secure-headers"
 
+      # Router for direct LAN/IP access (Self-Signed fallback)
+      - "traefik.http.routers.controller-lan.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.controller-lan.entrypoints=websecure"
+      - "traefik.http.routers.controller-lan.tls=true"
+      - "traefik.http.routers.controller-lan.priority=1"
+      - "traefik.http.routers.controller-lan.middlewares=rate-limit,secure-headers"
+
       # Service Definition
       - "traefik.http.services.controller.loadbalancer.server.port=8080"
 

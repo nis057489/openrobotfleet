@@ -276,7 +276,7 @@ Then open:
 https://localhost:9443
 ```
 
-(or `https://<router-or-host-ip>:9443` if you're not running Docker locally). Traefik is mapped to host ports 8080/9443 instead of 80/443 by default so it doesn't collide with a web server or admin UI already running on the host (e.g. OpenWrt's LuCI/uhttpd on a router). If ports 80/443 are free on your machine, you can change the `traefik` service's `ports:` in `docker-compose.yml` back to `"80:80"` / `"443:443"` and open `https://localhost` instead — note this also affects whether the Let's Encrypt HTTP-01 challenge can succeed, since it requires port 80 to be reachable.
+(or `https://<router-or-host-ip>:9443` if you're not running Docker locally). Traefik is mapped to host ports 9090/9443 instead of 80/443 by default so it doesn't collide with a web server or admin UI already running on the host (e.g. OpenWrt's LuCI/uhttpd on a router). If ports 80/443 are free on your machine, you can change the `traefik` service's `ports:` in `docker-compose.yml` back to `"80:80"` / `"443:443"` and open `https://localhost` instead — note this also affects whether the Let's Encrypt HTTP-01 challenge can succeed, since it requires port 80 to be reachable.
 
 Your browser may show a local TLS warning when using the self-signed certificate.
 
