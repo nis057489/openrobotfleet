@@ -708,17 +708,26 @@ if ! apt-get install -y --allow-downgrades libzstd1=1.5.5+dfsg2-2build1 libzstd-
     echo "warning: could not pin libzstd versions; continuing with the standard dependency resolution"
 fi
 apt-get install -y --fix-broken
-apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver ros-%s-slam-toolbox ros-%s-navigation2 ros-%s-nav2-bringup ros-%s-cartographer-ros ros-%s-teleop-twist-keyboard ros-%s-teleop-twist-joy ros-%s-joy ros-%s-robot-state-publisher ros-%s-joint-state-publisher ros-%s-tf2-tools ros-%s-laser-geometry ros-%s-diagnostic-updater ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins ros-%s-v4l2-camera fswebcam python3-argcomplete libboost-system-dev libudev-dev libtinyxml2-dev build-essential git python3-colcon-common-extensions
+apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver ros-%s-slam-toolbox ros-%s-navigation2 ros-%s-nav2-bringup ros-%s-cartographer-ros ros-%s-teleop-twist-keyboard ros-%s-teleop-twist-joy ros-%s-joy ros-%s-robot-state-publisher ros-%s-joint-state-publisher ros-%s-tf2-tools ros-%s-laser-geometry ros-%s-diagnostic-updater ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins ros-%s-v4l2-camera fswebcam python3-argcomplete libboost-system-dev libudev-dev libtinyxml2-dev pkg-config build-essential git python3-colcon-common-extensions
 
 # packages.ros.org ships a newer libtinyxml2-dev than Ubuntu jammy's own
-# tinyxml2 runtime, and the two can end up installed side by side without the
-# unversioned libtinyxml2.so symlink CMake's find_library() needs actually
-# existing. Regenerate it from whatever .so is actually on disk so
-# find_package(TinyXML2) (via urdf -> pluginlib) succeeds when building
-# turtlebot3_description from source below.
+# tinyxml2 runtime, and apt's dependency resolution between the two isn't
+# consistent build to build: sometimes the unversioned libtinyxml2.so symlink
+# CMake's find_library()/pkg-config need ends up missing or pointing at a
+# stale/incompatible file. Log exactly what's on disk so a repeat failure is
+# debuggable from the build log alone, then force the symlink to the newest
+# .so present regardless of what (if anything) is already there.
+echo "--- tinyxml2 diagnostics ---"
+dpkg -l 'libtinyxml2*' 2>&1 || true
+find / -xdev -iname 'libtinyxml2*' 2>/dev/null || true
+find / -xdev -iname 'tinyxml2.pc' 2>/dev/null || true
+echo "--- end tinyxml2 diagnostics ---"
 TINYXML2_SO=$(find /usr/lib -name 'libtinyxml2.so.*' | sort -V | tail -1)
-if [ -n "$TINYXML2_SO" ] && [ ! -e "$(dirname "$TINYXML2_SO")/libtinyxml2.so" ]; then
+if [ -n "$TINYXML2_SO" ]; then
     ln -sf "$(basename "$TINYXML2_SO")" "$(dirname "$TINYXML2_SO")/libtinyxml2.so"
+    echo "linked libtinyxml2.so -> $(basename "$TINYXML2_SO")"
+else
+    echo "warning: no libtinyxml2.so.* found under /usr/lib; turtlebot3_description build will likely fail"
 fi
 ldconfig
 
