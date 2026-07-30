@@ -123,6 +123,18 @@ repo:
 
 Create scenarios in the dashboard (**Scenarios**) and paste the YAML. Then apply the scenario to one robot to validate, and finally to the whole fleet.
 
+#### 4b) Create Groups (DDS network isolation)
+
+If you're running several independent robot+laptop pairs on the same Wi-Fi (e.g. a classroom lab), use the **Groups** page to pair each robot with its laptop under a dedicated `ROS_DOMAIN_ID`. This keeps every group's ROS 2 graph — topics, TF, discovery traffic — isolated from every other group, so one team's RViz never sees another team's robot and nobody can accidentally publish onto someone else's `/cmd_vel`.
+
+* Every robot golden-imaged by this app already defaults to **Cyclone DDS** (`RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`), the recommended middleware for this kind of lab deployment — it needs no extra infrastructure and has excellent TurtleBot/Nav2/RViz interoperability.
+* Create a Group, pick its robot and laptop, and a domain ID is suggested automatically (11, 12, 13, ... one per group). Saving immediately pushes the domain ID and RMW setting to both devices over MQTT and restarts ROS — no reflash needed, even for robots already in the field.
+* Leave **static peer discovery** off to start with; normal multicast discovery is fine for a lab of ~20 devices. Only turn it on for a group if multicast proves unreliable on your Wi-Fi — it locks that group's Cyclone DDS discovery to the robot's and laptop's known IPs instead (use fixed/static DHCP leases if you do this, so the IPs don't change).
+* The **Download RViz Launcher** button on the Groups page produces a small `rviz-domain` script for the lab manager's laptop: `rviz-domain <group-name>` opens RViz on that group's domain so you can inspect any team's robot without touching their session, and `rviz-domain group-1 & rviz-domain group-2 &` opens several at once.
+* For continuously-streaming sensor topics (LaserScan, camera, IMU, odometry, joint states), prefer Best Effort/Keep-Last-1 QoS and compressed image transport — the golden image installs the compressed-transport packages and drops an example `qos_overrides.example.yaml` into each robot's workspace as a starting point. Keep `cmd_vel`, services, and actions on the default Reliable QoS. This is scenario/launch-file code, so it isn't pushed centrally by the fleet manager.
+
+**Wi-Fi is infrastructure this app doesn't control**, but it matters just as much: use a dedicated access point on 5 GHz with a fixed channel, and make sure client isolation is **disabled** (each laptop needs to reach its own robot directly). Avoid splitting robots onto 5 GHz and laptops onto 2.4 GHz. If you're stuck on university/enterprise Wi-Fi, DDS domain isolation is even more important, since you have less control over multicast behavior.
+
 ### 5) Install the Agent onto Laptops (and any non-golden imaged Robots)
 
 * Use the **Scan Network** button under **Laptops** or **Robots** pages to find and enrol new devices

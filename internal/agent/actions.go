@@ -143,6 +143,53 @@ func HandleResetLogs(cfg Config, data ResetLogsData) error {
 	return nil
 }
 
+const (
+	rosEnvPath     = "/etc/openrobotfleet-agent/ros_env.sh"
+	cycloneDDSPath = "/etc/openrobotfleet-agent/cyclonedds.xml"
+)
+
+// HandleConfigureNetwork writes the DDS/ROS networking env file (and, if
+// static peers are supplied, a Cyclone DDS peer-discovery config) for this
+// robot's group assignment, then restarts ROS so the new environment takes
+// effect. With no static peers, any previous Cyclone peer config is removed
+// so the robot falls back to normal multicast discovery.
+func HandleConfigureNetwork(cfg Config, data ConfigureNetworkData) error {
+	if err := os.MkdirAll(filepath.Dir(rosEnvPath), 0o755); err != nil {
+		return fmt.Errorf("prepare config dir: %w", err)
+	}
+
+	rmw := data.RMWImplementation
+	if rmw == "" {
+		rmw = "rmw_cyclonedds_cpp"
+	}
+
+	var env strings.Builder
+	fmt.Fprintf(&env, "export RMW_IMPLEMENTATION=%s\n", rmw)
+	fmt.Fprintf(&env, "export ROS_DOMAIN_ID=%d\n", data.ROSDomainID)
+
+	if len(data.StaticPeers) > 0 {
+		var xml strings.Builder
+		xml.WriteString("<CycloneDDS><Domain><Discovery><Peers AddLocalhost=\"true\">\n")
+		for _, peer := range data.StaticPeers {
+			fmt.Fprintf(&xml, "  <Peer Address=\"%s\"/>\n", peer)
+		}
+		xml.WriteString("</Peers></Discovery></Domain></CycloneDDS>\n")
+		if err := os.WriteFile(cycloneDDSPath, []byte(xml.String()), 0o644); err != nil {
+			return fmt.Errorf("write cyclonedds config: %w", err)
+		}
+		fmt.Fprintf(&env, "export CYCLONEDDS_URI=file://%s\n", cycloneDDSPath)
+	} else if err := os.Remove(cycloneDDSPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove stale cyclonedds config: %w", err)
+	}
+
+	if err := os.WriteFile(rosEnvPath, []byte(env.String()), 0o644); err != nil {
+		return fmt.Errorf("write ros env: %w", err)
+	}
+
+	log.Printf("[agent] configured network: domain=%d rmw=%s static_peers=%d", data.ROSDomainID, rmw, len(data.StaticPeers))
+	return HandleRestartROS(cfg)
+}
+
 // HandleRestartROS restarts the ROS service via systemd or a custom command.
 func HandleRestartROS(cfg Config) error {
 	cmdArgs := customRestartCommand()

@@ -8,6 +8,7 @@ import {
   InstallDefaultsResponse,
   DiscoveryCandidate,
   GoldenImageConfig,
+  Group,
 } from './types';
 
 const JSON_HEADERS = {
@@ -264,4 +265,52 @@ export function identifyAll(): Promise<Record<number, string>> {
     method: 'POST',
     headers: JSON_HEADERS,
   });
+}
+
+export type GroupPayload = Omit<Group, 'id'>;
+
+export interface ApplyGroupResult {
+  group?: Group;
+  applied: string[];
+  skipped: string[];
+}
+
+export function getGroups(): Promise<Group[]> {
+  return request<Group[]>('/api/groups');
+}
+
+export function getGroup(id: number | string): Promise<Group> {
+  return request<Group>(`/api/groups/${id}`);
+}
+
+export function createGroup(payload: GroupPayload): Promise<ApplyGroupResult> {
+  return request<ApplyGroupResult>('/api/groups', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateGroup(id: number | string, payload: GroupPayload): Promise<ApplyGroupResult> {
+  return request<ApplyGroupResult>(`/api/groups/${id}`, {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteGroup(id: number | string): Promise<void> {
+  return request<void>(`/api/groups/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export function applyGroup(id: number | string): Promise<ApplyGroupResult> {
+  return request<ApplyGroupResult>(`/api/groups/${id}/apply`, {
+    method: 'POST',
+  });
+}
+
+export function downloadRvizLauncher(): void {
+  window.location.href = '/api/groups/rviz-launcher';
 }

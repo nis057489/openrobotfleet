@@ -53,6 +53,16 @@ type ConfigureAgentData struct {
 	AgentID string `json:"agent_id"`
 }
 
+// ConfigureNetworkData describes DDS/ROS networking instructions for a robot
+// or laptop's group assignment: which ROS_DOMAIN_ID and RMW implementation to
+// use, and optionally a set of static Cyclone DDS discovery peers (its group
+// partner's IP, and any lab-manager IPs) in place of multicast discovery.
+type ConfigureNetworkData struct {
+	ROSDomainID       int      `json:"ros_domain_id"`
+	RMWImplementation string   `json:"rmw_implementation"`
+	StaticPeers       []string `json:"static_peers,omitempty"`
+}
+
 // BatchData describes a list of commands to execute sequentially.
 type BatchData struct {
 	Commands []Command `json:"commands"`

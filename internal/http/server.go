@@ -74,6 +74,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/robots/command/broadcast", s.handleRobotCommandBroadcast)
 	mux.HandleFunc("/api/scenarios", s.handleScenariosCollection)
 	mux.HandleFunc("/api/scenarios/", s.handleScenarioItem)
+	mux.HandleFunc("/api/groups", s.handleGroupsCollection)
+	mux.HandleFunc("/api/groups/rviz-launcher", s.handleGroupsRvizLauncher)
+	mux.HandleFunc("/api/groups/", s.handleGroupItem)
 	mux.HandleFunc("/api/jobs", s.handleListJobs)
 	mux.HandleFunc("/api/semester/start", s.handleSemesterStart)
 	mux.HandleFunc("/api/semester/status", s.handleSemesterStatus)
@@ -301,6 +304,47 @@ func (s *Server) handleScenarioItem(w http.ResponseWriter, r *http.Request) {
 	default:
 		methodNotAllowed(w)
 	}
+}
+
+func (s *Server) handleGroupsCollection(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.Controller.ListGroups(w, r)
+	case http.MethodPost:
+		s.Controller.CreateGroup(w, r)
+	default:
+		methodNotAllowed(w)
+	}
+}
+
+func (s *Server) handleGroupItem(w http.ResponseWriter, r *http.Request) {
+	trimmed := strings.TrimSuffix(r.URL.Path, "/")
+	if strings.HasSuffix(trimmed, "/apply") {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		s.Controller.ApplyGroup(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		s.Controller.GetGroup(w, r)
+	case http.MethodPut:
+		s.Controller.UpdateGroup(w, r)
+	case http.MethodDelete:
+		s.Controller.DeleteGroup(w, r)
+	default:
+		methodNotAllowed(w)
+	}
+}
+
+func (s *Server) handleGroupsRvizLauncher(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	s.Controller.DownloadRvizLauncher(w, r)
 }
 
 func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {

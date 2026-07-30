@@ -5,6 +5,7 @@ import { AuthGuard } from "./components/AuthGuard";
 import { Dashboard } from "./pages/Dashboard";
 import { Robots } from "./pages/Robots";
 import { Laptops } from "./pages/Laptops";
+import { Groups } from "./pages/Groups";
 import { RobotDetail } from "./pages/RobotDetail";
 import { LaptopDetail } from "./pages/LaptopDetail";
 import { Scenarios } from "./pages/Scenarios";
@@ -32,6 +33,7 @@ export default function App() {
                                 <Route index element={<Dashboard />} />
                                 <Route path="robots" element={<Robots />} />
                                 <Route path="laptops" element={<Laptops />} />
+                                <Route path="groups" element={<Groups />} />
                                 <Route path="robots/:id" element={<RobotDetail />} />
                                 <Route path="laptops/:id" element={<LaptopDetail />} />
                                 <Route path="discovery" element={<Discovery />} />

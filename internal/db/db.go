@@ -29,6 +29,26 @@ type Robot struct {
 	LastScenario  *ScenarioRef   `json:"last_scenario,omitempty"`
 	InstallConfig *InstallConfig `json:"install_config,omitempty"`
 	Tags          []string       `json:"tags"`
+	Group         *GroupRef      `json:"group,omitempty"`
+}
+
+// Group pairs one robot and one laptop under a shared ROS_DOMAIN_ID so the
+// two only discover each other over DDS, and never the rest of the fleet.
+type Group struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	ROSDomainID int    `json:"ros_domain_id"`
+	RobotID     *int64 `json:"robot_id,omitempty"`
+	LaptopID    *int64 `json:"laptop_id,omitempty"`
+	StaticPeers bool   `json:"static_peers"`
+	Notes       string `json:"notes"`
+}
+
+// GroupRef is the lightweight group summary embedded in a Robot.
+type GroupRef struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	ROSDomainID int    `json:"ros_domain_id"`
 }
 
 type InstallConfig struct {
@@ -149,6 +169,15 @@ func migrate(db *sql.DB) error {
 			ip TEXT,
 			user_agent TEXT
 		);`,
+		`CREATE TABLE IF NOT EXISTS groups (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			ros_domain_id INTEGER NOT NULL,
+			robot_id INTEGER REFERENCES robots(id),
+			laptop_id INTEGER REFERENCES robots(id),
+			static_peers INTEGER NOT NULL DEFAULT 0,
+			notes TEXT
+		);`,
 	}
 	for _, s := range stmts {
 		if _, err := db.ExecContext(ctx, s); err != nil {
@@ -221,10 +250,63 @@ func buildInstallConfig(addr, user, key sql.NullString) *InstallConfig {
 	return &cfg
 }
 
-func (d *DB) ListRobots(ctx context.Context) ([]Robot, error) {
-	stmt, err := d.SQL.PrepareContext(ctx, `SELECT r.id, r.name, r.agent_id, r.ip, r.last_seen, r.status, r.notes, s.id, s.name, r.ssh_address, r.ssh_user, r.ssh_key, r.tags, r.type
-FROM robots r
+const robotSelectColumns = `r.id, r.name, r.agent_id, r.ip, r.last_seen, r.status, r.notes, s.id, s.name, r.ssh_address, r.ssh_user, r.ssh_key, r.tags, r.type, g.id, g.name, g.ros_domain_id`
+const robotSelectJoins = `FROM robots r
 LEFT JOIN scenarios s ON s.id = r.last_scenario_id
+LEFT JOIN groups g ON g.robot_id = r.id OR g.laptop_id = r.id`
+
+func scanRobotRow(scan func(dest ...interface{}) error) (Robot, error) {
+	var r Robot
+	var lastSeen sql.NullTime
+	var notes sql.NullString
+	var scenarioID sql.NullInt64
+	var scenarioName sql.NullString
+	var sshAddr, sshUser, sshKey sql.NullString
+	var tags sql.NullString
+	var rType sql.NullString
+	var groupID sql.NullInt64
+	var groupName sql.NullString
+	var groupDomainID sql.NullInt64
+	if err := scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes, &scenarioID, &scenarioName, &sshAddr, &sshUser, &sshKey, &tags, &rType, &groupID, &groupName, &groupDomainID); err != nil {
+		return Robot{}, err
+	}
+	if lastSeen.Valid {
+		r.LastSeen = lastSeen.Time
+	}
+	if notes.Valid {
+		r.Notes = notes.String
+	}
+	if scenarioID.Valid {
+		r.LastScenario = &ScenarioRef{ID: scenarioID.Int64, Name: scenarioName.String}
+	}
+	if tags.Valid && tags.String != "" {
+		r.Tags = strings.Split(tags.String, ",")
+	} else {
+		r.Tags = []string{}
+	}
+	if rType.Valid {
+		r.Type = rType.String
+	} else {
+		r.Type = "robot"
+	}
+	r.InstallConfig = buildInstallConfig(sshAddr, sshUser, sshKey)
+	if groupID.Valid {
+		r.Group = &GroupRef{ID: groupID.Int64, Name: groupName.String, ROSDomainID: int(groupDomainID.Int64)}
+	}
+
+	// Check for offline status
+	if !r.LastSeen.IsZero() && time.Since(r.LastSeen) > 1*time.Minute {
+		r.Status = "offline"
+	} else if r.LastSeen.IsZero() {
+		r.Status = "unknown"
+	}
+
+	return r, nil
+}
+
+func (d *DB) ListRobots(ctx context.Context) ([]Robot, error) {
+	stmt, err := d.SQL.PrepareContext(ctx, `SELECT `+robotSelectColumns+`
+`+robotSelectJoins+`
 ORDER BY r.name`)
 	if err != nil {
 		return nil, err
@@ -237,45 +319,10 @@ ORDER BY r.name`)
 	defer rows.Close()
 	var robots []Robot
 	for rows.Next() {
-		var r Robot
-		var lastSeen sql.NullTime
-		var notes sql.NullString
-		var scenarioID sql.NullInt64
-		var scenarioName sql.NullString
-		var sshAddr, sshUser, sshKey sql.NullString
-		var tags sql.NullString
-		var rType sql.NullString
-		if err := rows.Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes, &scenarioID, &scenarioName, &sshAddr, &sshUser, &sshKey, &tags, &rType); err != nil {
+		r, err := scanRobotRow(rows.Scan)
+		if err != nil {
 			return nil, err
 		}
-		if lastSeen.Valid {
-			r.LastSeen = lastSeen.Time
-		}
-		if notes.Valid {
-			r.Notes = notes.String
-		}
-		if scenarioID.Valid {
-			r.LastScenario = &ScenarioRef{ID: scenarioID.Int64, Name: scenarioName.String}
-		}
-		if tags.Valid && tags.String != "" {
-			r.Tags = strings.Split(tags.String, ",")
-		} else {
-			r.Tags = []string{}
-		}
-		if rType.Valid {
-			r.Type = rType.String
-		} else {
-			r.Type = "robot"
-		}
-		r.InstallConfig = buildInstallConfig(sshAddr, sshUser, sshKey)
-
-		// Check for offline status
-		if !r.LastSeen.IsZero() && time.Since(r.LastSeen) > 1*time.Minute {
-			r.Status = "offline"
-		} else if r.LastSeen.IsZero() {
-			r.Status = "unknown"
-		}
-
 		robots = append(robots, r)
 	}
 	if robots == nil {
@@ -323,140 +370,36 @@ ON CONFLICT(name) DO UPDATE SET
 }
 
 func (d *DB) GetRobotByID(ctx context.Context, id int64) (Robot, error) {
-	stmt, err := d.SQL.PrepareContext(ctx, `SELECT r.id, r.name, r.agent_id, r.ip, r.last_seen, r.status, r.notes, s.id, s.name, r.ssh_address, r.ssh_user, r.ssh_key, r.tags, r.type
-FROM robots r
-LEFT JOIN scenarios s ON s.id = r.last_scenario_id
+	stmt, err := d.SQL.PrepareContext(ctx, `SELECT `+robotSelectColumns+`
+`+robotSelectJoins+`
 WHERE r.id = ?`)
 	if err != nil {
 		return Robot{}, err
 	}
 	defer stmt.Close()
-	var r Robot
-	var lastSeen sql.NullTime
-	var notes sql.NullString
-	var scenarioID sql.NullInt64
-	var scenarioName sql.NullString
-	var sshAddr, sshUser, sshKey sql.NullString
-	var tags sql.NullString
-	var rType sql.NullString
-	if err := stmt.QueryRowContext(ctx, id).Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes, &scenarioID, &scenarioName, &sshAddr, &sshUser, &sshKey, &tags, &rType); err != nil {
-		return Robot{}, err
-	}
-	if lastSeen.Valid {
-		r.LastSeen = lastSeen.Time
-	}
-	if notes.Valid {
-		r.Notes = notes.String
-	}
-	if scenarioID.Valid {
-		r.LastScenario = &ScenarioRef{ID: scenarioID.Int64, Name: scenarioName.String}
-	}
-	if tags.Valid && tags.String != "" {
-		r.Tags = strings.Split(tags.String, ",")
-	} else {
-		r.Tags = []string{}
-	}
-	if rType.Valid {
-		r.Type = rType.String
-	} else {
-		r.Type = "robot"
-	}
-	r.InstallConfig = buildInstallConfig(sshAddr, sshUser, sshKey)
-
-	// Check for offline status
-	if !r.LastSeen.IsZero() && time.Since(r.LastSeen) > 1*time.Minute {
-		r.Status = "offline"
-	} else if r.LastSeen.IsZero() {
-		r.Status = "unknown"
-	}
-
-	return r, nil
+	return scanRobotRow(stmt.QueryRowContext(ctx, id).Scan)
 }
 
 func (d *DB) GetRobotByName(ctx context.Context, name string) (Robot, error) {
-	stmt, err := d.SQL.PrepareContext(ctx, `SELECT r.id, r.name, r.agent_id, r.ip, r.last_seen, r.status, r.notes, s.id, s.name, r.ssh_address, r.ssh_user, r.ssh_key, r.tags, r.type
-FROM robots r
-LEFT JOIN scenarios s ON s.id = r.last_scenario_id
+	stmt, err := d.SQL.PrepareContext(ctx, `SELECT `+robotSelectColumns+`
+`+robotSelectJoins+`
 WHERE r.name = ?`)
 	if err != nil {
 		return Robot{}, err
 	}
 	defer stmt.Close()
-	var r Robot
-	var lastSeen sql.NullTime
-	var notes sql.NullString
-	var scenarioID sql.NullInt64
-	var scenarioName sql.NullString
-	var sshAddr, sshUser, sshKey sql.NullString
-	var tags sql.NullString
-	var rType sql.NullString
-	if err := stmt.QueryRowContext(ctx, name).Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes, &scenarioID, &scenarioName, &sshAddr, &sshUser, &sshKey, &tags, &rType); err != nil {
-		return Robot{}, err
-	}
-	if lastSeen.Valid {
-		r.LastSeen = lastSeen.Time
-	}
-	if notes.Valid {
-		r.Notes = notes.String
-	}
-	if scenarioID.Valid {
-		r.LastScenario = &ScenarioRef{ID: scenarioID.Int64, Name: scenarioName.String}
-	}
-	if tags.Valid && tags.String != "" {
-		r.Tags = strings.Split(tags.String, ",")
-	} else {
-		r.Tags = []string{}
-	}
-	if rType.Valid {
-		r.Type = rType.String
-	} else {
-		r.Type = "robot"
-	}
-	r.InstallConfig = buildInstallConfig(sshAddr, sshUser, sshKey)
-	return r, nil
+	return scanRobotRow(stmt.QueryRowContext(ctx, name).Scan)
 }
 
 func (d *DB) GetRobotByAgentID(ctx context.Context, agentID string) (Robot, error) {
-	stmt, err := d.SQL.PrepareContext(ctx, `SELECT r.id, r.name, r.agent_id, r.ip, r.last_seen, r.status, r.notes, s.id, s.name, r.ssh_address, r.ssh_user, r.ssh_key, r.tags, r.type
-FROM robots r
-LEFT JOIN scenarios s ON s.id = r.last_scenario_id
+	stmt, err := d.SQL.PrepareContext(ctx, `SELECT `+robotSelectColumns+`
+`+robotSelectJoins+`
 WHERE r.agent_id = ?`)
 	if err != nil {
 		return Robot{}, err
 	}
 	defer stmt.Close()
-	var r Robot
-	var lastSeen sql.NullTime
-	var notes sql.NullString
-	var scenarioID sql.NullInt64
-	var scenarioName sql.NullString
-	var sshAddr, sshUser, sshKey sql.NullString
-	var tags sql.NullString
-	var rType sql.NullString
-	if err := stmt.QueryRowContext(ctx, agentID).Scan(&r.ID, &r.Name, &r.AgentID, &r.IP, &lastSeen, &r.Status, &notes, &scenarioID, &scenarioName, &sshAddr, &sshUser, &sshKey, &tags, &rType); err != nil {
-		return Robot{}, err
-	}
-	if lastSeen.Valid {
-		r.LastSeen = lastSeen.Time
-	}
-	if notes.Valid {
-		r.Notes = notes.String
-	}
-	if scenarioID.Valid {
-		r.LastScenario = &ScenarioRef{ID: scenarioID.Int64, Name: scenarioName.String}
-	}
-	if tags.Valid && tags.String != "" {
-		r.Tags = strings.Split(tags.String, ",")
-	} else {
-		r.Tags = []string{}
-	}
-	if rType.Valid {
-		r.Type = rType.String
-	} else {
-		r.Type = "robot"
-	}
-	r.InstallConfig = buildInstallConfig(sshAddr, sshUser, sshKey)
-	return r, nil
+	return scanRobotRow(stmt.QueryRowContext(ctx, agentID).Scan)
 }
 
 func (d *DB) UpdateRobotName(ctx context.Context, id int64, name string) error {
@@ -725,4 +668,79 @@ func (db *DB) RecordLogin(ctx context.Context, ip, userAgent string) error {
 func (d *DB) DeleteRobot(ctx context.Context, id int64) error {
 	_, err := d.SQL.ExecContext(ctx, `DELETE FROM robots WHERE id = ?`, id)
 	return err
+}
+
+func scanGroupRow(scan func(dest ...interface{}) error) (Group, error) {
+	var g Group
+	var robotID, laptopID sql.NullInt64
+	var notes sql.NullString
+	var staticPeers int
+	if err := scan(&g.ID, &g.Name, &g.ROSDomainID, &robotID, &laptopID, &staticPeers, &notes); err != nil {
+		return Group{}, err
+	}
+	if robotID.Valid {
+		g.RobotID = &robotID.Int64
+	}
+	if laptopID.Valid {
+		g.LaptopID = &laptopID.Int64
+	}
+	if notes.Valid {
+		g.Notes = notes.String
+	}
+	g.StaticPeers = staticPeers != 0
+	return g, nil
+}
+
+const groupSelectColumns = `id, name, ros_domain_id, robot_id, laptop_id, static_peers, notes`
+
+func (d *DB) ListGroups(ctx context.Context) ([]Group, error) {
+	rows, err := d.SQL.QueryContext(ctx, `SELECT `+groupSelectColumns+` FROM groups ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var groups []Group
+	for rows.Next() {
+		g, err := scanGroupRow(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		groups = append(groups, g)
+	}
+	if groups == nil {
+		groups = []Group{}
+	}
+	return groups, rows.Err()
+}
+
+func (d *DB) GetGroupByID(ctx context.Context, id int64) (Group, error) {
+	row := d.SQL.QueryRowContext(ctx, `SELECT `+groupSelectColumns+` FROM groups WHERE id = ?`, id)
+	return scanGroupRow(row.Scan)
+}
+
+func (d *DB) CreateGroup(ctx context.Context, g Group) (int64, error) {
+	res, err := d.SQL.ExecContext(ctx, `INSERT INTO groups (name, ros_domain_id, robot_id, laptop_id, static_peers, notes) VALUES (?, ?, ?, ?, ?, ?)`,
+		g.Name, g.ROSDomainID, g.RobotID, g.LaptopID, boolToInt(g.StaticPeers), g.Notes)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (d *DB) UpdateGroup(ctx context.Context, g Group) error {
+	_, err := d.SQL.ExecContext(ctx, `UPDATE groups SET name = ?, ros_domain_id = ?, robot_id = ?, laptop_id = ?, static_peers = ?, notes = ? WHERE id = ?`,
+		g.Name, g.ROSDomainID, g.RobotID, g.LaptopID, boolToInt(g.StaticPeers), g.Notes, g.ID)
+	return err
+}
+
+func (d *DB) DeleteGroup(ctx context.Context, id int64) error {
+	_, err := d.SQL.ExecContext(ctx, `DELETE FROM groups WHERE id = ?`, id)
+	return err
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

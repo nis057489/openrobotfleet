@@ -222,6 +222,12 @@ func (e *AgentEngine) mapCommandToAction(cmd Command) func() error {
 			return func() error { return err }
 		}
 		return func() error { return HandleConfigureAgent(cfg, payload) }
+	case "configure_network":
+		var payload ConfigureNetworkData
+		if err := json.Unmarshal(cmd.Data, &payload); err != nil {
+			return func() error { return err }
+		}
+		return func() error { return HandleConfigureNetwork(cfg, payload) }
 	case "update_repo":
 		var payload UpdateRepoData
 		if err := json.Unmarshal(cmd.Data, &payload); err != nil {

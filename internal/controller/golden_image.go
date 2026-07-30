@@ -148,6 +148,53 @@ write_files:
       mqtt_broker: "{{.MQTTBroker}}"
       workspace_path: "/home/ubuntu/ros_ws/src"
 
+  - path: /etc/openrobotfleet-agent/ros_env.sh
+    content: |
+      export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      export ROS_DOMAIN_ID={{.ROSDomainID}}
+
+  - path: /home/ubuntu/ros_ws/qos_overrides.example.yaml
+    content: |
+      # Example QoS overrides for continuously-streaming sensor topics, per the
+      # lab network plan: Best Effort / Keep Last 1 / Volatile for sensors that
+      # stream constantly (LaserScan, Camera, IMU, Odometry, JointState), while
+      # cmd_vel/services/actions stay on the ROS 2 Reliable default. Reference
+      # this from your scenario's launch file, e.g.:
+      #   ros2 launch <pkg> <file>.launch.py --ros-args --params-file qos_overrides.example.yaml
+      /**:
+        ros__parameters:
+          qos_overrides:
+            /scan:
+              publisher:
+                reliability: best_effort
+                history: keep_last
+                depth: 1
+                durability: volatile
+            /camera/image_raw/compressed:
+              publisher:
+                reliability: best_effort
+                history: keep_last
+                depth: 1
+                durability: volatile
+            /imu:
+              publisher:
+                reliability: best_effort
+                history: keep_last
+                depth: 1
+                durability: volatile
+            /odom:
+              publisher:
+                reliability: best_effort
+                history: keep_last
+                depth: 1
+                durability: volatile
+            /joint_states:
+              publisher:
+                reliability: best_effort
+                history: keep_last
+                depth: 1
+                durability: volatile
+
 runcmd:
   # Generate unique Agent ID and Hostname
   - |
@@ -167,15 +214,20 @@ runcmd:
 
   # Environment variables
   {{if eq .RobotModel "TB4"}}
-  - echo 'export ROS_DOMAIN_ID={{.ROSDomainID}}' >> /home/ubuntu/.bashrc
-  # TB4 setup script handles other env vars
+  # TB4 setup script handles its own ROS env vars; ours (Cyclone DDS RMW +
+  # this group's ROS_DOMAIN_ID) is appended last below, so it wins.
   {{else}}
   # TB3 Default
   - echo 'source /opt/ros/{{if eq .ROSVersion "Jazzy"}}jazzy{{else}}humble{{end}}/setup.bash' >> /home/ubuntu/.bashrc
   - echo 'source /home/ubuntu/ros_ws/install/setup.bash' >> /home/ubuntu/.bashrc
-  - echo 'export ROS_DOMAIN_ID={{.ROSDomainID}}' >> /home/ubuntu/.bashrc
   - echo 'export LDS_MODEL={{.LDSModel}}' >> /home/ubuntu/.bashrc
   {{end}}
+  # RMW_IMPLEMENTATION and ROS_DOMAIN_ID are re-applied at runtime whenever a
+  # robot is assigned to a Group (see the configure_network agent command);
+  # this is just the pre-grouping default so ungrouped robots still isolate
+  # reasonably out of the box.
+  - echo 'source /etc/openrobotfleet-agent/ros_env.sh' >> /home/ubuntu/.bashrc
+  - chown ubuntu:ubuntu /home/ubuntu/ros_ws/qos_overrides.example.yaml
 
   # Fix home directory and ROS permissions
   - chown ubuntu:ubuntu /home/ubuntu
@@ -555,6 +607,10 @@ apt-get install -y wget curl git
 wget -qO /tmp/turtlebot4_setup.sh https://raw.githubusercontent.com/turtlebot/turtlebot4_setup/%s/scripts/turtlebot4_setup.sh
 bash /tmp/turtlebot4_setup.sh
 
+# Cyclone DDS is the fleet-wide default RMW; install it alongside whatever
+# turtlebot4_setup.sh already configured.
+apt-get install -y ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins
+
 # Install Docker
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
@@ -567,7 +623,7 @@ systemctl enable docker
 rm -f /tmp/turtlebot4_setup.sh /tmp/install.sh
 apt-get clean
 rm -rf /var/lib/apt/lists/*
-`, branch)
+`, branch, branch, branch, branch)
 	} else {
 		// TB3 Logic
 		rosDistro := "humble"
@@ -591,7 +647,7 @@ if ! apt-get install -y --allow-downgrades libzstd1=1.5.5+dfsg2-2build1 libzstd-
     echo "warning: could not pin libzstd versions; continuing with the standard dependency resolution"
 fi
 apt-get install -y --fix-broken
-apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver ros-%s-slam-toolbox ros-%s-navigation2 ros-%s-nav2-bringup ros-%s-cartographer-ros ros-%s-teleop-twist-keyboard ros-%s-teleop-twist-joy ros-%s-joy ros-%s-robot-state-publisher ros-%s-joint-state-publisher ros-%s-tf2-tools ros-%s-laser-geometry ros-%s-diagnostic-updater libudev-dev build-essential git python3-colcon-common-extensions
+apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver ros-%s-slam-toolbox ros-%s-navigation2 ros-%s-nav2-bringup ros-%s-cartographer-ros ros-%s-teleop-twist-keyboard ros-%s-teleop-twist-joy ros-%s-joy ros-%s-robot-state-publisher ros-%s-joint-state-publisher ros-%s-tf2-tools ros-%s-laser-geometry ros-%s-diagnostic-updater ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins libudev-dev build-essential git python3-colcon-common-extensions
 
 # Setup Workspace
 if ! id -u ubuntu >/dev/null 2>&1; then
@@ -624,7 +680,7 @@ systemctl enable docker
 rm -f /tmp/install.sh
 apt-get clean
 rm -rf /var/lib/apt/lists/*
-`, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro)
+`, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro)
 	}
 	if err := os.WriteFile(filepath.Join(mntDir, "tmp/install.sh"), []byte(installScript), 0755); err != nil {
 		c.failBuild(fmt.Sprintf("write install script failed: %v", err))

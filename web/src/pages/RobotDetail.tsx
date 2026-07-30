@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getRobot, sendCommand, updateRobotTags, getSystemConfig, deleteRobot, updateRobotName } from "../api";
 import { Robot } from "../types";
-import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Tag, Plus, X, Camera, Play, Lightbulb, Trash2, Edit2 } from "lucide-react";
+import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Tag, Plus, X, Camera, Play, Lightbulb, Trash2, Edit2, Network } from "lucide-react";
 import { Terminal as TerminalView } from "../components/Terminal";
 import { useNotification } from "../contexts/NotificationContext";
 import { useWebSocket, WSEvent } from "../contexts/WebSocketContext";
@@ -228,6 +228,15 @@ export function RobotDetail() {
                             >
                                 <Trash2 size={20} />
                             </button>
+                            {robot.group && (
+                                <button
+                                    onClick={() => navigate("/groups")}
+                                    title={t("groups.viewGroup") || ""}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-purple-50 text-purple-700 text-xs font-medium border border-purple-100 hover:bg-purple-100"
+                                >
+                                    <Network size={12} /> {robot.group.name} · domain {robot.group.ros_domain_id}
+                                </button>
+                            )}
                             {robot.tags?.map(tag => (
                                 <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-medium border border-blue-100">
                                     {tag}

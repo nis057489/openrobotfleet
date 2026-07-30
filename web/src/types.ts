@@ -13,6 +13,23 @@ export interface Robot {
   job_id?: string;
   job_status?: string;
   job_error?: string;
+  group?: GroupRef;
+}
+
+export interface GroupRef {
+  id: number;
+  name: string;
+  ros_domain_id: number;
+}
+
+export interface Group {
+  id: number;
+  name: string;
+  ros_domain_id: number;
+  robot_id?: number | null;
+  laptop_id?: number | null;
+  static_peers: boolean;
+  notes?: string;
 }
 
 export interface ScenarioRef {
