@@ -265,6 +265,7 @@ export function GoldenImage() {
                                     >
                                         <option value="LDS-01">LDS-01</option>
                                         <option value="LDS-02">LDS-02</option>
+                                        <option value="LDS-03">LDS-03</option>
                                     </select>
                                 </div>
                                 <div>

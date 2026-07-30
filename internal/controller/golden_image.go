@@ -195,6 +195,20 @@ write_files:
                 depth: 1
                 durability: volatile
 
+  - path: /home/ubuntu/ros_ws/camera_params.example.yaml
+    content: |
+      # Default v4l2_camera settings: 320x240 is the vendor-recommended
+      # resolution for the TB3 Pi camera over Wi-Fi. The camera node isn't
+      # started automatically (it would hold /dev/video0 open and block both
+      # the dashboard's Test Camera button and any camera node your scenario
+      # launches), so start it yourself when you actually want a live stream:
+      #   ros2 run v4l2_camera v4l2_camera_node --ros-args --params-file camera_params.example.yaml
+      # The /camera/image_raw/compressed topic is published automatically
+      # alongside the raw one once compressed_image_transport is installed.
+      /**:
+        ros__parameters:
+          image_size: [320, 240]
+
 runcmd:
   # Generate unique Agent ID and Hostname
   - |
@@ -212,6 +226,9 @@ runcmd:
   - netplan apply
   - systemctl mask systemd-networkd-wait-online.service
 
+  # A robot should never suspend/hibernate mid-mission
+  - systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+
   # Environment variables
   {{if eq .RobotModel "TB4"}}
   # TB4 setup script handles its own ROS env vars; ours (Cyclone DDS RMW +
@@ -228,6 +245,7 @@ runcmd:
   # reasonably out of the box.
   - echo 'source /etc/openrobotfleet-agent/ros_env.sh' >> /home/ubuntu/.bashrc
   - chown ubuntu:ubuntu /home/ubuntu/ros_ws/qos_overrides.example.yaml
+  - chown ubuntu:ubuntu /home/ubuntu/ros_ws/camera_params.example.yaml
 
   # Fix home directory and ROS permissions
   - chown ubuntu:ubuntu /home/ubuntu
@@ -608,8 +626,11 @@ wget -qO /tmp/turtlebot4_setup.sh https://raw.githubusercontent.com/turtlebot/tu
 bash /tmp/turtlebot4_setup.sh
 
 # Cyclone DDS is the fleet-wide default RMW; install it alongside whatever
-# turtlebot4_setup.sh already configured.
-apt-get install -y ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins
+# turtlebot4_setup.sh already configured. Also make sure a camera driver is
+# present so the dashboard's camera test and any camera-using scenario work
+# out of the box: fswebcam for the raw snapshot test, v4l2_camera for a real
+# ROS image topic.
+apt-get install -y ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins ros-%s-v4l2-camera fswebcam
 
 # Install Docker
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
@@ -623,7 +644,7 @@ systemctl enable docker
 rm -f /tmp/turtlebot4_setup.sh /tmp/install.sh
 apt-get clean
 rm -rf /var/lib/apt/lists/*
-`, branch, branch, branch, branch)
+`, branch, branch, branch, branch, branch)
 	} else {
 		// TB3 Logic
 		rosDistro := "humble"
@@ -647,7 +668,7 @@ if ! apt-get install -y --allow-downgrades libzstd1=1.5.5+dfsg2-2build1 libzstd-
     echo "warning: could not pin libzstd versions; continuing with the standard dependency resolution"
 fi
 apt-get install -y --fix-broken
-apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver ros-%s-slam-toolbox ros-%s-navigation2 ros-%s-nav2-bringup ros-%s-cartographer-ros ros-%s-teleop-twist-keyboard ros-%s-teleop-twist-joy ros-%s-joy ros-%s-robot-state-publisher ros-%s-joint-state-publisher ros-%s-tf2-tools ros-%s-laser-geometry ros-%s-diagnostic-updater ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins libudev-dev build-essential git python3-colcon-common-extensions
+apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver ros-%s-slam-toolbox ros-%s-navigation2 ros-%s-nav2-bringup ros-%s-cartographer-ros ros-%s-teleop-twist-keyboard ros-%s-teleop-twist-joy ros-%s-joy ros-%s-robot-state-publisher ros-%s-joint-state-publisher ros-%s-tf2-tools ros-%s-laser-geometry ros-%s-diagnostic-updater ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins ros-%s-v4l2-camera fswebcam python3-argcomplete libboost-system-dev libudev-dev build-essential git python3-colcon-common-extensions
 
 # Setup Workspace
 if ! id -u ubuntu >/dev/null 2>&1; then
@@ -657,6 +678,14 @@ mkdir -p /home/ubuntu/ros_ws/src
 cd /home/ubuntu/ros_ws/src
 git clone -b %s https://github.com/ROBOTIS-GIT/turtlebot3.git
 git clone -b %s https://github.com/ROBOTIS-GIT/ld08_driver.git
+git clone -b %s https://github.com/ROBOTIS-GIT/coin_d4_driver.git
+
+# turtlebot3_cartographer/turtlebot3_navigation2 are thin example packages
+# that duplicate the full cartographer-ros/navigation2 packages already
+# installed above; building them from source here roughly doubles build time
+# for no benefit (per ROBOTIS's own setup instructions).
+rm -rf turtlebot3/turtlebot3_cartographer turtlebot3/turtlebot3_navigation2
+
 cd /home/ubuntu/ros_ws
 source /opt/ros/%s/setup.bash
 colcon build --symlink-install --parallel-workers 1
@@ -680,7 +709,7 @@ systemctl enable docker
 rm -f /tmp/install.sh
 apt-get clean
 rm -rf /var/lib/apt/lists/*
-`, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro)
+`, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro)
 	}
 	if err := os.WriteFile(filepath.Join(mntDir, "tmp/install.sh"), []byte(installScript), 0755); err != nil {
 		c.failBuild(fmt.Sprintf("write install script failed: %v", err))
