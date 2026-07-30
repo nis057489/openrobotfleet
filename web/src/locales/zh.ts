@@ -288,6 +288,9 @@ export const zh = {
       startTestDrive: "开始试驾",
       logsNotImplemented: "后端尚未实现日志功能。",
       logsHelp: "要查看日志，您通常需要一个日志聚合服务或通过 MQTT 或 HTTP 从代理流式传输日志的 API 端点。",
+      copySsh: "复制 SSH 命令",
+      sshCopied: "SSH 命令已复制到剪贴板",
+      copySshFailed: "复制 SSH 命令失败",
     },
     scenarioEditor: {
       newTitle: "新建场景",

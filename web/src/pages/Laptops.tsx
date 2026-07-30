@@ -54,9 +54,6 @@ export function Laptops() {
                             job_status: event.data.job_status,
                             job_error: event.data.job_error,
                             notes: '',
-                            ssh_address: '',
-                            ssh_user: '',
-                            ssh_key: '',
                             tags: [],
                         };
                         return [...prev, newLaptop];

@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { getRobot, sendCommand, updateRobotTags, getSystemConfig, deleteRobot, updateRobotName } from "../api";
+import { getRobot, sendCommand, updateRobotTags, getSystemConfig, deleteRobot, updateRobotName, getInstallDefaults } from "../api";
 import { Robot } from "../types";
-import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Tag, Plus, X, Camera, Play, Lightbulb, Trash2, Edit2, Network } from "lucide-react";
+import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Tag, Plus, X, Camera, Play, Lightbulb, Trash2, Edit2, Network, Copy, Check } from "lucide-react";
 import { Terminal as TerminalView } from "../components/Terminal";
 import { useNotification } from "../contexts/NotificationContext";
 import { useWebSocket, WSEvent } from "../contexts/WebSocketContext";
@@ -19,6 +19,8 @@ export function RobotDetail() {
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<"overview" | "logs" | "terminal">("overview");
     const [demoMode, setDemoMode] = useState(false);
+    const [defaultSshUser, setDefaultSshUser] = useState("ubuntu");
+    const [sshCopied, setSshCopied] = useState(false);
 
     // Command state
     const [repoUrl, setRepoUrl] = useState("");
@@ -43,10 +45,13 @@ export function RobotDetail() {
 
     useEffect(() => {
         if (id) {
-            Promise.all([getRobot(id), getSystemConfig()])
-                .then(([robotData, sysConfig]) => {
+            Promise.all([getRobot(id), getSystemConfig(), getInstallDefaults()])
+                .then(([robotData, sysConfig, installDefaults]) => {
                     setRobot(robotData);
                     setDemoMode(sysConfig.demo_mode);
+                    if (installDefaults.install_config?.user) {
+                        setDefaultSshUser(installDefaults.install_config.user);
+                    }
                 })
                 .catch(console.error)
                 .finally(() => setLoading(false));
@@ -178,6 +183,22 @@ export function RobotDetail() {
     if (loading) return <div className="p-8 text-gray-500">{t("robots.loading")}</div>;
     if (!robot) return <div className="p-8 text-red-500">Robot not found</div>;
 
+    const sshHost = robot.ip || robot.install_config?.address;
+    const sshUser = robot.install_config?.user || defaultSshUser;
+    const sshCommand = sshHost ? `ssh ${sshUser}@${sshHost}` : "";
+
+    const handleCopySsh = async () => {
+        if (!sshCommand) return;
+        try {
+            await navigator.clipboard.writeText(sshCommand);
+            setSshCopied(true);
+            success(t("robotDetail.sshCopied"));
+            setTimeout(() => setSshCopied(false), 2000);
+        } catch (err) {
+            error(t("robotDetail.copySshFailed"));
+        }
+    };
+
     return (
         <div className="max-w-4xl mx-auto space-y-6">
             {/* Header */}
@@ -262,11 +283,24 @@ export function RobotDetail() {
                             )}
                         </div>
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
+                    <div className="flex items-center gap-2 text-sm text-gray-500 mt-1 flex-wrap">
                         <span className={`w-2 h-2 rounded-full ${robot.status !== 'offline' ? 'bg-green-500' : 'bg-gray-300'}`} />
                         <span className="capitalize">{t(`common.${robot.status}`) || robot.status || t("common.unknown")}</span>
                         <span>•</span>
                         <span className="font-mono">{robot.ip}</span>
+                        {sshCommand && (
+                            <>
+                                <span>•</span>
+                                <button
+                                    onClick={handleCopySsh}
+                                    title={t("robotDetail.copySsh") || ""}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 hover:bg-gray-200 font-mono text-xs text-gray-700 transition-colors"
+                                >
+                                    {sshCommand}
+                                    {sshCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} />}
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>

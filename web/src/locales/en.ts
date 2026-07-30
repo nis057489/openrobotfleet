@@ -292,6 +292,9 @@ export const en = {
       logsHelp: "To view logs, you would typically need a log aggregation service or an API endpoint that streams logs from the agent via MQTT or HTTP.",
       terminalDisabledDemo: "The terminal is unavailable in demo mode.",
       logsDisabledDemo: "Logs are unavailable in demo mode.",
+      copySsh: "Copy SSH command",
+      sshCopied: "SSH command copied to clipboard",
+      copySshFailed: "Failed to copy SSH command",
     },
     scenarioEditor: {
       newTitle: "New Scenario",
