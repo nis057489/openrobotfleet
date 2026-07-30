@@ -20,6 +20,7 @@ export function RobotDetail() {
     const [activeTab, setActiveTab] = useState<"overview" | "logs" | "terminal">("overview");
     const [demoMode, setDemoMode] = useState(false);
     const [defaultSshUser, setDefaultSshUser] = useState("ubuntu");
+    const [defaultSshPublicKey, setDefaultSshPublicKey] = useState("");
     const [sshCopied, setSshCopied] = useState(false);
 
     // Command state
@@ -51,6 +52,9 @@ export function RobotDetail() {
                     setDemoMode(sysConfig.demo_mode);
                     if (installDefaults.install_config?.user) {
                         setDefaultSshUser(installDefaults.install_config.user);
+                    }
+                    if (installDefaults.install_config?.ssh_public_key) {
+                        setDefaultSshPublicKey(installDefaults.install_config.ssh_public_key);
                     }
                 })
                 .catch(console.error)
@@ -185,7 +189,14 @@ export function RobotDetail() {
 
     const sshHost = robot.ip || robot.install_config?.address;
     const sshUser = robot.install_config?.user || defaultSshUser;
-    const sshCommand = sshHost ? `ssh ${sshUser}@${sshHost}` : "";
+    // Embedding the fleet's public key means this one line both connects and
+    // (re)installs key-based access, so it works whether or not this machine
+    // already has the fleet's private key configured locally.
+    const sshCommand = sshHost
+        ? (defaultSshPublicKey
+            ? `ssh ${sshUser}@${sshHost} "mkdir -p ~/.ssh && echo '${defaultSshPublicKey}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"`
+            : `ssh ${sshUser}@${sshHost}`)
+        : "";
 
     const handleCopySsh = async () => {
         if (!sshCommand) return;

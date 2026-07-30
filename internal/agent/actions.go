@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,25 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// defaultCmdTimeout bounds any command the JobManager waits on synchronously.
+// The agent only runs one job at a time (job_manager.go) and silently drops
+// new commands while one is "running", so a subprocess that never exits (e.g.
+// `ros2 topic pub` waiting forever for a subscriber that will never appear)
+// permanently jams the robot's entire command queue, not just that one job.
+const defaultCmdTimeout = 15 * time.Second
+
+// runCmd runs name/args with a timeout so a hung subprocess can't block the
+// agent's command queue forever; see defaultCmdTimeout.
+func runCmd(timeout time.Duration, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return out, fmt.Errorf("timed out after %s", timeout)
+	}
+	return out, err
+}
 
 // HandleConfigureAgent updates the agent configuration and restarts the service.
 func HandleConfigureAgent(cfg Config, data ConfigureAgentData) error {
@@ -193,8 +213,7 @@ func HandleConfigureNetwork(cfg Config, data ConfigureNetworkData) error {
 // HandleRestartROS restarts the ROS service via systemd or a custom command.
 func HandleRestartROS(cfg Config) error {
 	cmdArgs := customRestartCommand()
-	cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
-	output, err := cmd.CombinedOutput()
+	output, err := runCmd(defaultCmdTimeout, cmdArgs[0], cmdArgs[1:]...)
 	if err != nil {
 		return fmt.Errorf("restart ros failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}
@@ -206,18 +225,19 @@ func HandleRestartROS(cfg Config) error {
 func HandleTestDrive(cfg Config, data TestDriveData) error {
 	log.Printf("[agent] starting test drive")
 
-	// Twist message for forward motion
+	// Twist message for forward motion. -w 0 publishes immediately instead of
+	// waiting (by default, forever) for a matching subscriber, since cmd_vel
+	// is fire-and-forget and there may be no bringup node running to receive
+	// it yet.
 	// linear.x = 0.1, angular.z = 0.0
-	cmdForward := exec.Command("ros2", "topic", "pub", "--once", "/cmd_vel", "geometry_msgs/msg/Twist", "{linear: {x: 0.1, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}")
-	if out, err := cmdForward.CombinedOutput(); err != nil {
+	if out, err := runCmd(defaultCmdTimeout, "ros2", "topic", "pub", "--once", "-w", "0", "/cmd_vel", "geometry_msgs/msg/Twist", "{linear: {x: 0.1, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"); err != nil {
 		return fmt.Errorf("forward failed: %v: %s", err, string(out))
 	}
 
 	time.Sleep(time.Duration(data.DurationSec) * time.Second)
 
 	// Stop
-	cmdStop := exec.Command("ros2", "topic", "pub", "--once", "/cmd_vel", "geometry_msgs/msg/Twist", "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}")
-	if out, err := cmdStop.CombinedOutput(); err != nil {
+	if out, err := runCmd(defaultCmdTimeout, "ros2", "topic", "pub", "--once", "-w", "0", "/cmd_vel", "geometry_msgs/msg/Twist", "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"); err != nil {
 		return fmt.Errorf("stop failed: %v: %s", err, string(out))
 	}
 
@@ -228,8 +248,7 @@ func HandleTestDrive(cfg Config, data TestDriveData) error {
 // HandleStop publishes zero velocity.
 func HandleStop(cfg Config) error {
 	log.Printf("[agent] stopping robot")
-	cmd := exec.Command("ros2", "topic", "pub", "--once", "/cmd_vel", "geometry_msgs/msg/Twist", "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}")
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := runCmd(defaultCmdTimeout, "ros2", "topic", "pub", "--once", "-w", "0", "/cmd_vel", "geometry_msgs/msg/Twist", "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"); err != nil {
 		return fmt.Errorf("stop failed: %v: %s", err, string(out))
 	}
 	return nil
@@ -246,32 +265,29 @@ func HandleIdentify(cfg Config, data IdentifyData) error {
 		return identifyLaptop(data)
 	}
 
-	// 1. Beep
-	// Create 3 uses /cmd_audio (irobot_create_msgs/msg/AudioNoteVector)
-	// We'll try a simple beep sequence.
-	// Note: This requires the irobot_create_msgs package to be installed/sourced.
-	// If not available, this might fail, but we'll log it.
-	// Sequence: 2 beeps
-	beepCmd := exec.Command("ros2", "topic", "pub", "--once", "/cmd_audio", "irobot_create_msgs/msg/AudioNoteVector",
-		`{append: false, notes: [{frequency: 880, max_runtime: {sec: 0, nanosec: 500000000}}, {frequency: 0, max_runtime: {sec: 0, nanosec: 100000000}}, {frequency: 880, max_runtime: {sec: 0, nanosec: 500000000}}]}`)
-	if out, err := beepCmd.CombinedOutput(); err != nil {
+	// TurtleBot3's turtlebot3_node exposes a /sound service
+	// (turtlebot3_msgs/srv/Sound) once bringup (ros.service) is running.
+	// That's what our golden image actually launches, so try it first.
+	if _, err := runCmd(defaultCmdTimeout, "ros2", "service", "call", "/sound", "turtlebot3_msgs/srv/Sound", "value: 1"); err == nil {
+		return nil
+	}
+
+	// Fall back to the iRobot Create 3 (TurtleBot4) audio/lightring topics.
+	if out, err := runCmd(defaultCmdTimeout, "ros2", "topic", "pub", "--once", "-w", "0", "/cmd_audio", "irobot_create_msgs/msg/AudioNoteVector",
+		`{append: false, notes: [{frequency: 880, max_runtime: {sec: 0, nanosec: 500000000}}, {frequency: 0, max_runtime: {sec: 0, nanosec: 100000000}}, {frequency: 880, max_runtime: {sec: 0, nanosec: 500000000}}]}`); err != nil {
 		log.Printf("[agent] failed to beep via ROS: %v: %s", err, string(out))
 		// Fallback to laptop identification (system beep) if ROS fails
 		if err := identifyLaptop(data); err != nil {
 			log.Printf("[agent] fallback identify failed: %v", err)
 		}
+		return nil
 	}
 
-	// 2. Flash LEDs
-	// Create 3 uses /cmd_lightring (irobot_create_msgs/msg/LightringLeds)
-	// We'll flash red a few times.
-	// We need to run this in a loop or send a sequence if possible.
-	// Since 'ros2 topic pub' blocks if we don't use --once, we'll just send a "red" command, wait, then "off".
-
+	// Flash LEDs (Create 3 lightring; TurtleBot3 has no equivalent hardware,
+	// so this only does anything on a TB4).
 	// Red
-	ledRed := exec.Command("ros2", "topic", "pub", "--once", "/cmd_lightring", "irobot_create_msgs/msg/LightringLeds",
-		`{override_system: true, leds: [{red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}]}`)
-	if out, err := ledRed.CombinedOutput(); err != nil {
+	if out, err := runCmd(defaultCmdTimeout, "ros2", "topic", "pub", "--once", "-w", "0", "/cmd_lightring", "irobot_create_msgs/msg/LightringLeds",
+		`{override_system: true, leds: [{red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}]}`); err != nil {
 		log.Printf("[agent] failed to set LEDs red: %v: %s", err, string(out))
 	}
 
@@ -279,9 +295,8 @@ func HandleIdentify(cfg Config, data IdentifyData) error {
 
 	// Off (or return to system control)
 	// To return to system control, we can set override_system to false.
-	ledOff := exec.Command("ros2", "topic", "pub", "--once", "/cmd_lightring", "irobot_create_msgs/msg/LightringLeds",
-		`{override_system: false, leds: []}`)
-	if out, err := ledOff.CombinedOutput(); err != nil {
+	if out, err := runCmd(defaultCmdTimeout, "ros2", "topic", "pub", "--once", "-w", "0", "/cmd_lightring", "irobot_create_msgs/msg/LightringLeds",
+		`{override_system: false, leds: []}`); err != nil {
 		log.Printf("[agent] failed to reset LEDs: %v: %s", err, string(out))
 	}
 
@@ -476,8 +491,7 @@ func HandleCaptureImage(cfg Config, data CaptureImageData) error {
 	tmpPath := "/tmp/snapshot.jpg"
 
 	// Try fswebcam first
-	cmd := exec.Command("fswebcam", "-r", "640x480", "--jpeg", "85", "-D", "1", tmpPath)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := runCmd(defaultCmdTimeout, "fswebcam", "-r", "640x480", "--jpeg", "85", "-D", "1", tmpPath); err != nil {
 		log.Printf("[agent] fswebcam failed: %v: %s", err, string(out))
 		// Fallback: create a dummy image or fail?
 		// Let's fail for now, or maybe try a different tool if needed.

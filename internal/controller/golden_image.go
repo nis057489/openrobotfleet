@@ -121,6 +121,19 @@ write_files:
       done
       exec /usr/local/bin/openrobotfleet-agent
 
+  - path: /usr/local/bin/openrobotfleet-ros-start
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      for setup in /opt/ros/*/setup.bash; do
+        [ -f "$setup" ] && source "$setup" && break
+      done
+      [ -f /home/ubuntu/ros_ws/install/setup.bash ] && source /home/ubuntu/ros_ws/install/setup.bash
+      [ -f /etc/openrobotfleet-agent/ros_env.sh ] && source /etc/openrobotfleet-agent/ros_env.sh
+      export LDS_MODEL={{.LDSModel}}
+      export TURTLEBOT3_MODEL=waffle_pi
+      exec ros2 launch turtlebot3_bringup robot.launch.py
+
   - path: /etc/netplan/50-cloud-init.yaml
     content: |
       network:
@@ -270,6 +283,33 @@ runcmd:
     EOF
   - systemctl enable openrobotfleet-agent
   - systemctl start openrobotfleet-agent
+
+  {{if ne .RobotModel "TB4"}}
+  # ROS Bringup Service (turtlebot3_bringup: motor/LDS drivers, TF, odometry).
+  # Named "ros" to match the agent's default ROS_SERVICE_NAME so the
+  # dashboard's "Restart ROS" command works without extra configuration.
+  # Restart=on-failure (not "always") avoids a tight crash loop if OpenCR
+  # isn't connected yet; it'll pick back up once it is.
+  - |
+    cat <<EOF > /etc/systemd/system/ros.service
+    [Unit]
+    Description=OpenRobot ROS Bringup (turtlebot3_bringup)
+    After=network.target
+
+    [Service]
+    Type=simple
+    User=ubuntu
+    Environment=HOME=/home/ubuntu
+    ExecStart=/usr/local/bin/openrobotfleet-ros-start
+    Restart=on-failure
+    RestartSec=10
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+  - systemctl enable ros
+  - systemctl start ros
+  {{end}}
 
 final_message: "OpenRobot setup complete. Ready to roll!"
 `
