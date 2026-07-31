@@ -542,10 +542,13 @@ func (c *Controller) runBuild() {
 	}
 	outFile.Close()
 
-	// 5. Expand Image (+4GB)
+	// 5. Expand Image (+6GB). Sized for 16GB SD cards: base preinstalled
+	// image (~4GB) + ROS Humble/nav2/cartographer/slam-toolbox/camera
+	// packages + colcon build artifacts (~5-6GB) still leaves several GB
+	// free for student code, logs, and scenario repos.
 	c.updateBuildProgress("Expanding image...", 35)
-	c.logBuild("expanding image by 4GB...")
-	if err := exec.Command("truncate", "-s", "+4G", workImage).Run(); err != nil {
+	c.logBuild("expanding image by 6GB...")
+	if err := exec.Command("truncate", "-s", "+6G", workImage).Run(); err != nil {
 		c.failBuild(fmt.Sprintf("truncate failed: %v", err))
 		return
 	}
@@ -673,14 +676,6 @@ bash /tmp/turtlebot4_setup.sh
 # ROS image topic.
 apt-get install -y ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins ros-%s-v4l2-camera fswebcam
 
-# Install Docker
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-apt-get update
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-usermod -aG docker ubuntu
-systemctl enable docker
-
 # Cleanup
 rm -f /tmp/turtlebot4_setup.sh /tmp/install.sh
 apt-get clean
@@ -733,6 +728,12 @@ else
 fi
 ldconfig
 
+# Free the downloaded .deb cache from the ROS/nav2/cartographer install
+# above before the colcon build, which needs its own disk for build
+# artifacts. Package lists get re-fetched at the very end if anything else
+# needs apt again, so this is safe mid-script.
+apt-get clean
+
 # Setup Workspace
 if ! id -u ubuntu >/dev/null 2>&1; then
     useradd --create-home --shell /bin/bash --groups sudo ubuntu
@@ -759,14 +760,6 @@ chown -R ubuntu:ubuntu /home/ubuntu/.ros
 
 # Udev Rules
 cp /home/ubuntu/ros_ws/src/turtlebot3/turtlebot3_bringup/script/99-turtlebot3-cdc.rules /etc/udev/rules.d/
-
-# Install Docker
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-apt-get update
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-usermod -aG docker ubuntu
-systemctl enable docker
 
 # Cleanup
 rm -f /tmp/install.sh
