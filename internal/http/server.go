@@ -112,8 +112,13 @@ func (s *Server) routes() http.Handler {
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Allow public endpoints
-		if !strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api/login" {
+		// Allow public endpoints. Robot image uploads are called by the agent
+		// itself (capture_image), not a logged-in browser, so it can't carry
+		// the session cookie; MQTT commands to agents are equally
+		// unauthenticated on this trusted-LAN model, so this isn't a new
+		// class of exposure.
+		isRobotUpload := strings.HasPrefix(r.URL.Path, "/api/robots/") && strings.HasSuffix(r.URL.Path, "/upload")
+		if !strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api/login" || isRobotUpload {
 			next.ServeHTTP(w, r)
 			return
 		}

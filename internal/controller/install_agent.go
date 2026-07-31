@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -100,7 +101,7 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	broker := agentBrokerURL()
+	broker := c.agentBrokerURL(r.Context())
 	cfg := agent.Config{
 		AgentID:        req.Name,
 		MQTTBroker:     broker,
@@ -187,7 +188,14 @@ func (c *Controller) DownloadAgentBinary(w http.ResponseWriter, r *http.Request)
 	http.ServeFile(w, r, basePath)
 }
 
-func agentBrokerURL() string {
+// agentBrokerURL resolves the MQTT broker address to bake into a newly
+// (re)installed agent's config. Env vars are an explicit operator override;
+// docker-compose's own AGENT_MQTT_BROKER default is "tcp://localhost:1883",
+// which can never work for a robot (that's the robot's own loopback, not the
+// controller), so before falling back to a placeholder we prefer whatever
+// broker address the admin already entered in the Golden Image config --
+// it's already known-correct for this deployment's network.
+func (c *Controller) agentBrokerURL(ctx context.Context) string {
 	if v := os.Getenv("AGENT_MQTT_BROKER"); v != "" {
 		return v
 	}
@@ -196,6 +204,9 @@ func agentBrokerURL() string {
 	}
 	if v := os.Getenv("MQTT_BROKER"); v != "" && !strings.Contains(v, "tcp://mqtt") {
 		return v
+	}
+	if cfg, err := c.DB.GetGoldenImageConfig(ctx); err == nil && cfg != nil && cfg.MQTTBroker != "" {
+		return cfg.MQTTBroker
 	}
 	return "tcp://192.168.1.10:1883"
 }

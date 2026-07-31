@@ -119,6 +119,12 @@ write_files:
       for setup in /opt/ros/*/setup.bash; do
         [ -f "$setup" ] && source "$setup" && break
       done
+      # Without this, every ros2 command the agent runs (test_drive, identify)
+      # defaults to ROS_DOMAIN_ID 0 with the default RMW, completely
+      # disconnected from the domain ros.service actually bringup runs on.
+      # Keep this in sync with agentStartScript in internal/ssh/ssh.go, used
+      # by the SSH-based install/reinstall path.
+      [ -f /etc/openrobotfleet-agent/ros_env.sh ] && source /etc/openrobotfleet-agent/ros_env.sh
       exec /usr/local/bin/openrobotfleet-agent
 
   - path: /usr/local/bin/openrobotfleet-ros-start
@@ -210,14 +216,21 @@ write_files:
 
   - path: /home/ubuntu/ros_ws/camera_params.example.yaml
     content: |
-      # Default v4l2_camera settings: 320x240 is the vendor-recommended
-      # resolution for the TB3 Pi camera over Wi-Fi. The camera node isn't
-      # started automatically (it would hold /dev/video0 open and block both
-      # the dashboard's Test Camera button and any camera node your scenario
-      # launches), so start it yourself when you actually want a live stream:
+      # For the onboard Pi camera (a raw Bayer CSI sensor), use camera_ros --
+      # it's the libcamera-backed driver, which is what actually knows how to
+      # configure the sensor and run frames through the ISP for demosaicing:
+      #   ros2 run camera_ros camera_node
+      # v4l2_camera works too, but only for a plain USB/UVC webcam (one that
+      # already outputs ready-to-use YUYV/MJPEG); it can't drive the CSI
+      # sensor's raw Bayer pipeline. If you have a USB webcam instead, this
+      # image_size param file applies there:
       #   ros2 run v4l2_camera v4l2_camera_node --ros-args --params-file camera_params.example.yaml
-      # The /camera/image_raw/compressed topic is published automatically
-      # alongside the raw one once compressed_image_transport is installed.
+      # Nothing starts a camera node automatically -- it would hold the
+      # device open and block both the dashboard's Test Camera button and any
+      # camera node your scenario launches -- so start one yourself when you
+      # want a live stream. The /camera/image_raw/compressed topic is
+      # published automatically alongside the raw one once
+      # compressed_image_transport is installed.
       /**:
         ros__parameters:
           image_size: [320, 240]
@@ -670,11 +683,11 @@ wget -qO /tmp/turtlebot4_setup.sh https://raw.githubusercontent.com/turtlebot/tu
 bash /tmp/turtlebot4_setup.sh
 
 # Cyclone DDS is the fleet-wide default RMW; install it alongside whatever
-# turtlebot4_setup.sh already configured. Also make sure a camera driver is
-# present so the dashboard's camera test and any camera-using scenario work
-# out of the box: fswebcam for the raw snapshot test, v4l2_camera for a real
-# ROS image topic.
-apt-get install -y ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins ros-%s-v4l2-camera fswebcam
+# turtlebot4_setup.sh already configured. v4l2_camera provides both the
+# dashboard's camera test and a real ROS image topic for scenarios -- both go
+# through ROS rather than a separate direct-V4L2 tool, since the Pi's
+# libcamera stack doesn't expose a plain /dev/video0.
+apt-get install -y ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins ros-%s-v4l2-camera
 
 # Cleanup
 rm -f /tmp/turtlebot4_setup.sh /tmp/install.sh
@@ -705,7 +718,7 @@ if ! apt-get install -y --allow-downgrades libzstd1=1.5.5+dfsg2-2build1 libzstd-
     echo "warning: could not pin libzstd versions; continuing with the standard dependency resolution"
 fi
 apt-get install -y --fix-broken
-apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver ros-%s-slam-toolbox ros-%s-navigation2 ros-%s-nav2-bringup ros-%s-cartographer-ros ros-%s-teleop-twist-keyboard ros-%s-teleop-twist-joy ros-%s-joy ros-%s-robot-state-publisher ros-%s-joint-state-publisher ros-%s-tf2-tools ros-%s-laser-geometry ros-%s-diagnostic-updater ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins ros-%s-v4l2-camera fswebcam python3-argcomplete libboost-system-dev libudev-dev libtinyxml2-dev pkg-config build-essential git python3-colcon-common-extensions
+apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver ros-%s-slam-toolbox ros-%s-navigation2 ros-%s-nav2-bringup ros-%s-cartographer-ros ros-%s-teleop-twist-keyboard ros-%s-teleop-twist-joy ros-%s-joy ros-%s-robot-state-publisher ros-%s-joint-state-publisher ros-%s-tf2-tools ros-%s-laser-geometry ros-%s-diagnostic-updater ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins ros-%s-v4l2-camera python3-argcomplete libboost-system-dev libudev-dev libtinyxml2-dev pkg-config build-essential git python3-colcon-common-extensions
 
 # packages.ros.org ships a newer libtinyxml2-dev than Ubuntu jammy's own
 # tinyxml2 runtime, and apt's dependency resolution between the two isn't
@@ -732,6 +745,41 @@ ldconfig
 # above before the colcon build, which needs its own disk for build
 # artifacts. Package lists get re-fetched at the very end if anything else
 # needs apt again, so this is safe mid-script.
+apt-get clean
+
+# camera_ros (libcamera-based ROS camera driver). v4l2_camera can't produce a
+# real image from this Bayer CSI sensor on its own -- it only sets the video
+# node's format, never configures the sensor subdevice pad or routes frames
+# through the ISP for demosaicing, so streaming fails outright and even if it
+# didn't, the output would be raw, uncorrected Bayer data. libcamera is what
+# actually knows how to drive this pipeline; camera_ros just wraps it as a
+# ROS node. Jammy's own libcamera is too old for camera_ros, hence building
+# the Raspberry Pi fork from source.
+apt-get install -y python3-pip python3-jinja2 python3-yaml python3-ply \
+    libboost-dev libgnutls28-dev openssl libtiff-dev pybind11-dev \
+    qtbase5-dev libqt5core5a libqt5widgets5 meson cmake \
+    libglib2.0-dev libgstreamer-plugins-base1.0-dev
+apt-get install -y ros-%s-camera-ros
+
+# Jammy's apt meson (0.61) is too old for this libcamera (needs >= 0.63);
+# pip's meson is newer and installs to /usr/local/bin, which takes PATH
+# precedence over apt's /usr/bin/meson.
+pip3 install --upgrade 'meson>=0.63'
+
+git clone -b v0.5.2 --depth 1 https://github.com/raspberrypi/libcamera.git /tmp/libcamera
+cd /tmp/libcamera
+meson setup build --buildtype=release -Dpipelines=rpi/vc4,rpi/pisp -Dipas=rpi/vc4,rpi/pisp -Dv4l2=true -Dgstreamer=enabled -Dtest=false -Dlc-compliance=disabled -Dcam=disabled -Dqcam=disabled -Ddocumentation=disabled -Dpycamera=enabled
+ninja -C build -j 1
+ninja -C build install -j 1
+cd /
+rm -rf /tmp/libcamera
+
+# ninja install puts libcamera under /usr/local/lib/<triplet>; make it a
+# permanent part of the linker's search path via ld.so.conf.d instead of an
+# env var, so every process (agent, ros.service, an interactive shell) picks
+# it up automatically without each needing to know to export LD_LIBRARY_PATH.
+echo "/usr/local/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)" > /etc/ld.so.conf.d/openrobotfleet-libcamera.conf
+ldconfig
 apt-get clean
 
 # Setup Workspace
@@ -765,7 +813,7 @@ cp /home/ubuntu/ros_ws/src/turtlebot3/turtlebot3_bringup/script/99-turtlebot3-cd
 rm -f /tmp/install.sh
 apt-get clean
 rm -rf /var/lib/apt/lists/*
-`, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro)
+`, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro)
 	}
 	if err := os.WriteFile(filepath.Join(mntDir, "tmp/install.sh"), []byte(installScript), 0755); err != nil {
 		c.failBuild(fmt.Sprintf("write install script failed: %v", err))

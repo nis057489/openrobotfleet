@@ -138,7 +138,7 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 	if workspace == "" {
 		workspace = "/home/ubuntu/ros_ws/src/course"
 	}
-	broker := agentBrokerURL()
+	broker := c.agentBrokerURL(ctx)
 
 	var wg sync.WaitGroup
 	for _, id := range req.RobotIDs {

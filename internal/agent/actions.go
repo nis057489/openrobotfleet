@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -485,16 +486,75 @@ func blinkPiLED(pattern string, duration int) {
 	}()
 }
 
-// HandleCaptureImage takes a photo and uploads it.
+// snapshotGrabScript starts a rclpy node, waits for a single frame on
+// /camera/image_raw/compressed, and writes it straight to disk. A
+// CompressedImage message in jpeg format already *is* a JPEG byte stream, so
+// no decoding/re-encoding (and no OpenCV/cv_bridge dependency) is needed.
+const snapshotGrabScript = `
+import sys, rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import CompressedImage
+
+class Grab(Node):
+    def __init__(self, path):
+        super().__init__('openrobotfleet_snapshot')
+        self.path = path
+        self.got = False
+        self.create_subscription(CompressedImage, '/camera/image_raw/compressed', self.cb, 1)
+    def cb(self, msg):
+        with open(self.path, 'wb') as f:
+            f.write(bytes(msg.data))
+        self.got = True
+
+rclpy.init()
+node = Grab(sys.argv[1])
+deadline = node.get_clock().now().nanoseconds + 20_000_000_000
+while rclpy.ok() and not node.got and node.get_clock().now().nanoseconds < deadline:
+    rclpy.spin_once(node, timeout_sec=1.0)
+rclpy.shutdown()
+sys.exit(0 if node.got else 1)
+`
+
+// HandleCaptureImage takes a photo via ROS and uploads it. Nothing keeps a
+// camera node running persistently (see the golden image's
+// camera_params.example.yaml), so this starts a short-lived camera_ros node
+// just for the duration of the capture and kills it afterward -- it can't
+// collide with a scenario's own camera usage. camera_ros (libcamera-backed),
+// not v4l2_camera, because the TB3 Pi camera is a raw Bayer CSI sensor:
+// v4l2_camera only talks to the plain V4L2 video node and never configures
+// the sensor's media-controller pad or routes frames through the ISP for
+// demosaicing, so it can't stream at all, let alone produce a real color
+// image. libcamera (via camera_ros) is what actually drives that pipeline.
 func HandleCaptureImage(cfg Config, data CaptureImageData) error {
 	log.Printf("[agent] capturing image")
 	tmpPath := "/tmp/snapshot.jpg"
 
-	// Try fswebcam first
-	if out, err := runCmd(defaultCmdTimeout, "fswebcam", "-r", "640x480", "--jpeg", "85", "-D", "1", tmpPath); err != nil {
-		log.Printf("[agent] fswebcam failed: %v: %s", err, string(out))
-		// Fallback: create a dummy image or fail?
-		// Let's fail for now, or maybe try a different tool if needed.
+	// format:=RGB888 is required: camera_ros's auto-selected default (NV21)
+	// produces an empty compressed_image_transport payload (confirmed by
+	// testing -- the topic publishes, but msg.data is zero-length), since
+	// the JPEG encoder expects a standard RGB/BGR/mono encoding.
+	//
+	// Wrapped in `timeout` (not just our own deferred Kill/Wait below) so the
+	// camera node is guaranteed to release the device even if the agent
+	// process itself dies or gets restarted mid-capture -- observed in
+	// practice during development: an agent restart orphaned a camera child
+	// process, which then held /dev/video0 open indefinitely and blocked
+	// every capture after it until something manually killed it.
+	camCmd := exec.Command("timeout", "--kill-after=5s", "30s",
+		"ros2", "run", "camera_ros", "camera_node", "--ros-args",
+		"-p", "format:=RGB888", "-p", "width:=640", "-p", "height:=480")
+	if err := camCmd.Start(); err != nil {
+		return fmt.Errorf("failed to start camera node: %w", err)
+	}
+	defer func() {
+		if camCmd.Process != nil {
+			_ = camCmd.Process.Kill()
+			_ = camCmd.Wait()
+		}
+	}()
+
+	if out, err := runCmd(25*time.Second, "python3", "-c", snapshotGrabScript, tmpPath); err != nil {
+		log.Printf("[agent] camera capture failed: %v: %s", err, string(out))
 		return fmt.Errorf("capture failed: %v", err)
 	}
 	defer os.Remove(tmpPath)
@@ -523,14 +583,24 @@ func HandleCaptureImage(cfg Config, data CaptureImageData) error {
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	// The controller is frequently reached through a self-signed fallback
+	// cert (e.g. Traefik's "localhost" router); the browser's own TLS
+	// exception doesn't extend to the agent's separate HTTP client, so
+	// verification has to be skipped here or every upload fails with a
+	// certificate error.
+	client := &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
+		log.Printf("[agent] image upload request failed: %v", err)
 		return fmt.Errorf("upload failed: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		log.Printf("[agent] image upload rejected: %s", resp.Status)
 		return fmt.Errorf("upload returned status: %s", resp.Status)
 	}
 

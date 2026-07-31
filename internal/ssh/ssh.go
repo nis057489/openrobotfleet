@@ -92,6 +92,7 @@ func InstallAgent(h HostSpec, cfg agent.Config, agentBinary []byte) error {
 	}
 	files := []remoteFile{
 		{dst: "/usr/local/bin/openrobotfleet-agent", mode: 0o755, data: agentBinary},
+		{dst: "/usr/local/bin/openrobotfleet-agent-start", mode: 0o755, data: []byte(agentStartScript)},
 		{dst: "/etc/openrobotfleet-agent/config.yaml", mode: 0o644, data: cfgBytes},
 		{dst: "/etc/systemd/system/openrobotfleet-agent.service", mode: 0o644, data: []byte(systemdUnit)},
 	}
@@ -185,14 +186,30 @@ func runRemote(client *ssh.Client, script, sudoPassword string, useSudo bool) er
 	return nil
 }
 
+// agentStartScript and systemdUnit must stay in sync with the golden image's
+// equivalent write_files entries (internal/controller/golden_image.go,
+// "openrobotfleet-agent-start" / the ExecStart unit in userDataTemplate).
+// Without sourcing ros_env.sh, every ros2 command the agent runs (test_drive,
+// identify, capture_image's camera node) ends up on the default
+// ROS_DOMAIN_ID/RMW instead of whatever domain this robot's Group assigned
+// it, silently disconnected from the rest of its own ROS graph.
+const agentStartScript = `#!/bin/bash
+for setup in /opt/ros/*/setup.bash; do
+  [ -f "$setup" ] && source "$setup" && break
+done
+[ -f /etc/openrobotfleet-agent/ros_env.sh ] && source /etc/openrobotfleet-agent/ros_env.sh
+exec /usr/local/bin/openrobotfleet-agent
+`
+
 const systemdUnit = `[Unit]
 Description=OpenRobot Agent
-After=network-online.target
+After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/openrobotfleet-agent
-Environment=AGENT_CONFIG_PATH=/etc/openrobotfleet-agent/config.yaml
+ExecStart=/usr/local/bin/openrobotfleet-agent-start
 Restart=always
+User=root
+Environment=AGENT_CONFIG_PATH=/etc/openrobotfleet-agent/config.yaml
 
 [Install]
 WantedBy=multi-user.target
