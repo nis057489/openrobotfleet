@@ -1394,7 +1394,21 @@ rm -rf /tmp/libcamera
 # env var, so every process (agent, ros.service, an interactive shell) picks
 # it up automatically without each needing to know to export LD_LIBRARY_PATH.
 echo "/usr/local/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)" > /etc/ld.so.conf.d/openrobotfleet-libcamera.conf
-ldconfig
+
+# ldconfig has been seen segfaulting here with "qemu: uncaught target
+# signal 11" -- a known qemu-user-static flakiness under aarch64 emulation,
+# not anything wrong with the cache it's building. ldconfig is idempotent,
+# so just retry it a couple of times before giving up.
+for attempt in 1 2 3; do
+    if ldconfig; then
+        break
+    elif [ "$attempt" = 3 ]; then
+        echo "ldconfig segfaulted 3 times under qemu; giving up"
+        exit 1
+    else
+        echo "ldconfig failed (qemu-user flakiness), retrying ($attempt/3)..."
+    fi
+done
 apt-get clean
 `, rosDistro)
 }
