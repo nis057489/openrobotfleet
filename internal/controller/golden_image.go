@@ -452,7 +452,14 @@ final_message: "OpenRobot setup complete. Ready to roll!"
 // there is no remote recovery from a Pi that won't boot, so a broken or
 // missing overlay device must never be treated as fatal.
 const overlayInstallScript = `
+set -e
+export DEBIAN_FRONTEND=noninteractive
+
 # --- OpenWrt-style overlay root + factory reset ---
+# This runs as its own chroot stage (see runChrootStage), separate from the
+# workspace-build stage whose cleanup wipes /var/lib/apt/lists -- so the
+# package cache here is empty until apt-get update repopulates it.
+apt-get update
 apt-get install -y cloud-initramfs-tools
 
 cat <<'OVERLAYEOF' > /etc/overlayroot.conf
