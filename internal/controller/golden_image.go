@@ -985,8 +985,8 @@ func (c *Controller) runBuild() {
 	}
 
 	// 10. Install ROS 2 & Agent, staged so a failure can resume from the
-	// last completed stage instead of redoing the whole 20-30 minute chroot.
-	c.updateBuildProgress("Installing ROS 2 and Agent (this takes 20-30 mins)...", 60)
+	// last completed stage instead of redoing the whole hour-long chroot.
+	c.updateBuildProgress("Installing ROS 2 and Agent (this takes about an hour)...", 60)
 
 	// Copy Agent Binary (assuming it's in current dir or path)
 	// We are running in /app, agent binary is ./agent (from Dockerfile)
@@ -1120,7 +1120,7 @@ func (c *Controller) failBuild(msg string) {
 }
 
 // buildStage is one independently-runnable chroot step of the install
-// process. Splitting the install into stages (instead of one 20-30 minute
+// process. Splitting the install into stages (instead of one hour long
 // script) lets a failed build resume from the last completed stage instead
 // of starting over -- see runBuild's checkpoint handling.
 type buildStage struct {
