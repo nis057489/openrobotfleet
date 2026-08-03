@@ -1140,16 +1140,23 @@ func buildStages(cfg *db.GoldenImageConfig) []buildStage {
 			buildStage{"ros-extras", tb4ExtrasStageScript(cfg)},
 		)
 	} else {
-		stages = append(stages,
-			buildStage{"ros-core", tb3CoreStageScript(cfg)},
-			buildStage{"camera-build", tb3CameraStageScript(cfg)},
-			buildStage{"workspace-build", tb3WorkspaceStageScript(cfg)},
-		)
+		stages = append(stages, buildStage{"ros-core", tb3CoreStageScript(cfg)})
+		if featureEnabled(cfg.CameraEnabled) {
+			stages = append(stages, buildStage{"camera-build", tb3CameraStageScript(cfg)})
+		}
+		stages = append(stages, buildStage{"workspace-build", tb3WorkspaceStageScript(cfg)})
 	}
 	if cfg.OverlayEnabled {
 		stages = append(stages, buildStage{"overlay", overlayInstallScript})
 	}
 	return stages
+}
+
+// featureEnabled treats a nil toggle (any config saved before optional
+// feature flags existed) as enabled, so existing golden image configs keep
+// building with the full package set they always had.
+func featureEnabled(v *bool) bool {
+	return v == nil || *v
 }
 
 func rosDistroFor(cfg *db.GoldenImageConfig) string {
@@ -1205,8 +1212,38 @@ rm -rf /var/lib/apt/lists/*
 `, branch, branch, branch, branch)
 }
 
+// tb3CorePackages builds the apt package list for the ros-core stage,
+// gating the optional Navigation2/SLAM, teleop, and camera package groups
+// behind their respective config toggles so a "quick build" can skip
+// packages the student doesn't need (and the disk/time they cost).
+func tb3CorePackages(cfg *db.GoldenImageConfig, rosDistro string) string {
+	pkgs := []string{
+		"ros-base", "turtlebot3-msgs", "dynamixel-sdk", "xacro", "hls-lfcd-lds-driver",
+		"robot-state-publisher", "joint-state-publisher", "tf2-tools", "laser-geometry",
+		"diagnostic-updater", "rmw-cyclonedds-cpp",
+	}
+	if featureEnabled(cfg.NavigationEnabled) {
+		pkgs = append(pkgs, "slam-toolbox", "navigation2", "nav2-bringup", "cartographer-ros")
+	}
+	if featureEnabled(cfg.TeleopEnabled) {
+		pkgs = append(pkgs, "teleop-twist-keyboard", "teleop-twist-joy", "joy")
+	}
+	if featureEnabled(cfg.CameraEnabled) {
+		pkgs = append(pkgs, "compressed-image-transport", "image-transport-plugins", "v4l2-camera")
+	}
+
+	rosPkgs := make([]string, len(pkgs))
+	for i, p := range pkgs {
+		rosPkgs[i] = fmt.Sprintf("ros-%s-%s", rosDistro, p)
+	}
+	rosPkgs = append(rosPkgs, "python3-argcomplete", "libboost-system-dev", "libudev-dev",
+		"libtinyxml2-dev", "pkg-config", "build-essential", "git", "python3-colcon-common-extensions")
+	return strings.Join(rosPkgs, " ")
+}
+
 func tb3CoreStageScript(cfg *db.GoldenImageConfig) string {
 	rosDistro := rosDistroFor(cfg)
+	corePackages := tb3CorePackages(cfg, rosDistro)
 	return fmt.Sprintf(`#!/bin/bash
 set -e
 export DEBIAN_FRONTEND=noninteractive
@@ -1225,7 +1262,7 @@ if ! apt-get install -y --allow-downgrades libzstd1=1.5.5+dfsg2-2build1 libzstd-
     echo "warning: could not pin libzstd versions; continuing with the standard dependency resolution"
 fi
 apt-get install -y --fix-broken
-apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver ros-%s-slam-toolbox ros-%s-navigation2 ros-%s-nav2-bringup ros-%s-cartographer-ros ros-%s-teleop-twist-keyboard ros-%s-teleop-twist-joy ros-%s-joy ros-%s-robot-state-publisher ros-%s-joint-state-publisher ros-%s-tf2-tools ros-%s-laser-geometry ros-%s-diagnostic-updater ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins ros-%s-v4l2-camera python3-argcomplete libboost-system-dev libudev-dev libtinyxml2-dev pkg-config build-essential git python3-colcon-common-extensions
+apt-get install -y %s
 
 # packages.ros.org ships a newer libtinyxml2-dev than Ubuntu jammy's own
 # tinyxml2 runtime, and apt's dependency resolution between the two isn't
@@ -1304,7 +1341,7 @@ echo "--- end dynamixel_sdk cmake probe ---"
 # artifacts. Package lists get re-fetched at the very end if anything else
 # needs apt again, so this is safe mid-script.
 apt-get clean
-`, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro)
+`, corePackages, rosDistro, rosDistro, rosDistro, rosDistro)
 }
 
 func tb3CameraStageScript(cfg *db.GoldenImageConfig) string {
@@ -1379,7 +1416,29 @@ rm -rf turtlebot3/turtlebot3_cartographer turtlebot3/turtlebot3_navigation2
 
 cd /home/ubuntu/ros_ws
 source /opt/ros/%s/setup.bash
-colcon build --symlink-install --parallel-workers 1
+
+# colcon build has been seen failing on turtlebot3_node with the same
+# "dynamixel_sdk exports the library ... which couldn't be found" CMake
+# error diagnosed above, even though an isolated CMake probe against the
+# same library resolves fine. A retry of the plain colcon build reproduces
+# the identical failure in a fraction of the time, which rules out simple
+# environmental flakiness -- something in the real colcon-driven configure
+# differs from the isolated probe. Since the chroot (and this build
+# directory) gets torn down the moment the stage fails, capture the actual
+# CMake trace and cache state for turtlebot3_node's configure right here,
+# before that happens, instead of guessing further.
+if ! colcon build --symlink-install --parallel-workers 1; then
+    echo "colcon build failed; capturing turtlebot3_node CMake diagnostics before the chroot is torn down..."
+    NODE_BUILD_DIR=/home/ubuntu/ros_ws/build/turtlebot3_node
+    echo "--- turtlebot3_node CMakeCache.txt (dynamixel_sdk entries) ---"
+    grep -i dynamixel "$NODE_BUILD_DIR/CMakeCache.txt" 2>&1 || true
+    echo "--- turtlebot3_node CMakeError.log (tail) ---"
+    tail -n 100 "$NODE_BUILD_DIR/CMakeFiles/CMakeError.log" 2>&1 || true
+    echo "--- re-running turtlebot3_node configure with --trace-expand ---"
+    ( cd "$NODE_BUILD_DIR" && cmake --trace-expand -S /home/ubuntu/ros_ws/src/turtlebot3/turtlebot3_node -B . 2>&1 | grep -B5 -A20 "dynamixel_sdk' exports the library" ) || true
+    echo "--- end turtlebot3_node CMake diagnostics ---"
+    exit 1
+fi
 chown -R ubuntu:ubuntu /home/ubuntu/ros_ws
 chown ubuntu:ubuntu /home/ubuntu
 mkdir -p /home/ubuntu/.ros

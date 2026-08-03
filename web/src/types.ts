@@ -110,4 +110,7 @@ export interface GoldenImageConfig {
     ros_version?: string;
     ubuntu_password?: string;
     overlay_enabled?: boolean;
+    navigation_enabled?: boolean;
+    camera_enabled?: boolean;
+    teleop_enabled?: boolean;
 }

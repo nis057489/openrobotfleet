@@ -95,6 +95,13 @@ type GoldenImageConfig struct {
 	// overlay. Advanced/opt-in: defaults false so existing single-partition
 	// behavior is unchanged for configs saved before this field existed.
 	OverlayEnabled bool `json:"overlay_enabled"`
+	// Optional feature toggles (TB3 only). Pointers so that a nil value --
+	// i.e. any config saved before these fields existed -- is treated as
+	// "included", preserving prior behavior instead of silently stripping
+	// packages out of existing configs.
+	NavigationEnabled *bool `json:"navigation_enabled,omitempty"`
+	CameraEnabled     *bool `json:"camera_enabled,omitempty"`
+	TeleopEnabled     *bool `json:"teleop_enabled,omitempty"`
 }
 
 type LoginEvent struct {

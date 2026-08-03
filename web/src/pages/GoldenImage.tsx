@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { buildGoldenImage, getBuildStatus, getGoldenImageConfig, saveGoldenImageConfig, getSystemConfig, getGoldenImageBuildCache, clearGoldenImageBuildCache, BuildCacheEntry } from "../api";
 import { GoldenImageConfig } from "../types";
-import { Save, Download, Wifi, Server, Radio, Hash, HardDrive, ChevronDown, ChevronRight, Eye, EyeOff, History } from "lucide-react";
+import { Save, Download, Wifi, Server, Radio, Hash, HardDrive, ChevronDown, ChevronRight, Eye, EyeOff, History, Package } from "lucide-react";
 import { useNotification } from "../contexts/NotificationContext";
 import { useWebSocket, WSEvent } from "../contexts/WebSocketContext";
 
@@ -21,7 +21,10 @@ export function GoldenImage() {
         robot_model: "TB3",
         ros_version: "Humble",
         ubuntu_password: "",
-        overlay_enabled: false
+        overlay_enabled: false,
+        navigation_enabled: true,
+        camera_enabled: true,
+        teleop_enabled: true
     });
     const [showUbuntuPassword, setShowUbuntuPassword] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -51,7 +54,10 @@ export function GoldenImage() {
                     setConfig({
                         ...data.config,
                         robot_model: data.config.robot_model || "TB3",
-                        ros_version: data.config.ros_version || "Humble"
+                        ros_version: data.config.ros_version || "Humble",
+                        navigation_enabled: data.config.navigation_enabled ?? true,
+                        camera_enabled: data.config.camera_enabled ?? true,
+                        teleop_enabled: data.config.teleop_enabled ?? true
                     });
                 }
             })
@@ -309,6 +315,66 @@ export function GoldenImage() {
                                     />
                                 </div>
                             </div>
+                        </div>
+                        {/* Feature Packages */}
+                        <div className="col-span-2">
+                            <h4 className="text-sm font-medium text-gray-900 mb-1 flex items-center gap-2">
+                                <Package size={16} /> {t("goldenImage.featuresTitle")}
+                            </h4>
+                            <p className="text-xs text-gray-500 mb-4">
+                                {t("goldenImage.featuresHelp")}
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <label className="flex items-start gap-2 p-3 border border-gray-200 rounded-lg bg-gray-50 opacity-75">
+                                    <input type="checkbox" checked disabled className="mt-1" />
+                                    <span>
+                                        <span className="block text-sm font-medium text-gray-900">{t("goldenImage.featureBase")}</span>
+                                        <span className="block text-xs text-gray-500 mt-1">{t("goldenImage.featureBaseHelp")}</span>
+                                    </span>
+                                </label>
+                                <label className={`flex items-start gap-2 p-3 border rounded-lg ${config.robot_model === "TB4" ? "border-gray-200 bg-gray-50 opacity-50" : "border-gray-200"}`}>
+                                    <input
+                                        type="checkbox"
+                                        checked={config.navigation_enabled ?? true}
+                                        disabled={config.robot_model === "TB4"}
+                                        onChange={e => setConfig({ ...config, navigation_enabled: e.target.checked })}
+                                        className="mt-1"
+                                    />
+                                    <span>
+                                        <span className="block text-sm font-medium text-gray-900">{t("goldenImage.featureNav")}</span>
+                                        <span className="block text-xs text-gray-500 mt-1">{t("goldenImage.featureNavHelp")}</span>
+                                    </span>
+                                </label>
+                                <label className={`flex items-start gap-2 p-3 border rounded-lg ${config.robot_model === "TB4" ? "border-gray-200 bg-gray-50 opacity-50" : "border-gray-200"}`}>
+                                    <input
+                                        type="checkbox"
+                                        checked={config.camera_enabled ?? true}
+                                        disabled={config.robot_model === "TB4"}
+                                        onChange={e => setConfig({ ...config, camera_enabled: e.target.checked })}
+                                        className="mt-1"
+                                    />
+                                    <span>
+                                        <span className="block text-sm font-medium text-gray-900">{t("goldenImage.featureCamera")}</span>
+                                        <span className="block text-xs text-gray-500 mt-1">{t("goldenImage.featureCameraHelp")}</span>
+                                    </span>
+                                </label>
+                                <label className={`flex items-start gap-2 p-3 border rounded-lg ${config.robot_model === "TB4" ? "border-gray-200 bg-gray-50 opacity-50" : "border-gray-200"}`}>
+                                    <input
+                                        type="checkbox"
+                                        checked={config.teleop_enabled ?? true}
+                                        disabled={config.robot_model === "TB4"}
+                                        onChange={e => setConfig({ ...config, teleop_enabled: e.target.checked })}
+                                        className="mt-1"
+                                    />
+                                    <span>
+                                        <span className="block text-sm font-medium text-gray-900">{t("goldenImage.featureTeleop")}</span>
+                                        <span className="block text-xs text-gray-500 mt-1">{t("goldenImage.featureTeleopHelp")}</span>
+                                    </span>
+                                </label>
+                            </div>
+                            {config.robot_model === "TB4" && (
+                                <p className="text-xs text-gray-400 mt-2">{t("goldenImage.featuresTb4Note")}</p>
+                            )}
                         </div>
                     </div>
 
