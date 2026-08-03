@@ -251,6 +251,10 @@ func (s *Server) handleRobotSubroutes(w http.ResponseWriter, r *http.Request) {
 		s.Controller.HandleTerminal(w, r)
 		return
 	}
+	if strings.HasSuffix(trimmed, "/logs") {
+		s.Controller.HandleLogs(w, r)
+		return
+	}
 	if strings.HasSuffix(trimmed, "/upload") {
 		if r.Method != http.MethodPost {
 			methodNotAllowed(w)

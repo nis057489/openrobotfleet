@@ -5,6 +5,7 @@ import { getRobot, sendCommand, updateRobotTags, getSystemConfig, deleteRobot, u
 import { Robot } from "../types";
 import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Tag, Plus, X, Camera, Play, Lightbulb, Trash2, Edit2, Network, Copy, Check, RotateCcw, AlertTriangle, Loader2 } from "lucide-react";
 import { Terminal as TerminalView } from "../components/Terminal";
+import { LogsView } from "../components/LogsView";
 import { useNotification } from "../contexts/NotificationContext";
 import { useWebSocket, WSEvent } from "../contexts/WebSocketContext";
 
@@ -579,15 +580,8 @@ export function RobotDetail() {
                         </div>
                     </div>
                 ) : (
-                    <div className="bg-black rounded-xl p-6 font-mono text-sm text-gray-300 min-h-[400px]">
-                        <div className="flex items-center gap-2 text-gray-500 mb-4 border-b border-gray-800 pb-2">
-                            <Terminal size={16} />
-                            <span>/var/log/syslog</span>
-                        </div>
-                        <p>{t("robotDetail.logsNotImplemented")}</p>
-                        <p className="text-gray-600 mt-2">
-                            {t("robotDetail.logsHelp")}
-                        </p>
+                    <div className="h-[600px] bg-black rounded-xl overflow-hidden border border-gray-800">
+                        <LogsView robotId={robot.id} />
                     </div>
                 )
             ) : (
