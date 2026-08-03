@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getRobot, sendCommand, updateRobotTags, getSystemConfig, deleteRobot, updateRobotName, getInstallDefaults } from "../api";
 import { Robot } from "../types";
-import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Tag, Plus, X, Camera, Play, Lightbulb, Trash2, Edit2, Network, Copy, Check } from "lucide-react";
+import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Tag, Plus, X, Camera, Play, Lightbulb, Trash2, Edit2, Network, Copy, Check, RotateCcw, AlertTriangle, Loader2 } from "lucide-react";
 import { Terminal as TerminalView } from "../components/Terminal";
 import { useNotification } from "../contexts/NotificationContext";
 import { useWebSocket, WSEvent } from "../contexts/WebSocketContext";
@@ -37,6 +37,11 @@ export function RobotDetail() {
     // Rename state
     const [isEditingName, setIsEditingName] = useState(false);
     const [newName, setNewName] = useState("");
+
+    // Factory reset state
+    const [showFactoryResetModal, setShowFactoryResetModal] = useState(false);
+    const [factoryResetConfirmText, setFactoryResetConfirmText] = useState("");
+    const [factoryResetLoading, setFactoryResetLoading] = useState(false);
 
     useEffect(() => {
         if (location.state && (location.state as any).tab === 'logs') {
@@ -181,6 +186,21 @@ export function RobotDetail() {
         } catch (err) {
             console.error("Failed to delete robot", err);
             alert(t("robotDetail.deleteFailed"));
+        }
+    };
+
+    const handleFactoryReset = async () => {
+        if (!robot) return;
+        setFactoryResetLoading(true);
+        try {
+            await sendCommand(robot.id, { type: "factory_reset", data: {} });
+            success(t("robotDetail.factoryResetSent"));
+            setShowFactoryResetModal(false);
+            setFactoryResetConfirmText("");
+        } catch (err) {
+            error(err instanceof Error ? err.message : t("robotDetail.commandFailed"));
+        } finally {
+            setFactoryResetLoading(false);
         }
     };
 
@@ -368,6 +388,16 @@ export function RobotDetail() {
                                     <Power size={16} /> {t("robotDetail.rebootSystem")}
                                 </div>
                                 <p className="text-xs text-gray-500 group-hover:text-red-600">{t("robotDetail.rebootSystemDesc")}</p>
+                            </button>
+                            <button
+                                onClick={() => setShowFactoryResetModal(true)}
+                                disabled={cmdLoading}
+                                className="p-3 border border-gray-200 rounded-lg hover:bg-red-50 hover:border-red-100 text-left transition-colors group"
+                            >
+                                <div className="flex items-center gap-2 font-medium text-gray-700 group-hover:text-red-700 mb-1">
+                                    <RotateCcw size={16} /> {t("robotDetail.factoryReset")}
+                                </div>
+                                <p className="text-xs text-gray-500 group-hover:text-red-600">{t("robotDetail.factoryResetDesc")}</p>
                             </button>
                             <button
                                 onClick={() => navigate("/install", { state: { ip: robot.ip, name: robot.name } })}
@@ -574,6 +604,61 @@ export function RobotDetail() {
                         <TerminalView robotId={robot.id} />
                     </div>
                 )
+            )}
+
+            {showFactoryResetModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-lg w-full overflow-hidden flex flex-col">
+                        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                            <h2 className="text-xl font-bold text-gray-900">{t("robotDetail.factoryReset")}</h2>
+                            <button
+                                onClick={() => { setShowFactoryResetModal(false); setFactoryResetConfirmText(""); }}
+                                className="text-gray-400 hover:text-gray-600"
+                            >
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="p-4 rounded-lg border bg-red-50 border-red-200">
+                                <div className="flex items-start gap-3">
+                                    <AlertTriangle className="shrink-0 text-red-600" size={20} />
+                                    <div>
+                                        <h3 className="font-medium text-red-900">{t("robotDetail.factoryReset")}</h3>
+                                        <p className="text-sm mt-1 text-red-700">{t("robotDetail.factoryResetModalDesc")}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Type <span className="font-mono font-bold text-red-600">RESET</span> to confirm
+                                </label>
+                                <input
+                                    type="text"
+                                    value={factoryResetConfirmText}
+                                    onChange={e => setFactoryResetConfirmText(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                    placeholder="RESET"
+                                />
+                            </div>
+                            <div className="flex gap-3 justify-end pt-2">
+                                <button
+                                    onClick={() => { setShowFactoryResetModal(false); setFactoryResetConfirmText(""); }}
+                                    className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                >
+                                    {t("common.cancel")}
+                                </button>
+                                <button
+                                    onClick={handleFactoryReset}
+                                    disabled={factoryResetLoading || factoryResetConfirmText !== "RESET"}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-white transition-colors bg-red-600 hover:bg-red-700 disabled:bg-red-300"
+                                >
+                                    {factoryResetLoading && <Loader2 className="animate-spin" size={18} />}
+                                    {t("common.confirm")}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

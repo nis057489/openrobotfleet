@@ -270,6 +270,8 @@ func (e *AgentEngine) mapCommandToAction(cmd Command) func() error {
 		return func() error { return HandleIdentify(cfg, payload) }
 	case "reboot":
 		return func() error { return HandleReboot(cfg) }
+	case "factory_reset":
+		return func() error { return HandleFactoryReset(cfg) }
 	case "batch":
 		var payload BatchData
 		if err := json.Unmarshal(cmd.Data, &payload); err != nil {

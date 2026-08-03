@@ -28,6 +28,7 @@ type semesterRequest struct {
 	RepoConfig     agent.UpdateRepoData `json:"repo_config"`
 	ApplyScenarios bool                 `json:"apply_scenarios"`
 	ScenarioIDs    []int64              `json:"scenario_ids"`
+	FactoryReset   bool                 `json:"factory_reset"`
 
 	// Internal
 	ScenarioConfigs []agent.UpdateRepoData `json:"-"`
@@ -417,6 +418,24 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 					log.Printf("semester: failed to queue capture_image for %s: %v", robot.Name, err)
 					batchStatus.Lock()
 					batchStatus.Errors[id] = "failed to queue capture_image"
+					batchStatus.Robots[id] = "error"
+					batchStatus.Completed++
+					batchStatus.Unlock()
+					return
+				}
+			}
+
+			if req.FactoryReset {
+				log.Printf("semester: requesting factory reset for %s", robot.Name)
+				batchStatus.Lock()
+				batchStatus.Robots[id] = "factory_reset"
+				batchStatus.Unlock()
+
+				cmd := agent.Command{Type: "factory_reset", Data: []byte("{}")}
+				if _, err := c.queueRobotCommand(ctx, robot, cmd); err != nil {
+					log.Printf("semester: failed to queue factory_reset for %s: %v", robot.Name, err)
+					batchStatus.Lock()
+					batchStatus.Errors[id] = "failed to queue factory_reset"
 					batchStatus.Robots[id] = "error"
 					batchStatus.Completed++
 					batchStatus.Unlock()

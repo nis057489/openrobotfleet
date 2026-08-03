@@ -20,7 +20,8 @@ export function GoldenImage() {
         ros_domain_id: 30,
         robot_model: "TB3",
         ros_version: "Humble",
-        ubuntu_password: ""
+        ubuntu_password: "",
+        overlay_enabled: false
     });
     const [showUbuntuPassword, setShowUbuntuPassword] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -281,6 +282,25 @@ export function GoldenImage() {
                                     />
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    {/* Advanced: overlay root + factory reset */}
+                    <div className="border-t border-gray-100 pt-6">
+                        <h4 className="text-sm font-medium text-gray-900 mb-4">{t("goldenImage.advanced")}</h4>
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                            <label className="flex items-start gap-2">
+                                <input
+                                    type="checkbox"
+                                    checked={!!config.overlay_enabled}
+                                    onChange={e => setConfig({ ...config, overlay_enabled: e.target.checked })}
+                                    className="mt-1"
+                                />
+                                <span>
+                                    <span className="block text-sm font-medium text-amber-900">{t("goldenImage.overlayEnabled")}</span>
+                                    <span className="block text-xs text-amber-800 mt-1">{t("goldenImage.overlayEnabledHelp")}</span>
+                                </span>
+                            </label>
                         </div>
                     </div>
 

@@ -638,6 +638,26 @@ func HandleReboot(cfg Config) error {
 	return nil
 }
 
+// factoryResetFlagPath is where the boot-time overlay wipe-check script
+// (00-factory-reset-check, only present on golden images built with the
+// overlay toggle enabled) looks for a pending reset request. Writing this
+// file is harmless on any other image: nothing reads it, so it's just a
+// stray file followed by an ordinary reboot.
+const factoryResetFlagPath = "/boot/firmware/factory-reset-requested"
+
+// HandleFactoryReset arms the wipe-on-next-boot flag and reboots. The actual
+// wipe happens in initramfs before the overlay is mounted; this only ever
+// requests it.
+func HandleFactoryReset(cfg Config) error {
+	log.Printf("[agent] factory reset requested, arming wipe-on-next-boot flag")
+	if err := os.WriteFile(factoryResetFlagPath, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0644); err != nil {
+		return fmt.Errorf("failed to arm factory reset flag: %w", err)
+	}
+	exec.Command("sync").Run()
+	log.Printf("[agent] factory reset flag armed, rebooting to apply")
+	return HandleReboot(cfg)
+}
+
 func destinationPath(workspace, provided, repo string) string {
 	switch {
 	case provided != "" && filepath.IsAbs(provided):

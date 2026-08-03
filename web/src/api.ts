@@ -201,6 +201,7 @@ export interface SemesterRequest {
   };
   apply_scenarios?: boolean;
   scenario_ids?: number[];
+  factory_reset?: boolean;
 }
 
 export function startSemesterBatch(req: SemesterRequest): Promise<void> {

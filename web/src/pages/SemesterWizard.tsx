@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getRobots, getInstallDefaults, startSemesterBatch, getSemesterStatus, getScenarios } from "../api";
 import { Robot, InstallConfig, SemesterStatus, Scenario } from "../types";
-import { Check, RefreshCw, GitBranch, Trash2, AlertTriangle, ArrowRight, Clock, Terminal, XCircle, Activity, FileText } from "lucide-react";
+import { Check, RefreshCw, GitBranch, Trash2, AlertTriangle, ArrowRight, Clock, Terminal, XCircle, Activity, FileText, RotateCcw } from "lucide-react";
 
 export function SemesterWizard() {
     const { t } = useTranslation();
@@ -21,6 +21,7 @@ export function SemesterWizard() {
     const [selectedScenarioIds, setSelectedScenarioIds] = useState<Set<number>>(new Set());
     const [doReinstall, setDoReinstall] = useState(false);
     const [doSelfTest, setDoSelfTest] = useState(false);
+    const [doFactoryReset, setDoFactoryReset] = useState(false);
     const [repoUrl, setRepoUrl] = useState("https://github.com/openrobot-fleet/openrobotfleet-agent.git");
 
     // Global install defaults
@@ -80,7 +81,7 @@ export function SemesterWizard() {
 
     const handleExecute = async () => {
         if (selectedIds.size === 0) return;
-        if (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario) return;
+        if (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario && !doFactoryReset) return;
 
         setExecuting(true);
         try {
@@ -96,7 +97,8 @@ export function SemesterWizard() {
                     path: ""
                 },
                 apply_scenarios: doApplyScenario,
-                scenario_ids: doApplyScenario ? Array.from(selectedScenarioIds) : []
+                scenario_ids: doApplyScenario ? Array.from(selectedScenarioIds) : [],
+                factory_reset: doFactoryReset
             });
             setBatchStarted(true);
         } catch (err) {
@@ -224,14 +226,18 @@ export function SemesterWizard() {
                         <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
 
                             {/* Reset Logs */}
-                            <label className="flex items-start gap-3 cursor-pointer">
+                            <label className={`flex items-start gap-3 ${doFactoryReset ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
                                 <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doResetLogs ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
                                     {doResetLogs && <Check size={14} />}
                                     <input
                                         type="checkbox"
                                         className="hidden"
                                         checked={doResetLogs}
-                                        onChange={e => setDoResetLogs(e.target.checked)}
+                                        disabled={doFactoryReset}
+                                        onChange={e => {
+                                            setDoResetLogs(e.target.checked);
+                                            if (e.target.checked) setDoFactoryReset(false);
+                                        }}
                                     />
                                 </div>
                                 <div>
@@ -245,14 +251,18 @@ export function SemesterWizard() {
                             <hr className="border-gray-100" />
 
                             {/* Run Self Test */}
-                            <label className="flex items-start gap-3 cursor-pointer">
+                            <label className={`flex items-start gap-3 ${doFactoryReset ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
                                 <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doSelfTest ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
                                     {doSelfTest && <Check size={14} />}
                                     <input
                                         type="checkbox"
                                         className="hidden"
                                         checked={doSelfTest}
-                                        onChange={e => setDoSelfTest(e.target.checked)}
+                                        disabled={doFactoryReset}
+                                        onChange={e => {
+                                            setDoSelfTest(e.target.checked);
+                                            if (e.target.checked) setDoFactoryReset(false);
+                                        }}
                                     />
                                 </div>
                                 <div>
@@ -266,16 +276,20 @@ export function SemesterWizard() {
                             <hr className="border-gray-100" />
 
                             {/* Update Repo */}
-                            <label className="flex items-start gap-3 cursor-pointer">
+                            <label className={`flex items-start gap-3 ${doFactoryReset ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
                                 <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doUpdateRepo ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
                                     {doUpdateRepo && <Check size={14} />}
                                     <input
                                         type="checkbox"
                                         className="hidden"
                                         checked={doUpdateRepo}
+                                        disabled={doFactoryReset}
                                         onChange={e => {
                                             setDoUpdateRepo(e.target.checked);
-                                            if (e.target.checked) setDoApplyScenario(false);
+                                            if (e.target.checked) {
+                                                setDoApplyScenario(false);
+                                                setDoFactoryReset(false);
+                                            }
                                         }}
                                     />
                                 </div>
@@ -299,16 +313,20 @@ export function SemesterWizard() {
                             <hr className="border-gray-100" />
 
                             {/* Apply Scenario */}
-                            <label className="flex items-start gap-3 cursor-pointer">
+                            <label className={`flex items-start gap-3 ${doFactoryReset ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
                                 <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doApplyScenario ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
                                     {doApplyScenario && <Check size={14} />}
                                     <input
                                         type="checkbox"
                                         className="hidden"
                                         checked={doApplyScenario}
+                                        disabled={doFactoryReset}
                                         onChange={e => {
                                             setDoApplyScenario(e.target.checked);
-                                            if (e.target.checked) setDoUpdateRepo(false);
+                                            if (e.target.checked) {
+                                                setDoUpdateRepo(false);
+                                                setDoFactoryReset(false);
+                                            }
                                         }}
                                     />
                                 </div>
@@ -346,15 +364,18 @@ export function SemesterWizard() {
                             <hr className="border-gray-100" />
 
                             {/* Reinstall Agent */}
-                            <label className={`flex items-start gap-3 ${isDemoMode ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
+                            <label className={`flex items-start gap-3 ${isDemoMode || doFactoryReset ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
                                 <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doReinstall ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
                                     {doReinstall && <Check size={14} />}
                                     <input
                                         type="checkbox"
                                         className="hidden"
                                         checked={doReinstall}
-                                        disabled={isDemoMode}
-                                        onChange={e => setDoReinstall(e.target.checked)}
+                                        disabled={isDemoMode || doFactoryReset}
+                                        onChange={e => {
+                                            setDoReinstall(e.target.checked);
+                                            if (e.target.checked) setDoFactoryReset(false);
+                                        }}
                                     />
                                 </div>
                                 <div>
@@ -365,15 +386,48 @@ export function SemesterWizard() {
                                     <p className="text-sm text-gray-500">{t("semesterWizard.reinstallAgentDesc")}</p>
                                 </div>
                             </label>
+
+                            <hr className="border-gray-100" />
+
+                            {/* Factory Reset -- destructive, mutually exclusive with everything else */}
+                            <label className="flex items-start gap-3 cursor-pointer">
+                                <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doFactoryReset ? "bg-red-600 border-red-600 text-white" : "border-gray-300"}`}>
+                                    {doFactoryReset && <Check size={14} />}
+                                    <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={doFactoryReset}
+                                        onChange={e => {
+                                            const checked = e.target.checked;
+                                            setDoFactoryReset(checked);
+                                            if (checked) {
+                                                setDoResetLogs(false);
+                                                setDoSelfTest(false);
+                                                setDoUpdateRepo(false);
+                                                setDoApplyScenario(false);
+                                                setDoReinstall(false);
+                                            }
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <div className="font-medium text-red-700 flex items-center gap-2">
+                                        <RotateCcw size={16} /> {t("semesterWizard.factoryReset")}
+                                    </div>
+                                    <p className="text-sm text-gray-500">{t("semesterWizard.factoryResetDesc")}</p>
+                                </div>
+                            </label>
                         </div>
                     </div>
 
                     <button
                         onClick={handleExecute}
-                        disabled={executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario)}
-                        className={`w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 ${executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario)
+                        disabled={executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario && !doFactoryReset)}
+                        className={`w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 ${executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario && !doFactoryReset)
                             ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                            : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+                            : doFactoryReset
+                                ? "bg-red-600 text-white hover:bg-red-700 shadow-sm"
+                                : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
                             }`}
                     >
                         {executing ? (

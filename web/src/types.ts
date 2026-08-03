@@ -109,4 +109,5 @@ export interface GoldenImageConfig {
     robot_model?: string;
     ros_version?: string;
     ubuntu_password?: string;
+    overlay_enabled?: boolean;
 }

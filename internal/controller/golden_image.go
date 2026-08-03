@@ -13,6 +13,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"text/template"
@@ -94,6 +96,16 @@ func (c *Controller) DownloadGoldenImage(w http.ResponseWriter, r *http.Request)
 const userDataTemplate = `#cloud-config
 hostname: openrobot
 manage_etc_hosts: true
+{{if .OverlayEnabled}}
+# Overlay builds partition the disk explicitly at build time (golden root
+# fixed at ~9GiB, remainder is a separate writable overlay partition -- see
+# runBuild's partitioning step). growpart resizing "/" at first boot is
+# incompatible with that fixed layout, so both it and the matching resizefs
+# step are disabled here.
+growpart:
+  mode: "off"
+resize_rootfs: false
+{{end}}
 users:
   - name: ubuntu
     groups: [sudo, dialout, video]
@@ -327,6 +339,119 @@ runcmd:
 final_message: "OpenRobot setup complete. Ready to roll!"
 `
 
+// overlayInstallScript is appended (only when cfg.OverlayEnabled) as the very
+// last step of the chroot install script, after everything else -- including
+// any package upgrades -- has finished, so the initramfs it builds reflects
+// the image's truly final state. It makes the golden root (partition 2)
+// read-only at runtime via overlayroot, backed by a writable overlay on
+// partition 3 (created in runBuild's partitioning step), and installs a
+// fail-safe initramfs hook that wipes just the overlay when a
+// factory-reset-requested flag file is found on the boot partition. Every
+// path through the wipe-check script below falls through to a normal boot --
+// there is no remote recovery from a Pi that won't boot, so a broken or
+// missing overlay device must never be treated as fatal.
+const overlayInstallScript = `
+# --- OpenWrt-style overlay root + factory reset ---
+apt-get install -y cloud-initramfs-tools
+
+cat <<'OVERLAYEOF' > /etc/overlayroot.conf
+overlayroot_cfgdisk="disabled"
+overlayroot="device:dev=LABEL=golden-overlay,recurse=0"
+OVERLAYEOF
+
+# recurse=0 is required on the Raspberry Pi: the default recurse=1 also makes
+# /boot/firmware read-only, which breaks flash-kernel and produces an
+# unbootable image.
+
+mkdir -p /etc/initramfs-tools/hooks
+cat <<'HOOKEOF' > /etc/initramfs-tools/hooks/factory-reset-mkfs
+#!/bin/sh
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case $1 in
+prereqs)
+    prereqs
+    exit 0
+    ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+copy_exec /sbin/mkfs.ext4
+copy_exec /sbin/mke2fs
+copy_exec /sbin/blkid
+
+exit 0
+HOOKEOF
+chmod +x /etc/initramfs-tools/hooks/factory-reset-mkfs
+
+# The "00-" prefix is deliberate: initramfs-tools runs local-premount scripts
+# in lexical order, and the overlay device must be wiped (if a reset was
+# requested) before overlayroot's own script tries to mount it.
+mkdir -p /etc/initramfs-tools/scripts/local-premount
+cat <<'PREMOUNTEOF' > /etc/initramfs-tools/scripts/local-premount/00-factory-reset-check
+#!/bin/sh
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case $1 in
+prereqs)
+    prereqs
+    exit 0
+    ;;
+esac
+
+log() {
+    echo "factory-reset-check: $*" > /dev/kmsg 2>/dev/null || true
+}
+
+# This entire script must never block boot: every path below falls through to
+# "exit 0". A robot with no remote recovery must always come back up.
+BOOT_MNT="/mnt/factory-reset-boot"
+mkdir -p "$BOOT_MNT" 2>/dev/null
+
+BOOT_DEV=$(blkid -L system-boot 2>/dev/null)
+if [ -z "$BOOT_DEV" ]; then
+    BOOT_DEV=$(blkid -t TYPE=vfat -o device 2>/dev/null | head -n1)
+fi
+if [ -z "$BOOT_DEV" ]; then
+    log "no boot partition found, skipping"
+    exit 0
+fi
+
+if ! mount -t vfat -o rw "$BOOT_DEV" "$BOOT_MNT" 2>/dev/null; then
+    log "failed to mount boot partition $BOOT_DEV, skipping"
+    exit 0
+fi
+
+FLAG="$BOOT_MNT/factory-reset-requested"
+if [ ! -f "$FLAG" ]; then
+    umount "$BOOT_MNT" 2>/dev/null
+    exit 0
+fi
+
+log "factory reset flag found, looking for overlay device"
+OVERLAY_DEV=$(blkid -L golden-overlay 2>/dev/null)
+if [ -z "$OVERLAY_DEV" ]; then
+    log "overlay device (LABEL=golden-overlay) not found, leaving flag for retry"
+    umount "$BOOT_MNT" 2>/dev/null
+    exit 0
+fi
+
+log "wiping overlay device $OVERLAY_DEV"
+if mkfs.ext4 -F -L golden-overlay "$OVERLAY_DEV" >/dev/kmsg 2>&1; then
+    log "overlay wiped successfully, clearing flag"
+    rm -f "$FLAG"
+else
+    log "mkfs.ext4 failed, leaving flag for retry"
+fi
+umount "$BOOT_MNT" 2>/dev/null
+exit 0
+PREMOUNTEOF
+chmod +x /etc/initramfs-tools/scripts/local-premount/00-factory-reset-check
+
+update-initramfs -u -k all
+`
+
 var (
 	buildLock      sync.Mutex
 	buildStatus    = "idle" // idle, building, success, error
@@ -555,13 +680,23 @@ func (c *Controller) runBuild() {
 	}
 	outFile.Close()
 
-	// 5. Expand Image (+6GB). Sized for 16GB SD cards: base preinstalled
-	// image (~4GB) + ROS Humble/nav2/cartographer/slam-toolbox/camera
-	// packages + colcon build artifacts (~5-6GB) still leaves several GB
-	// free for student code, logs, and scenario repos.
+	// 5. Expand Image. Sized for 16GB SD cards: base preinstalled image
+	// (~4GB) + ROS Humble/nav2/cartographer/slam-toolbox/camera packages +
+	// colcon build artifacts (~5-6GB) still leaves several GB free for
+	// student code, logs, and scenario repos.
+	//
+	// Overlay builds use a larger, fixed absolute expansion instead of
+	// relying on cloud-init's growpart at first boot: growpart's behavior
+	// once "/" is an overlayfs mount assembled in initramfs is untested/
+	// unsafe territory, so overlay images are partitioned explicitly and
+	// statically at build time instead (see step 7).
+	expandBy := "+6G"
+	if cfg.OverlayEnabled {
+		expandBy = "+10G" // ~4GB base + 10G =~ 14GB total, ~900MB margin on a 16GB card
+	}
 	c.updateBuildProgress("Expanding image...", 35)
-	c.logBuild("expanding image by 6GB...")
-	if err := exec.Command("truncate", "-s", "+6G", workImage).Run(); err != nil {
+	c.logBuild("expanding image by %s...", expandBy)
+	if err := exec.Command("truncate", "-s", expandBy, workImage).Run(); err != nil {
 		c.failBuild(fmt.Sprintf("truncate failed: %v", err))
 		return
 	}
@@ -585,9 +720,39 @@ func (c *Controller) runBuild() {
 	// 7. Resize Partition and Filesystem
 	c.updateBuildProgress("Resizing partitions...", 45)
 	c.logBuild("resizing partition 2 on %s...", loopDev)
-	if out, err := exec.Command("parted", "-s", loopDev, "resizepart", "2", "100%").CombinedOutput(); err != nil {
-		c.failBuild(fmt.Sprintf("parted failed: %v: %s", err, string(out)))
-		return
+
+	if !cfg.OverlayEnabled {
+		if out, err := exec.Command("parted", "-s", loopDev, "resizepart", "2", "100%").CombinedOutput(); err != nil {
+			c.failBuild(fmt.Sprintf("parted failed: %v: %s", err, string(out)))
+			return
+		}
+	} else {
+		// Golden root (partition 2) is capped at a fixed size instead of
+		// filling the disk, and the remainder becomes a new partition 3 --
+		// the writable overlay. Parse partition 2's current start offset
+		// rather than hardcoding it; Ubuntu has changed Pi image partition
+		// layouts between releases before.
+		printOut, err := exec.Command("parted", "-s", loopDev, "unit", "MiB", "print").CombinedOutput()
+		if err != nil {
+			c.failBuild(fmt.Sprintf("parted print failed: %v: %s", err, string(printOut)))
+			return
+		}
+		c.logBuild("partition table before resize:\n%s", string(printOut))
+		p2StartMiB, err := parsePartitionStartMiB(string(printOut), 2)
+		if err != nil {
+			c.failBuild(fmt.Sprintf("failed to determine partition 2 start: %v", err))
+			return
+		}
+		goldenRootEndMiB := p2StartMiB + 9*1024 // ~9GiB golden root
+
+		if out, err := exec.Command("parted", "-s", loopDev, "resizepart", "2", fmt.Sprintf("%dMiB", goldenRootEndMiB)).CombinedOutput(); err != nil {
+			c.failBuild(fmt.Sprintf("parted resize golden root failed: %v: %s", err, string(out)))
+			return
+		}
+		if out, err := exec.Command("parted", "-s", loopDev, "mkpart", "primary", "ext4", fmt.Sprintf("%dMiB", goldenRootEndMiB), "100%").CombinedOutput(); err != nil {
+			c.failBuild(fmt.Sprintf("parted create overlay partition failed: %v: %s", err, string(out)))
+			return
+		}
 	}
 
 	// Force kernel to re-read partition table
@@ -606,6 +771,21 @@ func (c *Controller) runBuild() {
 	if out, err := exec.Command("resize2fs", loopDev+"p2").CombinedOutput(); err != nil {
 		c.failBuild(fmt.Sprintf("resize2fs failed: %v: %s", err, string(out)))
 		return
+	}
+
+	if cfg.OverlayEnabled {
+		if err := ensureDeviceNode(loopDev + "p3"); err != nil {
+			c.logBuild("warning: ensureDeviceNode p3: %v", err)
+		}
+		// Pre-format the overlay partition now. overlayroot does not
+		// auto-mkfs at boot; this LABEL is what /etc/overlayroot.conf's
+		// dev=LABEL=... references, and what the factory-reset wipe-hook
+		// re-formats on demand (see the installScript overlay setup below).
+		c.logBuild("formatting overlay partition %sp3...", loopDev)
+		if out, err := exec.Command("mkfs.ext4", "-F", "-L", "golden-overlay", loopDev+"p3").CombinedOutput(); err != nil {
+			c.failBuild(fmt.Sprintf("mkfs overlay partition failed: %v: %s", err, string(out)))
+			return
+		}
 	}
 
 	// 8. Mount
@@ -815,6 +995,9 @@ apt-get clean
 rm -rf /var/lib/apt/lists/*
 `, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro)
 	}
+	if cfg.OverlayEnabled {
+		installScript += overlayInstallScript
+	}
 	if err := os.WriteFile(filepath.Join(mntDir, "tmp/install.sh"), []byte(installScript), 0755); err != nil {
 		c.failBuild(fmt.Sprintf("write install script failed: %v", err))
 		return
@@ -958,6 +1141,23 @@ func (c *Controller) failBuild(msg string) {
 	if c.OnBuildUpdate != nil {
 		c.OnBuildUpdate("error", progress, step, logs, msg, imageName)
 	}
+}
+
+// parsePartitionStartMiB extracts the start offset (in MiB, truncated to an
+// int) of the given partition number from `parted -s <dev> unit MiB print`
+// output. Parted's row format is e.g. " 2      512MiB    4096MiB   ...", with
+// the start value occasionally fractional (e.g. "1.00MiB").
+func parsePartitionStartMiB(partedOutput string, partNum int) (int, error) {
+	re := regexp.MustCompile(fmt.Sprintf(`(?m)^\s*%d\s+(\d+(?:\.\d+)?)MiB`, partNum))
+	matches := re.FindStringSubmatch(partedOutput)
+	if len(matches) < 2 {
+		return 0, fmt.Errorf("partition %d not found in parted output", partNum)
+	}
+	startMiB, err := strconv.ParseFloat(matches[1], 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse start offset %q: %w", matches[1], err)
+	}
+	return int(startMiB), nil
 }
 
 func ensureDeviceNode(devicePath string) error {

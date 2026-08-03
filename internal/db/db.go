@@ -90,6 +90,11 @@ type GoldenImageConfig struct {
 	RobotModel     string `json:"robot_model"`     // "TB3" or "TB4"
 	ROSVersion     string `json:"ros_version"`     // "Humble" or "Jazzy"
 	UbuntuPassword string `json:"ubuntu_password"` // plaintext, written via cloud-init chpasswd
+	// OverlayEnabled builds a 3-partition image (read-only golden root +
+	// writable overlay) with a remote factory-reset that wipes just the
+	// overlay. Advanced/opt-in: defaults false so existing single-partition
+	// behavior is unchanged for configs saved before this field existed.
+	OverlayEnabled bool `json:"overlay_enabled"`
 }
 
 type LoginEvent struct {
