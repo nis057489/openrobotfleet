@@ -921,6 +921,31 @@ else
 fi
 ldconfig
 
+# turtlebot3_node's colcon build has been seen failing with "Package
+# 'dynamixel_sdk' exports the library 'dynamixel_sdk' which couldn't be
+# found" even though the published ros-*-dynamixel-sdk .deb is correctly
+# packaged (libdynamixel_sdk.so does ship under /opt/ros/<distro>/lib, and
+# CMake's exported find_library() path resolves there) -- the leading
+# suspect is the qemu-aarch64-emulated dpkg unpack occasionally not landing
+# that one file. Diagnose unconditionally and self-heal with a targeted
+# reinstall rather than failing 15+ minutes later inside colcon build.
+echo "--- dynamixel_sdk diagnostics ---"
+dpkg -l 'ros-*-dynamixel-sdk' 2>&1 || true
+DXL_SO="/opt/ros/%s/lib/libdynamixel_sdk.so"
+ls -la "$DXL_SO" 2>&1 || true
+echo "--- end dynamixel_sdk diagnostics ---"
+if [ ! -e "$DXL_SO" ]; then
+    echo "warning: libdynamixel_sdk.so missing after initial install; forcing reinstall"
+    apt-get install --reinstall -y ros-%s-dynamixel-sdk
+    if [ ! -e "$DXL_SO" ]; then
+        echo "error: libdynamixel_sdk.so still missing after reinstall"
+        exit 1
+    fi
+    echo "dynamixel_sdk reinstall fixed the missing library"
+else
+    echo "dynamixel_sdk library present, no reinstall needed"
+fi
+
 # Free the downloaded .deb cache from the ROS/nav2/cartographer install
 # above before the colcon build, which needs its own disk for build
 # artifacts. Package lists get re-fetched at the very end if anything else
@@ -993,7 +1018,7 @@ cp /home/ubuntu/ros_ws/src/turtlebot3/turtlebot3_bringup/script/99-turtlebot3-cd
 rm -f /tmp/install.sh
 apt-get clean
 rm -rf /var/lib/apt/lists/*
-`, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro)
+`, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro)
 	}
 	if cfg.OverlayEnabled {
 		installScript += overlayInstallScript
