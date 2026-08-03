@@ -515,6 +515,84 @@ rclpy.shutdown()
 sys.exit(0 if node.got else 1)
 `
 
+// cameraInstalledMarker records that HandleInstallCameraSupport has already
+// built and installed libcamera/camera_ros on this robot.
+const cameraInstalledMarker = "/var/lib/openrobotfleet/camera-installed"
+
+// libcameraBuildScript builds and installs the Raspberry Pi libcamera fork
+// from source, natively on the robot's own ARM64 CPU. This used to run
+// inside the golden image's chroot build under qemu-aarch64 emulation, where
+// ldconfig was observed intermittently segfaulting ("qemu: uncaught target
+// signal 11") -- a qemu-user flakiness, not anything wrong with the build
+// itself. Running it here, on real hardware with no emulation layer in the
+// loop, sidesteps that failure mode entirely; the cost is that the first
+// camera capture on a given robot takes several extra minutes while this
+// runs once.
+const libcameraBuildScript = `
+set -e
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get update
+apt-get install -y python3-pip python3-jinja2 python3-yaml python3-ply \
+    libboost-dev libgnutls28-dev openssl libtiff-dev pybind11-dev \
+    qtbase5-dev libqt5core5a libqt5widgets5 meson cmake \
+    libglib2.0-dev libgstreamer-plugins-base1.0-dev ros-%s-camera-ros
+
+# Jammy's apt meson (0.61) is too old for this libcamera (needs >= 0.63);
+# pip's meson is newer and installs to /usr/local/bin, which takes PATH
+# precedence over apt's /usr/bin/meson.
+pip3 install --upgrade 'meson>=0.63'
+
+rm -rf /tmp/libcamera
+git clone -b v0.5.2 --depth 1 https://github.com/raspberrypi/libcamera.git /tmp/libcamera
+cd /tmp/libcamera
+meson setup build --buildtype=release -Dpipelines=rpi/vc4,rpi/pisp -Dipas=rpi/vc4,rpi/pisp -Dv4l2=true -Dgstreamer=enabled -Dtest=false -Dlc-compliance=disabled -Dcam=disabled -Dqcam=disabled -Ddocumentation=disabled -Dpycamera=enabled
+ninja -C build
+ninja -C build install
+cd /
+rm -rf /tmp/libcamera
+
+echo "/usr/local/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)" > /etc/ld.so.conf.d/openrobotfleet-libcamera.conf
+ldconfig
+
+mkdir -p "$(dirname %q)"
+touch %q
+`
+
+// HandleInstallCameraSupport builds and installs libcamera + camera_ros from
+// source, natively on the robot (see libcameraBuildScript), then leaves
+// cameraInstalledMarker behind so HandleCaptureImage can tell it's present
+// without re-running anything. This is a distinct, explicitly user-triggered
+// action (surfaced from the Semester Wizard) rather than something
+// HandleCaptureImage does automatically on demand: an unsuspecting user
+// tapping "capture image" should never be the one who accidentally kicks off
+// a from-source build that can take the better part of an hour. Runs with no
+// artificial timeout for the same reason -- the JobManager already tracks
+// this as a single long-running job and reports success/failure back to the
+// controller the same way any other command does.
+func HandleInstallCameraSupport(cfg Config) error {
+	if _, err := os.Stat(cameraInstalledMarker); err == nil {
+		log.Printf("[agent] camera support already installed")
+		return nil
+	}
+
+	matches, err := filepath.Glob("/opt/ros/*/setup.bash")
+	if err != nil || len(matches) == 0 {
+		return fmt.Errorf("could not find a ROS install under /opt/ros to build camera_ros against")
+	}
+	rosDistro := filepath.Base(filepath.Dir(matches[0]))
+
+	log.Printf("[agent] installing camera support: building camera_ros/libcamera from source (this can take several minutes)...")
+	script := fmt.Sprintf(libcameraBuildScript, rosDistro, cameraInstalledMarker, cameraInstalledMarker)
+	cmd := exec.Command("bash", "-c", script)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("camera stack build failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	log.Printf("[agent] camera_ros/libcamera build complete")
+	return nil
+}
+
 // HandleCaptureImage takes a photo via ROS and uploads it. Nothing keeps a
 // camera node running persistently (see the golden image's
 // camera_params.example.yaml), so this starts a short-lived camera_ros node
@@ -526,6 +604,10 @@ sys.exit(0 if node.got else 1)
 // demosaicing, so it can't stream at all, let alone produce a real color
 // image. libcamera (via camera_ros) is what actually drives that pipeline.
 func HandleCaptureImage(cfg Config, data CaptureImageData) error {
+	if _, err := os.Stat(cameraInstalledMarker); err != nil {
+		return errors.New("camera support isn't installed on this robot yet -- run \"Install Camera Support\" from the Semester Wizard first")
+	}
+
 	log.Printf("[agent] capturing image")
 	tmpPath := "/tmp/snapshot.jpg"
 

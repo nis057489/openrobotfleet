@@ -262,6 +262,8 @@ func (e *AgentEngine) mapCommandToAction(cmd Command) func() error {
 			return func() error { return err }
 		}
 		return func() error { return HandleCaptureImage(cfg, payload) }
+	case "install_camera_support":
+		return func() error { return HandleInstallCameraSupport(cfg) }
 	case "identify":
 		var payload IdentifyData
 		if err := json.Unmarshal(cmd.Data, &payload); err != nil {

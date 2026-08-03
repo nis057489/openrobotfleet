@@ -20,15 +20,16 @@ import (
 )
 
 type semesterRequest struct {
-	RobotIDs       []int64              `json:"robot_ids"`
-	Reinstall      bool                 `json:"reinstall"`
-	ResetLogs      bool                 `json:"reset_logs"`
-	UpdateRepo     bool                 `json:"update_repo"`
-	RunSelfTest    bool                 `json:"run_self_test"`
-	RepoConfig     agent.UpdateRepoData `json:"repo_config"`
-	ApplyScenarios bool                 `json:"apply_scenarios"`
-	ScenarioIDs    []int64              `json:"scenario_ids"`
-	FactoryReset   bool                 `json:"factory_reset"`
+	RobotIDs             []int64              `json:"robot_ids"`
+	Reinstall            bool                 `json:"reinstall"`
+	ResetLogs            bool                 `json:"reset_logs"`
+	UpdateRepo           bool                 `json:"update_repo"`
+	RunSelfTest          bool                 `json:"run_self_test"`
+	InstallCameraSupport bool                 `json:"install_camera_support"`
+	RepoConfig           agent.UpdateRepoData `json:"repo_config"`
+	ApplyScenarios       bool                 `json:"apply_scenarios"`
+	ScenarioIDs          []int64              `json:"scenario_ids"`
+	FactoryReset         bool                 `json:"factory_reset"`
 
 	// Internal
 	ScenarioConfigs []agent.UpdateRepoData `json:"-"`
@@ -418,6 +419,24 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 					log.Printf("semester: failed to queue capture_image for %s: %v", robot.Name, err)
 					batchStatus.Lock()
 					batchStatus.Errors[id] = "failed to queue capture_image"
+					batchStatus.Robots[id] = "error"
+					batchStatus.Completed++
+					batchStatus.Unlock()
+					return
+				}
+			}
+
+			if req.InstallCameraSupport {
+				log.Printf("semester: installing camera support for %s", robot.Name)
+				batchStatus.Lock()
+				batchStatus.Robots[id] = "installing_camera_support"
+				batchStatus.Unlock()
+
+				cmd := agent.Command{Type: "install_camera_support", Data: []byte("{}")}
+				if _, err := c.queueRobotCommand(ctx, robot, cmd); err != nil {
+					log.Printf("semester: failed to queue install_camera_support for %s: %v", robot.Name, err)
+					batchStatus.Lock()
+					batchStatus.Errors[id] = "failed to queue install_camera_support"
 					batchStatus.Robots[id] = "error"
 					batchStatus.Completed++
 					batchStatus.Unlock()

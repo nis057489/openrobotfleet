@@ -354,6 +354,8 @@ export const en = {
       disabledInDemoMode: "Deactivated in Demo Mode",
       runSelfTest: "Run Self Test",
       runSelfTestDesc: "Verify motors and camera functionality.",
+      installCameraSupport: "Install Camera Support",
+      installCameraSupportDesc: "Builds and installs camera_ros/libcamera from source, directly on the robot. Takes several minutes on first run; safe to skip if this robot doesn't use the camera.",
       factoryReset: "Factory Reset",
       factoryResetDesc: "Reboot each robot and wipe its writable storage back to the golden image (only takes effect on robots built with the overlay option). Mutually exclusive with the other actions above -- a factory reset always runs alone.",
       repoUrl: "Repository URL",

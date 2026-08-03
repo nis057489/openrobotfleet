@@ -347,6 +347,8 @@ export const zh = {
       disabledInDemoMode: "演示模式下已停用",
       runSelfTest: "运行自检",
       runSelfTestDesc: "验证电机和相机功能。",
+      installCameraSupport: "安装摄像头支持",
+      installCameraSupportDesc: "直接在机器人上从源码构建并安装 camera_ros/libcamera。首次运行需要几分钟；如果该机器人不使用摄像头，可以跳过。",
       factoryReset: "恢复出厂设置",
       factoryResetDesc: "重启每台机器人并将其可写存储清空、恢复为黄金镜像状态（仅对启用了覆盖层选项构建的机器人生效）。与上面其他操作互斥——恢复出厂设置总是单独执行。",
       repoUrl: "仓库 URL",

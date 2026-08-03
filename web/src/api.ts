@@ -194,6 +194,7 @@ export interface SemesterRequest {
   reset_logs: boolean;
   update_repo: boolean;
   run_self_test: boolean;
+  install_camera_support?: boolean;
   repo_config: {
     repo: string;
     branch: string;
