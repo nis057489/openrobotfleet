@@ -247,6 +247,25 @@ export function getBuildStatus(): Promise<{ status: string; error?: string; prog
   return request('/api/golden-image/status');
 }
 
+export interface BuildCacheEntry {
+  image_name: string;
+  robot_model: string;
+  ros_version: string;
+  overlay_enabled: boolean;
+  completed_stage: number;
+  total_stages: number;
+  updated_at: string;
+  size_bytes: number;
+}
+
+export function getGoldenImageBuildCache(): Promise<{ entries: BuildCacheEntry[] }> {
+  return request('/api/golden-image/cache');
+}
+
+export function clearGoldenImageBuildCache(): Promise<{ status: string }> {
+  return request('/api/golden-image/cache', { method: 'DELETE' });
+}
+
 export interface SystemConfig {
   demo_mode: boolean;
 }

@@ -93,6 +93,107 @@ func (c *Controller) DownloadGoldenImage(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+// imagesDirPath returns the directory golden images are built into and
+// served from -- shared by runBuild and the build-cache endpoints so they
+// never disagree about where to look. Note this lives on the container's
+// ephemeral writable layer (WEB_ROOT), not a persistent volume, so cached
+// build progress only survives retries against the same running container.
+func imagesDirPath() string {
+	webRoot := os.Getenv("WEB_ROOT")
+	if webRoot == "" {
+		webRoot = "./web/dist"
+	}
+	return filepath.Join(webRoot, "images")
+}
+
+// buildCacheEntry is the JSON-facing view of one in-progress/abandoned
+// build's checkpoint, returned by GetGoldenImageBuildCache.
+type buildCacheEntry struct {
+	ImageName      string    `json:"image_name"`
+	RobotModel     string    `json:"robot_model"`
+	ROSVersion     string    `json:"ros_version"`
+	OverlayEnabled bool      `json:"overlay_enabled"`
+	CompletedStage int       `json:"completed_stage"`
+	TotalStages    int       `json:"total_stages"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	SizeBytes      int64     `json:"size_bytes"`
+}
+
+// GetGoldenImageBuildCache reports every checkpointed (incomplete) build
+// found in imagesDir, not just one matching the currently-loaded config --
+// there are only 4 possible (robot model x ROS version) image names, and
+// any of them can be independently abandoned mid-build.
+func (c *Controller) GetGoldenImageBuildCache(w http.ResponseWriter, r *http.Request) {
+	imagesDir := imagesDirPath()
+	matches, err := filepath.Glob(filepath.Join(imagesDir, "*.checkpoint.json"))
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to scan build cache")
+		return
+	}
+
+	entries := make([]buildCacheEntry, 0, len(matches))
+	for _, cpPath := range matches {
+		cp, err := loadBuildCheckpoint(cpPath)
+		if err != nil {
+			log.Printf("golden image build cache: skipping unreadable checkpoint %s: %v", cpPath, err)
+			continue
+		}
+		imageName := strings.TrimSuffix(filepath.Base(cpPath), ".checkpoint.json")
+		var sizeBytes int64
+		if fi, err := os.Stat(filepath.Join(imagesDir, imageName)); err == nil {
+			sizeBytes = fi.Size()
+		}
+		syntheticCfg := &db.GoldenImageConfig{RobotModel: cp.RobotModel, ROSVersion: cp.ROSVersion, OverlayEnabled: cp.OverlayEnabled}
+		entries = append(entries, buildCacheEntry{
+			ImageName:      imageName,
+			RobotModel:     cp.RobotModel,
+			ROSVersion:     cp.ROSVersion,
+			OverlayEnabled: cp.OverlayEnabled,
+			CompletedStage: cp.CompletedStage,
+			TotalStages:    len(buildStages(syntheticCfg)),
+			UpdatedAt:      cp.UpdatedAt,
+			SizeBytes:      sizeBytes,
+		})
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{"entries": entries})
+}
+
+// ClearGoldenImageBuildCache deletes every checkpointed build's sidecar and
+// in-progress image file, forcing the next build (for any config) to start
+// completely fresh. Refuses while a build is actively running.
+func (c *Controller) ClearGoldenImageBuildCache(w http.ResponseWriter, r *http.Request) {
+	buildLock.Lock()
+	if buildStatus == "building" {
+		buildLock.Unlock()
+		respondError(w, http.StatusConflict, "cannot clear build cache while a build is in progress")
+		return
+	}
+	buildLock.Unlock()
+
+	imagesDir := imagesDirPath()
+	matches, err := filepath.Glob(filepath.Join(imagesDir, "*.checkpoint.json"))
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to scan build cache")
+		return
+	}
+
+	for _, cpPath := range matches {
+		imageName := strings.TrimSuffix(filepath.Base(cpPath), ".checkpoint.json")
+		imagePath := filepath.Join(imagesDir, imageName)
+		if err := os.Remove(imagePath); err != nil && !os.IsNotExist(err) {
+			log.Printf("clear build cache: failed to remove %s: %v", imagePath, err)
+		} else {
+			log.Printf("clear build cache: removed %s", imagePath)
+		}
+		if err := os.Remove(cpPath); err != nil && !os.IsNotExist(err) {
+			log.Printf("clear build cache: failed to remove %s: %v", cpPath, err)
+		}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
+}
+
 const userDataTemplate = `#cloud-config
 hostname: openrobot
 manage_etc_hosts: true
@@ -555,13 +656,19 @@ func (c *Controller) updateBuildProgress(step string, progress int) {
 }
 
 func (c *Controller) runBuild() {
-	var workImage string
+	var workImage, cpPath string
 	buildSucceeded := false
 	defer func() {
 		if r := recover(); r != nil {
 			c.failBuild(fmt.Sprintf("panic: %v", r))
 		}
 		if !buildSucceeded && workImage != "" {
+			if cpPath != "" {
+				if _, err := os.Stat(cpPath); err == nil {
+					c.logBuild("build failed but progress was checkpointed -- leaving %s in place so the next build can resume; use \"Clear cached build progress\" to force a clean rebuild", workImage)
+					return
+				}
+			}
 			c.logBuild("cleaning up failed work image: %s", workImage)
 			os.Remove(workImage)
 		}
@@ -577,83 +684,9 @@ func (c *Controller) runBuild() {
 	}
 	c.logBuild("Config loaded: RobotModel=%s, ROSVersion=%s", cfg.RobotModel, cfg.ROSVersion)
 
-	// 2. Prepare directories
-	c.updateBuildProgress("Preparing directories...", 10)
-	webRoot := os.Getenv("WEB_ROOT")
-	if webRoot == "" {
-		webRoot = "./web/dist"
-	}
-	imagesDir := filepath.Join(webRoot, "images")
-	if err := os.MkdirAll(imagesDir, 0755); err != nil {
-		c.failBuild(fmt.Sprintf("mkdir failed: %v", err))
-		return
-	}
-
-	// 3. Download Base Image
-	c.updateBuildProgress("Downloading base image (this may take a while)...", 15)
-
-	// Determine Image URL based on ROS Version
-	baseImageURL := "https://cdimage.ubuntu.com/releases/22.04/release/ubuntu-22.04.5-preinstalled-server-arm64+raspi.img.xz"
-	baseImageName := "ubuntu-22.04-server-arm64.img.xz"
-
-	if cfg.ROSVersion == "Jazzy" {
-		baseImageURL = "https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.3-preinstalled-server-arm64+raspi.img.xz"
-		baseImageName = "ubuntu-24.04-server-arm64.img.xz"
-	}
-
-	// Fetch hash dynamically
-	c.logBuild("fetching upstream hash for verification...")
-	expectedSHA256, err := fetchRemoteHash(baseImageURL)
-	if err != nil {
-		c.failBuild(fmt.Sprintf("failed to fetch upstream hash: %v", err))
-		return
-	}
-	c.logBuild("upstream hash: %s", expectedSHA256)
-
-	// Cache it in /data/image-cache (persistent volume) if available, else /tmp
-	cacheDir := "/tmp/image-cache"
-	if _, err := os.Stat("/data"); err == nil {
-		cacheDir = "/data/image-cache"
-	}
-
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		c.failBuild(fmt.Sprintf("cache dir failed: %v", err))
-		return
-	}
-	baseImageXZ := filepath.Join(cacheDir, baseImageName)
-
-	// Check if file exists and verify hash
-	downloadNeeded := true
-	if _, err := os.Stat(baseImageXZ); err == nil {
-		c.logBuild("verifying existing image hash...")
-		if verifyHash(baseImageXZ, expectedSHA256) {
-			c.logBuild("hash verified, skipping download")
-			downloadNeeded = false
-		} else {
-			c.logBuild("hash mismatch, re-downloading...")
-			os.Remove(baseImageXZ)
-		}
-	}
-
-	if downloadNeeded {
-		c.logBuild("downloading base image from %s...", baseImageURL)
-		cmd := exec.Command("wget", "-O", baseImageXZ, baseImageURL)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			c.failBuild(fmt.Sprintf("download failed: %v: %s", err, string(out)))
-			return
-		}
-		// Verify after download
-		if !verifyHash(baseImageXZ, expectedSHA256) {
-			c.failBuild("downloaded file hash mismatch")
-			os.Remove(baseImageXZ)
-			return
-		}
-	}
-
-	// 4. Decompress to working copy
-	c.updateBuildProgress("Decompressing image...", 25)
-
-	// Construct image name
+	// Compute the deterministic image name/path early (before any
+	// network/decompress work) so a resume attempt can detect an
+	// in-progress build for this exact config before doing anything else.
 	robotModel := cfg.RobotModel
 	if robotModel == "" {
 		robotModel = "TB3"
@@ -663,22 +696,120 @@ func (c *Controller) runBuild() {
 		rosVersion = "Humble"
 	}
 	imageName := fmt.Sprintf("turtlebot-%s-%s-golden.img", strings.ToLower(robotModel), strings.ToLower(rosVersion))
-	workImage = filepath.Join(imagesDir, imageName)
 
-	c.logBuild("decompressing to %s...", workImage)
-	cmd := exec.Command("xz", "-d", "-k", "-c", baseImageXZ)
-	outFile, err := os.Create(workImage)
-	if err != nil {
-		c.failBuild(fmt.Sprintf("create work image failed: %v", err))
+	// 2. Prepare directories
+	c.updateBuildProgress("Preparing directories...", 10)
+	imagesDir := imagesDirPath()
+	if err := os.MkdirAll(imagesDir, 0755); err != nil {
+		c.failBuild(fmt.Sprintf("mkdir failed: %v", err))
 		return
 	}
-	cmd.Stdout = outFile
-	if err := cmd.Run(); err != nil {
+	workImage = filepath.Join(imagesDir, imageName)
+	cpPath = checkpointPathFor(workImage)
+
+	// Resume detection: a checkpoint only applies if it matches this exact
+	// config (robot model / ROS version / overlay toggle -- the fields that
+	// determine install-script content) and the image file it refers to is
+	// still on disk (imagesDir is on the container's ephemeral writable
+	// layer, not a persistent volume, so this only survives retries against
+	// the same running container -- a redeploy just falls back to a normal
+	// fresh build).
+	resuming := false
+	completedStage := 0
+	if cp, err := loadBuildCheckpoint(cpPath); err == nil {
+		if cp.matches(cfg) {
+			if _, statErr := os.Stat(workImage); statErr == nil {
+				resuming = true
+				completedStage = cp.CompletedStage
+				c.logBuild("resuming build for %s from stage %d/%d (checkpoint from %s)", imageName, completedStage, len(buildStages(cfg)), cp.UpdatedAt.Format(time.RFC3339))
+			}
+		} else {
+			c.logBuild("found checkpoint for a different config (model=%s ros=%s overlay=%v); ignoring and starting fresh", cp.RobotModel, cp.ROSVersion, cp.OverlayEnabled)
+			os.Remove(cpPath)
+		}
+	}
+
+	if !resuming {
+		// 3. Download Base Image
+		c.updateBuildProgress("Downloading base image (this may take a while)...", 15)
+
+		// Determine Image URL based on ROS Version
+		baseImageURL := "https://cdimage.ubuntu.com/releases/22.04/release/ubuntu-22.04.5-preinstalled-server-arm64+raspi.img.xz"
+		baseImageName := "ubuntu-22.04-server-arm64.img.xz"
+
+		if cfg.ROSVersion == "Jazzy" {
+			baseImageURL = "https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.3-preinstalled-server-arm64+raspi.img.xz"
+			baseImageName = "ubuntu-24.04-server-arm64.img.xz"
+		}
+
+		// Fetch hash dynamically
+		c.logBuild("fetching upstream hash for verification...")
+		expectedSHA256, err := fetchRemoteHash(baseImageURL)
+		if err != nil {
+			c.failBuild(fmt.Sprintf("failed to fetch upstream hash: %v", err))
+			return
+		}
+		c.logBuild("upstream hash: %s", expectedSHA256)
+
+		// Cache it in /data/image-cache (persistent volume) if available, else /tmp
+		cacheDir := "/tmp/image-cache"
+		if _, err := os.Stat("/data"); err == nil {
+			cacheDir = "/data/image-cache"
+		}
+
+		if err := os.MkdirAll(cacheDir, 0755); err != nil {
+			c.failBuild(fmt.Sprintf("cache dir failed: %v", err))
+			return
+		}
+		baseImageXZ := filepath.Join(cacheDir, baseImageName)
+
+		// Check if file exists and verify hash
+		downloadNeeded := true
+		if _, err := os.Stat(baseImageXZ); err == nil {
+			c.logBuild("verifying existing image hash...")
+			if verifyHash(baseImageXZ, expectedSHA256) {
+				c.logBuild("hash verified, skipping download")
+				downloadNeeded = false
+			} else {
+				c.logBuild("hash mismatch, re-downloading...")
+				os.Remove(baseImageXZ)
+			}
+		}
+
+		if downloadNeeded {
+			c.logBuild("downloading base image from %s...", baseImageURL)
+			cmd := exec.Command("wget", "-O", baseImageXZ, baseImageURL)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				c.failBuild(fmt.Sprintf("download failed: %v: %s", err, string(out)))
+				return
+			}
+			// Verify after download
+			if !verifyHash(baseImageXZ, expectedSHA256) {
+				c.failBuild("downloaded file hash mismatch")
+				os.Remove(baseImageXZ)
+				return
+			}
+		}
+
+		// 4. Decompress to working copy
+		c.updateBuildProgress("Decompressing image...", 25)
+		c.logBuild("decompressing to %s...", workImage)
+		cmd := exec.Command("xz", "-d", "-k", "-c", baseImageXZ)
+		outFile, err := os.Create(workImage)
+		if err != nil {
+			c.failBuild(fmt.Sprintf("create work image failed: %v", err))
+			return
+		}
+		cmd.Stdout = outFile
+		if err := cmd.Run(); err != nil {
+			outFile.Close()
+			c.failBuild(fmt.Sprintf("decompress failed: %v", err))
+			return
+		}
 		outFile.Close()
-		c.failBuild(fmt.Sprintf("decompress failed: %v", err))
-		return
+	} else {
+		c.logBuild("resuming: reusing existing %s, skipping download/decompress", workImage)
 	}
-	outFile.Close()
 
 	// 5. Expand Image. Sized for 16GB SD cards: base preinstalled image
 	// (~4GB) + ROS Humble/nav2/cartographer/slam-toolbox/camera packages +
@@ -690,15 +821,22 @@ func (c *Controller) runBuild() {
 	// once "/" is an overlayfs mount assembled in initramfs is untested/
 	// unsafe territory, so overlay images are partitioned explicitly and
 	// statically at build time instead (see step 7).
-	expandBy := "+6G"
-	if cfg.OverlayEnabled {
-		expandBy = "+10G" // ~4GB base + 10G =~ 14GB total, ~900MB margin on a 16GB card
-	}
 	c.updateBuildProgress("Expanding image...", 35)
-	c.logBuild("expanding image by %s...", expandBy)
-	if err := exec.Command("truncate", "-s", expandBy, workImage).Run(); err != nil {
-		c.failBuild(fmt.Sprintf("truncate failed: %v", err))
-		return
+	if !resuming {
+		// truncate -s +N is relative to the file's current size, so this
+		// must never re-run against an already-expanded resumed image --
+		// doing so would grow it again on every retry.
+		expandBy := "+6G"
+		if cfg.OverlayEnabled {
+			expandBy = "+10G" // ~4GB base + 10G =~ 14GB total, ~900MB margin on a 16GB card
+		}
+		c.logBuild("expanding image by %s...", expandBy)
+		if err := exec.Command("truncate", "-s", expandBy, workImage).Run(); err != nil {
+			c.failBuild(fmt.Sprintf("truncate failed: %v", err))
+			return
+		}
+	} else {
+		c.logBuild("resuming: image already expanded, skipping")
 	}
 
 	// 6. Setup Loop Device
@@ -719,39 +857,41 @@ func (c *Controller) runBuild() {
 
 	// 7. Resize Partition and Filesystem
 	c.updateBuildProgress("Resizing partitions...", 45)
-	c.logBuild("resizing partition 2 on %s...", loopDev)
+	if !resuming {
+		c.logBuild("resizing partition 2 on %s...", loopDev)
 
-	if !cfg.OverlayEnabled {
-		if out, err := exec.Command("parted", "-s", loopDev, "resizepart", "2", "100%").CombinedOutput(); err != nil {
-			c.failBuild(fmt.Sprintf("parted failed: %v: %s", err, string(out)))
-			return
-		}
-	} else {
-		// Golden root (partition 2) is capped at a fixed size instead of
-		// filling the disk, and the remainder becomes a new partition 3 --
-		// the writable overlay. Parse partition 2's current start offset
-		// rather than hardcoding it; Ubuntu has changed Pi image partition
-		// layouts between releases before.
-		printOut, err := exec.Command("parted", "-s", loopDev, "unit", "MiB", "print").CombinedOutput()
-		if err != nil {
-			c.failBuild(fmt.Sprintf("parted print failed: %v: %s", err, string(printOut)))
-			return
-		}
-		c.logBuild("partition table before resize:\n%s", string(printOut))
-		p2StartMiB, err := parsePartitionStartMiB(string(printOut), 2)
-		if err != nil {
-			c.failBuild(fmt.Sprintf("failed to determine partition 2 start: %v", err))
-			return
-		}
-		goldenRootEndMiB := p2StartMiB + 9*1024 // ~9GiB golden root
+		if !cfg.OverlayEnabled {
+			if out, err := exec.Command("parted", "-s", loopDev, "resizepart", "2", "100%").CombinedOutput(); err != nil {
+				c.failBuild(fmt.Sprintf("parted failed: %v: %s", err, string(out)))
+				return
+			}
+		} else {
+			// Golden root (partition 2) is capped at a fixed size instead of
+			// filling the disk, and the remainder becomes a new partition 3 --
+			// the writable overlay. Parse partition 2's current start offset
+			// rather than hardcoding it; Ubuntu has changed Pi image partition
+			// layouts between releases before.
+			printOut, err := exec.Command("parted", "-s", loopDev, "unit", "MiB", "print").CombinedOutput()
+			if err != nil {
+				c.failBuild(fmt.Sprintf("parted print failed: %v: %s", err, string(printOut)))
+				return
+			}
+			c.logBuild("partition table before resize:\n%s", string(printOut))
+			p2StartMiB, err := parsePartitionStartMiB(string(printOut), 2)
+			if err != nil {
+				c.failBuild(fmt.Sprintf("failed to determine partition 2 start: %v", err))
+				return
+			}
+			goldenRootEndMiB := p2StartMiB + 9*1024 // ~9GiB golden root
 
-		if out, err := exec.Command("parted", "-s", loopDev, "resizepart", "2", fmt.Sprintf("%dMiB", goldenRootEndMiB)).CombinedOutput(); err != nil {
-			c.failBuild(fmt.Sprintf("parted resize golden root failed: %v: %s", err, string(out)))
-			return
-		}
-		if out, err := exec.Command("parted", "-s", loopDev, "mkpart", "primary", "ext4", fmt.Sprintf("%dMiB", goldenRootEndMiB), "100%").CombinedOutput(); err != nil {
-			c.failBuild(fmt.Sprintf("parted create overlay partition failed: %v: %s", err, string(out)))
-			return
+			if out, err := exec.Command("parted", "-s", loopDev, "resizepart", "2", fmt.Sprintf("%dMiB", goldenRootEndMiB)).CombinedOutput(); err != nil {
+				c.failBuild(fmt.Sprintf("parted resize golden root failed: %v: %s", err, string(out)))
+				return
+			}
+			if out, err := exec.Command("parted", "-s", loopDev, "mkpart", "primary", "ext4", fmt.Sprintf("%dMiB", goldenRootEndMiB), "100%").CombinedOutput(); err != nil {
+				c.failBuild(fmt.Sprintf("parted create overlay partition failed: %v: %s", err, string(out)))
+				return
+			}
 		}
 	}
 
@@ -767,24 +907,28 @@ func (c *Controller) runBuild() {
 		c.logBuild("warning: ensureDeviceNode p2: %v", err)
 	}
 
-	c.logBuild("resizing filesystem on %sp2...", loopDev)
-	if out, err := exec.Command("resize2fs", loopDev+"p2").CombinedOutput(); err != nil {
-		c.failBuild(fmt.Sprintf("resize2fs failed: %v: %s", err, string(out)))
-		return
+	if !resuming {
+		c.logBuild("resizing filesystem on %sp2...", loopDev)
+		if out, err := exec.Command("resize2fs", loopDev+"p2").CombinedOutput(); err != nil {
+			c.failBuild(fmt.Sprintf("resize2fs failed: %v: %s", err, string(out)))
+			return
+		}
 	}
 
 	if cfg.OverlayEnabled {
 		if err := ensureDeviceNode(loopDev + "p3"); err != nil {
 			c.logBuild("warning: ensureDeviceNode p3: %v", err)
 		}
-		// Pre-format the overlay partition now. overlayroot does not
-		// auto-mkfs at boot; this LABEL is what /etc/overlayroot.conf's
-		// dev=LABEL=... references, and what the factory-reset wipe-hook
-		// re-formats on demand (see the installScript overlay setup below).
-		c.logBuild("formatting overlay partition %sp3...", loopDev)
-		if out, err := exec.Command("mkfs.ext4", "-F", "-L", "golden-overlay", loopDev+"p3").CombinedOutput(); err != nil {
-			c.failBuild(fmt.Sprintf("mkfs overlay partition failed: %v: %s", err, string(out)))
-			return
+		if !resuming {
+			// Pre-format the overlay partition now. overlayroot does not
+			// auto-mkfs at boot; this LABEL is what /etc/overlayroot.conf's
+			// dev=LABEL=... references, and what the factory-reset wipe-hook
+			// re-formats on demand (see the installScript overlay setup below).
+			c.logBuild("formatting overlay partition %sp3...", loopDev)
+			if out, err := exec.Command("mkfs.ext4", "-F", "-L", "golden-overlay", loopDev+"p3").CombinedOutput(); err != nil {
+				c.failBuild(fmt.Sprintf("mkfs overlay partition failed: %v: %s", err, string(out)))
+				return
+			}
 		}
 	}
 
@@ -793,6 +937,12 @@ func (c *Controller) runBuild() {
 	mntDir := "/mnt/turtlebot-build"
 	os.MkdirAll(mntDir, 0755)
 	defer os.RemoveAll(mntDir)
+
+	if resuming {
+		// Best-effort: a prior attempt may have died hard (OOM/kill -9)
+		// without its deferred unmount ever running.
+		exec.Command("umount", "-R", mntDir).Run()
+	}
 
 	// Mount root
 	if out, err := exec.Command("mount", loopDev+"p2", mntDir).CombinedOutput(); err != nil {
@@ -834,199 +984,9 @@ func (c *Controller) runBuild() {
 		return
 	}
 
-	// 10. Install ROS 2 & Agent
+	// 10. Install ROS 2 & Agent, staged so a failure can resume from the
+	// last completed stage instead of redoing the whole 20-30 minute chroot.
 	c.updateBuildProgress("Installing ROS 2 and Agent (this takes 20-30 mins)...", 60)
-	c.logBuild("installing ROS 2 and Agent (this may take a while)...")
-
-	var installScript string
-	if cfg.RobotModel == "TB4" {
-		// TB4 Logic
-		branch := "humble"
-		if cfg.ROSVersion == "Jazzy" {
-			branch = "jazzy"
-		}
-		installScript = fmt.Sprintf(`#!/bin/bash
-set -e
-export DEBIAN_FRONTEND=noninteractive
-
-# Define sudo as a no-op since we are root
-function sudo() { "$@"; }
-export -f sudo
-
-# Install prerequisites
-apt-get update
-apt-get upgrade -y
-apt-get install -y wget curl git
-
-# Download and run official setup script
-wget -qO /tmp/turtlebot4_setup.sh https://raw.githubusercontent.com/turtlebot/turtlebot4_setup/%s/scripts/turtlebot4_setup.sh
-bash /tmp/turtlebot4_setup.sh
-
-# Cyclone DDS is the fleet-wide default RMW; install it alongside whatever
-# turtlebot4_setup.sh already configured. v4l2_camera provides both the
-# dashboard's camera test and a real ROS image topic for scenarios -- both go
-# through ROS rather than a separate direct-V4L2 tool, since the Pi's
-# libcamera stack doesn't expose a plain /dev/video0.
-apt-get install -y ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins ros-%s-v4l2-camera
-
-# Cleanup
-rm -f /tmp/turtlebot4_setup.sh /tmp/install.sh
-apt-get clean
-rm -rf /var/lib/apt/lists/*
-`, branch, branch, branch, branch, branch)
-	} else {
-		// TB3 Logic
-		rosDistro := "humble"
-		if cfg.ROSVersion == "Jazzy" {
-			rosDistro = "jazzy"
-		}
-		installScript = fmt.Sprintf(`#!/bin/bash
-set -e
-export DEBIAN_FRONTEND=noninteractive
-
-# Install ROS 2
-apt-get update
-apt-get upgrade -y
-apt-get install -y software-properties-common curl gnupg lsb-release
-curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(source /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
-apt-get update
-
-# Work around a package-version mismatch on Ubuntu Noble/arm64 that can block
-# ROS dependency resolution with libzstd during golden-image builds.
-if ! apt-get install -y --allow-downgrades libzstd1=1.5.5+dfsg2-2build1 libzstd-dev=1.5.5+dfsg2-2build1; then
-    echo "warning: could not pin libzstd versions; continuing with the standard dependency resolution"
-fi
-apt-get install -y --fix-broken
-apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver ros-%s-slam-toolbox ros-%s-navigation2 ros-%s-nav2-bringup ros-%s-cartographer-ros ros-%s-teleop-twist-keyboard ros-%s-teleop-twist-joy ros-%s-joy ros-%s-robot-state-publisher ros-%s-joint-state-publisher ros-%s-tf2-tools ros-%s-laser-geometry ros-%s-diagnostic-updater ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins ros-%s-v4l2-camera python3-argcomplete libboost-system-dev libudev-dev libtinyxml2-dev pkg-config build-essential git python3-colcon-common-extensions
-
-# packages.ros.org ships a newer libtinyxml2-dev than Ubuntu jammy's own
-# tinyxml2 runtime, and apt's dependency resolution between the two isn't
-# consistent build to build: sometimes the unversioned libtinyxml2.so symlink
-# CMake's find_library()/pkg-config need ends up missing or pointing at a
-# stale/incompatible file. Log exactly what's on disk so a repeat failure is
-# debuggable from the build log alone, then force the symlink to the newest
-# .so present regardless of what (if anything) is already there.
-echo "--- tinyxml2 diagnostics ---"
-dpkg -l 'libtinyxml2*' 2>&1 || true
-find / -xdev -iname 'libtinyxml2*' 2>/dev/null || true
-find / -xdev -iname 'tinyxml2.pc' 2>/dev/null || true
-echo "--- end tinyxml2 diagnostics ---"
-TINYXML2_SO=$(find /usr/lib -name 'libtinyxml2.so.*' | sort -V | tail -1)
-if [ -n "$TINYXML2_SO" ]; then
-    ln -sf "$(basename "$TINYXML2_SO")" "$(dirname "$TINYXML2_SO")/libtinyxml2.so"
-    echo "linked libtinyxml2.so -> $(basename "$TINYXML2_SO")"
-else
-    echo "warning: no libtinyxml2.so.* found under /usr/lib; turtlebot3_description build will likely fail"
-fi
-ldconfig
-
-# turtlebot3_node's colcon build has been seen failing with "Package
-# 'dynamixel_sdk' exports the library 'dynamixel_sdk' which couldn't be
-# found" even though the published ros-*-dynamixel-sdk .deb is correctly
-# packaged (libdynamixel_sdk.so does ship under /opt/ros/<distro>/lib, and
-# CMake's exported find_library() path resolves there) -- the leading
-# suspect is the qemu-aarch64-emulated dpkg unpack occasionally not landing
-# that one file. Diagnose unconditionally and self-heal with a targeted
-# reinstall rather than failing 15+ minutes later inside colcon build.
-echo "--- dynamixel_sdk diagnostics ---"
-dpkg -l 'ros-*-dynamixel-sdk' 2>&1 || true
-DXL_SO="/opt/ros/%s/lib/libdynamixel_sdk.so"
-ls -la "$DXL_SO" 2>&1 || true
-echo "--- end dynamixel_sdk diagnostics ---"
-if [ ! -e "$DXL_SO" ]; then
-    echo "warning: libdynamixel_sdk.so missing after initial install; forcing reinstall"
-    apt-get install --reinstall -y ros-%s-dynamixel-sdk
-    if [ ! -e "$DXL_SO" ]; then
-        echo "error: libdynamixel_sdk.so still missing after reinstall"
-        exit 1
-    fi
-    echo "dynamixel_sdk reinstall fixed the missing library"
-else
-    echo "dynamixel_sdk library present, no reinstall needed"
-fi
-
-# Free the downloaded .deb cache from the ROS/nav2/cartographer install
-# above before the colcon build, which needs its own disk for build
-# artifacts. Package lists get re-fetched at the very end if anything else
-# needs apt again, so this is safe mid-script.
-apt-get clean
-
-# camera_ros (libcamera-based ROS camera driver). v4l2_camera can't produce a
-# real image from this Bayer CSI sensor on its own -- it only sets the video
-# node's format, never configures the sensor subdevice pad or routes frames
-# through the ISP for demosaicing, so streaming fails outright and even if it
-# didn't, the output would be raw, uncorrected Bayer data. libcamera is what
-# actually knows how to drive this pipeline; camera_ros just wraps it as a
-# ROS node. Jammy's own libcamera is too old for camera_ros, hence building
-# the Raspberry Pi fork from source.
-apt-get install -y python3-pip python3-jinja2 python3-yaml python3-ply \
-    libboost-dev libgnutls28-dev openssl libtiff-dev pybind11-dev \
-    qtbase5-dev libqt5core5a libqt5widgets5 meson cmake \
-    libglib2.0-dev libgstreamer-plugins-base1.0-dev
-apt-get install -y ros-%s-camera-ros
-
-# Jammy's apt meson (0.61) is too old for this libcamera (needs >= 0.63);
-# pip's meson is newer and installs to /usr/local/bin, which takes PATH
-# precedence over apt's /usr/bin/meson.
-pip3 install --upgrade 'meson>=0.63'
-
-git clone -b v0.5.2 --depth 1 https://github.com/raspberrypi/libcamera.git /tmp/libcamera
-cd /tmp/libcamera
-meson setup build --buildtype=release -Dpipelines=rpi/vc4,rpi/pisp -Dipas=rpi/vc4,rpi/pisp -Dv4l2=true -Dgstreamer=enabled -Dtest=false -Dlc-compliance=disabled -Dcam=disabled -Dqcam=disabled -Ddocumentation=disabled -Dpycamera=enabled
-ninja -C build -j 1
-ninja -C build install -j 1
-cd /
-rm -rf /tmp/libcamera
-
-# ninja install puts libcamera under /usr/local/lib/<triplet>; make it a
-# permanent part of the linker's search path via ld.so.conf.d instead of an
-# env var, so every process (agent, ros.service, an interactive shell) picks
-# it up automatically without each needing to know to export LD_LIBRARY_PATH.
-echo "/usr/local/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)" > /etc/ld.so.conf.d/openrobotfleet-libcamera.conf
-ldconfig
-apt-get clean
-
-# Setup Workspace
-if ! id -u ubuntu >/dev/null 2>&1; then
-    useradd --create-home --shell /bin/bash --groups sudo ubuntu
-fi
-mkdir -p /home/ubuntu/ros_ws/src
-cd /home/ubuntu/ros_ws/src
-git clone -b %s https://github.com/ROBOTIS-GIT/turtlebot3.git
-git clone -b %s https://github.com/ROBOTIS-GIT/ld08_driver.git
-git clone -b %s https://github.com/ROBOTIS-GIT/coin_d4_driver.git
-
-# turtlebot3_cartographer/turtlebot3_navigation2 are thin example packages
-# that duplicate the full cartographer-ros/navigation2 packages already
-# installed above; building them from source here roughly doubles build time
-# for no benefit (per ROBOTIS's own setup instructions).
-rm -rf turtlebot3/turtlebot3_cartographer turtlebot3/turtlebot3_navigation2
-
-cd /home/ubuntu/ros_ws
-source /opt/ros/%s/setup.bash
-colcon build --symlink-install --parallel-workers 1
-chown -R ubuntu:ubuntu /home/ubuntu/ros_ws
-chown ubuntu:ubuntu /home/ubuntu
-mkdir -p /home/ubuntu/.ros
-chown -R ubuntu:ubuntu /home/ubuntu/.ros
-
-# Udev Rules
-cp /home/ubuntu/ros_ws/src/turtlebot3/turtlebot3_bringup/script/99-turtlebot3-cdc.rules /etc/udev/rules.d/
-
-# Cleanup
-rm -f /tmp/install.sh
-apt-get clean
-rm -rf /var/lib/apt/lists/*
-`, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro)
-	}
-	if cfg.OverlayEnabled {
-		installScript += overlayInstallScript
-	}
-	if err := os.WriteFile(filepath.Join(mntDir, "tmp/install.sh"), []byte(installScript), 0755); err != nil {
-		c.failBuild(fmt.Sprintf("write install script failed: %v", err))
-		return
-	}
 
 	// Copy Agent Binary (assuming it's in current dir or path)
 	// We are running in /app, agent binary is ./agent (from Dockerfile)
@@ -1043,47 +1003,33 @@ rm -rf /var/lib/apt/lists/*
 	}
 	exec.Command("chmod", "+x", filepath.Join(mntDir, "usr/local/bin/openrobotfleet-agent")).Run()
 
-	// Run Script in Chroot
-	cmd = exec.Command("chroot", mntDir, "/bin/bash", "/tmp/install.sh")
-
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
-
-	if err := cmd.Start(); err != nil {
-		c.failBuild(fmt.Sprintf("install script start failed: %v", err))
-		return
-	}
-
-	// Stream logs
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() {
-			c.logBuild("[install] %s", scanner.Text())
+	stages := buildStages(cfg)
+	const progressStart, progressEnd = 60, 88
+	for i, stage := range stages {
+		if i < completedStage {
+			c.logBuild("skipping already-completed stage: %s", stage.name)
+			continue
 		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			c.logBuild("[install/err] %s", scanner.Text())
+		pct := progressStart + (progressEnd-progressStart)*i/len(stages)
+		c.updateBuildProgress(fmt.Sprintf("Installing (%s, stage %d/%d)...", stage.name, i+1, len(stages)), pct)
+		if err := c.runChrootStage(mntDir, stage); err != nil {
+			c.failBuild(err.Error())
+			return
 		}
-	}()
-
-	wg.Wait()
-
-	if err := cmd.Wait(); err != nil {
-		c.failBuild(fmt.Sprintf("install script failed: %v", err))
-		return
+		exec.Command("sync").Run()
+		if err := saveBuildCheckpoint(cpPath, buildCheckpoint{
+			RobotModel:     cfg.RobotModel,
+			ROSVersion:     cfg.ROSVersion,
+			OverlayEnabled: cfg.OverlayEnabled,
+			CompletedStage: i + 1,
+			UpdatedAt:      time.Now(),
+		}); err != nil {
+			c.logBuild("warning: failed to save build checkpoint: %v", err)
+		}
 	}
 
 	// Clean up build artifacts left in the image
 	os.Remove(filepath.Join(mntDir, "usr/bin/qemu-aarch64-static"))
-	os.Remove(filepath.Join(mntDir, "tmp/install.sh"))
 
 	// Restore resolv.conf to the Ubuntu default symlink (we replaced it with the build host's copy)
 	os.Remove(filepath.Join(mntDir, "etc/resolv.conf"))
@@ -1128,6 +1074,11 @@ rm -rf /var/lib/apt/lists/*
 	}
 	f.Close()
 
+	// Build is fully complete -- the checkpoint sidecar is no longer needed.
+	if err := os.Remove(cpPath); err != nil && !os.IsNotExist(err) {
+		c.logBuild("warning: failed to remove build checkpoint: %v", err)
+	}
+
 	buildSucceeded = true
 
 	// Success
@@ -1166,6 +1117,363 @@ func (c *Controller) failBuild(msg string) {
 	if c.OnBuildUpdate != nil {
 		c.OnBuildUpdate("error", progress, step, logs, msg, imageName)
 	}
+}
+
+// buildStage is one independently-runnable chroot step of the install
+// process. Splitting the install into stages (instead of one 20-30 minute
+// script) lets a failed build resume from the last completed stage instead
+// of starting over -- see runBuild's checkpoint handling.
+type buildStage struct {
+	name   string // stable id, used in checkpoint JSON and log line prefixes
+	script string // full, self-contained bash script including its own #!/bin/bash header
+}
+
+// buildStages returns the ordered chroot stages for the given config. This
+// is the single source of truth for stage order/count: runBuild (to execute
+// them) and any future status/cache reporting must both call this rather
+// than hardcoding stage counts, so they can never drift out of sync.
+func buildStages(cfg *db.GoldenImageConfig) []buildStage {
+	var stages []buildStage
+	if cfg.RobotModel == "TB4" {
+		stages = append(stages,
+			buildStage{"turtlebot4-setup", tb4SetupStageScript(cfg)},
+			buildStage{"ros-extras", tb4ExtrasStageScript(cfg)},
+		)
+	} else {
+		stages = append(stages,
+			buildStage{"ros-core", tb3CoreStageScript(cfg)},
+			buildStage{"camera-build", tb3CameraStageScript(cfg)},
+			buildStage{"workspace-build", tb3WorkspaceStageScript(cfg)},
+		)
+	}
+	if cfg.OverlayEnabled {
+		stages = append(stages, buildStage{"overlay", overlayInstallScript})
+	}
+	return stages
+}
+
+func rosDistroFor(cfg *db.GoldenImageConfig) string {
+	if cfg.ROSVersion == "Jazzy" {
+		return "jazzy"
+	}
+	return "humble"
+}
+
+func tb4SetupStageScript(cfg *db.GoldenImageConfig) string {
+	branch := rosDistroFor(cfg)
+	return fmt.Sprintf(`#!/bin/bash
+set -e
+export DEBIAN_FRONTEND=noninteractive
+
+# Define sudo as a no-op since we are root
+function sudo() { "$@"; }
+export -f sudo
+
+# Install prerequisites
+apt-get update
+apt-get upgrade -y
+apt-get install -y wget curl git
+
+# Download and run official setup script
+wget -qO /tmp/turtlebot4_setup.sh https://raw.githubusercontent.com/turtlebot/turtlebot4_setup/%s/scripts/turtlebot4_setup.sh
+bash /tmp/turtlebot4_setup.sh
+rm -f /tmp/turtlebot4_setup.sh
+`, branch)
+}
+
+func tb4ExtrasStageScript(cfg *db.GoldenImageConfig) string {
+	branch := rosDistroFor(cfg)
+	return fmt.Sprintf(`#!/bin/bash
+set -e
+export DEBIAN_FRONTEND=noninteractive
+
+# Defensive re-sync: this stage may run as a separately-resumed process well
+# after the ros-core-equivalent stage's apt-get update, so don't assume the
+# package lists are still fresh.
+apt-get update
+
+# Cyclone DDS is the fleet-wide default RMW; install it alongside whatever
+# turtlebot4_setup.sh already configured. v4l2_camera provides both the
+# dashboard's camera test and a real ROS image topic for scenarios -- both go
+# through ROS rather than a separate direct-V4L2 tool, since the Pi's
+# libcamera stack doesn't expose a plain /dev/video0.
+apt-get install -y ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins ros-%s-v4l2-camera
+
+# Cleanup
+apt-get clean
+rm -rf /var/lib/apt/lists/*
+`, branch, branch, branch, branch)
+}
+
+func tb3CoreStageScript(cfg *db.GoldenImageConfig) string {
+	rosDistro := rosDistroFor(cfg)
+	return fmt.Sprintf(`#!/bin/bash
+set -e
+export DEBIAN_FRONTEND=noninteractive
+
+# Install ROS 2
+apt-get update
+apt-get upgrade -y
+apt-get install -y software-properties-common curl gnupg lsb-release
+curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(source /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
+apt-get update
+
+# Work around a package-version mismatch on Ubuntu Noble/arm64 that can block
+# ROS dependency resolution with libzstd during golden-image builds.
+if ! apt-get install -y --allow-downgrades libzstd1=1.5.5+dfsg2-2build1 libzstd-dev=1.5.5+dfsg2-2build1; then
+    echo "warning: could not pin libzstd versions; continuing with the standard dependency resolution"
+fi
+apt-get install -y --fix-broken
+apt-get install -y ros-%s-ros-base ros-%s-turtlebot3-msgs ros-%s-dynamixel-sdk ros-%s-xacro ros-%s-hls-lfcd-lds-driver ros-%s-slam-toolbox ros-%s-navigation2 ros-%s-nav2-bringup ros-%s-cartographer-ros ros-%s-teleop-twist-keyboard ros-%s-teleop-twist-joy ros-%s-joy ros-%s-robot-state-publisher ros-%s-joint-state-publisher ros-%s-tf2-tools ros-%s-laser-geometry ros-%s-diagnostic-updater ros-%s-rmw-cyclonedds-cpp ros-%s-compressed-image-transport ros-%s-image-transport-plugins ros-%s-v4l2-camera python3-argcomplete libboost-system-dev libudev-dev libtinyxml2-dev pkg-config build-essential git python3-colcon-common-extensions
+
+# packages.ros.org ships a newer libtinyxml2-dev than Ubuntu jammy's own
+# tinyxml2 runtime, and apt's dependency resolution between the two isn't
+# consistent build to build: sometimes the unversioned libtinyxml2.so symlink
+# CMake's find_library()/pkg-config need ends up missing or pointing at a
+# stale/incompatible file. Log exactly what's on disk so a repeat failure is
+# debuggable from the build log alone, then force the symlink to the newest
+# .so present regardless of what (if anything) is already there.
+echo "--- tinyxml2 diagnostics ---"
+dpkg -l 'libtinyxml2*' 2>&1 || true
+find / -xdev -iname 'libtinyxml2*' 2>/dev/null || true
+find / -xdev -iname 'tinyxml2.pc' 2>/dev/null || true
+echo "--- end tinyxml2 diagnostics ---"
+TINYXML2_SO=$(find /usr/lib -name 'libtinyxml2.so.*' | sort -V | tail -1)
+if [ -n "$TINYXML2_SO" ]; then
+    ln -sf "$(basename "$TINYXML2_SO")" "$(dirname "$TINYXML2_SO")/libtinyxml2.so"
+    echo "linked libtinyxml2.so -> $(basename "$TINYXML2_SO")"
+else
+    echo "warning: no libtinyxml2.so.* found under /usr/lib; turtlebot3_description build will likely fail"
+fi
+ldconfig
+
+# turtlebot3_node's colcon build has been seen failing with "Package
+# 'dynamixel_sdk' exports the library 'dynamixel_sdk' which couldn't be
+# found", thrown by ament_cmake_export_libraries-extras.cmake's find_library()
+# call. Confirmed (via a build's diagnostic output) this is NOT a missing/
+# corrupted package: dpkg shows it correctly installed and
+# libdynamixel_sdk.so is present at exactly the path CMake's find_library()
+# should be searching. The failure is specifically in
+# turtlebot3_node/CMakeLists.txt's find_package(dynamixel_sdk REQUIRED) call
+# (it uses the legacy ${dynamixel_sdk_LIBRARIES} variable style, which
+# forces evaluation of that find_library() call) -- something about *this*
+# environment (qemu-aarch64 emulation, this exact CMake version, or
+# something else) makes it fail even though the file is right there. Rather
+# than guess further, reproduce the exact find_package() call in isolation
+# (seconds, vs. 15+ minutes into the real colcon build) and log what CMake
+# actually resolves, so the next failure (if any) comes with real evidence
+# instead of another guess. Still self-heal with a reinstall if the file
+# turns out to be genuinely missing, since that's cheap and would explain
+# the symptom too.
+echo "--- dynamixel_sdk diagnostics ---"
+dpkg -l 'ros-*-dynamixel-sdk' 2>&1 || true
+DXL_SO="/opt/ros/%s/lib/libdynamixel_sdk.so"
+ls -la "$DXL_SO" 2>&1 || true
+echo "--- end dynamixel_sdk diagnostics ---"
+if [ ! -e "$DXL_SO" ]; then
+    echo "warning: libdynamixel_sdk.so missing after initial install; forcing reinstall"
+    apt-get install --reinstall -y ros-%s-dynamixel-sdk
+    if [ ! -e "$DXL_SO" ]; then
+        echo "error: libdynamixel_sdk.so still missing after reinstall"
+        exit 1
+    fi
+    echo "dynamixel_sdk reinstall fixed the missing library"
+else
+    echo "dynamixel_sdk library present, no reinstall needed"
+fi
+
+echo "--- dynamixel_sdk cmake probe ---"
+cmake --version
+cat /opt/ros/%s/share/dynamixel_sdk/cmake/ament_cmake_export_libraries-extras.cmake 2>&1 || true
+mkdir -p /tmp/dxl_probe
+cat > /tmp/dxl_probe/CMakeLists.txt <<'PROBEEOF'
+cmake_minimum_required(VERSION 3.5)
+project(dxl_probe)
+find_package(dynamixel_sdk REQUIRED)
+message(STATUS "PROBE dynamixel_sdk_DIR=${dynamixel_sdk_DIR}")
+message(STATUS "PROBE dynamixel_sdk_LIBRARIES=${dynamixel_sdk_LIBRARIES}")
+message(STATUS "PROBE dynamixel_sdk_INCLUDE_DIRS=${dynamixel_sdk_INCLUDE_DIRS}")
+PROBEEOF
+( . /opt/ros/%s/setup.bash && cmake -S /tmp/dxl_probe -B /tmp/dxl_probe/build ) || echo "PROBE cmake configure failed (see above -- this reproduces the real failure in isolation)"
+rm -rf /tmp/dxl_probe
+echo "--- end dynamixel_sdk cmake probe ---"
+
+# Free the downloaded .deb cache from the ROS/nav2/cartographer install
+# above before the colcon build, which needs its own disk for build
+# artifacts. Package lists get re-fetched at the very end if anything else
+# needs apt again, so this is safe mid-script.
+apt-get clean
+`, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro, rosDistro)
+}
+
+func tb3CameraStageScript(cfg *db.GoldenImageConfig) string {
+	rosDistro := rosDistroFor(cfg)
+	return fmt.Sprintf(`#!/bin/bash
+set -e
+export DEBIAN_FRONTEND=noninteractive
+
+# Defensive re-sync: this stage may run as a separately-resumed process well
+# after the ros-core stage's apt-get update, so don't assume the package
+# lists are still fresh.
+apt-get update
+
+# camera_ros (libcamera-based ROS camera driver). v4l2_camera can't produce a
+# real image from this Bayer CSI sensor on its own -- it only sets the video
+# node's format, never configures the sensor subdevice pad or routes frames
+# through the ISP for demosaicing, so streaming fails outright and even if it
+# didn't, the output would be raw, uncorrected Bayer data. libcamera is what
+# actually knows how to drive this pipeline; camera_ros just wraps it as a
+# ROS node. Jammy's own libcamera is too old for camera_ros, hence building
+# the Raspberry Pi fork from source.
+apt-get install -y python3-pip python3-jinja2 python3-yaml python3-ply \
+    libboost-dev libgnutls28-dev openssl libtiff-dev pybind11-dev \
+    qtbase5-dev libqt5core5a libqt5widgets5 meson cmake \
+    libglib2.0-dev libgstreamer-plugins-base1.0-dev
+apt-get install -y ros-%s-camera-ros
+
+# Jammy's apt meson (0.61) is too old for this libcamera (needs >= 0.63);
+# pip's meson is newer and installs to /usr/local/bin, which takes PATH
+# precedence over apt's /usr/bin/meson.
+pip3 install --upgrade 'meson>=0.63'
+
+git clone -b v0.5.2 --depth 1 https://github.com/raspberrypi/libcamera.git /tmp/libcamera
+cd /tmp/libcamera
+meson setup build --buildtype=release -Dpipelines=rpi/vc4,rpi/pisp -Dipas=rpi/vc4,rpi/pisp -Dv4l2=true -Dgstreamer=enabled -Dtest=false -Dlc-compliance=disabled -Dcam=disabled -Dqcam=disabled -Ddocumentation=disabled -Dpycamera=enabled
+ninja -C build -j 1
+ninja -C build install -j 1
+cd /
+rm -rf /tmp/libcamera
+
+# ninja install puts libcamera under /usr/local/lib/<triplet>; make it a
+# permanent part of the linker's search path via ld.so.conf.d instead of an
+# env var, so every process (agent, ros.service, an interactive shell) picks
+# it up automatically without each needing to know to export LD_LIBRARY_PATH.
+echo "/usr/local/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)" > /etc/ld.so.conf.d/openrobotfleet-libcamera.conf
+ldconfig
+apt-get clean
+`, rosDistro)
+}
+
+func tb3WorkspaceStageScript(cfg *db.GoldenImageConfig) string {
+	rosDistro := rosDistroFor(cfg)
+	return fmt.Sprintf(`#!/bin/bash
+set -e
+export DEBIAN_FRONTEND=noninteractive
+
+# Setup Workspace
+if ! id -u ubuntu >/dev/null 2>&1; then
+    useradd --create-home --shell /bin/bash --groups sudo ubuntu
+fi
+mkdir -p /home/ubuntu/ros_ws/src
+cd /home/ubuntu/ros_ws/src
+git clone -b %s https://github.com/ROBOTIS-GIT/turtlebot3.git
+git clone -b %s https://github.com/ROBOTIS-GIT/ld08_driver.git
+git clone -b %s https://github.com/ROBOTIS-GIT/coin_d4_driver.git
+
+# turtlebot3_cartographer/turtlebot3_navigation2 are thin example packages
+# that duplicate the full cartographer-ros/navigation2 packages already
+# installed above; building them from source here roughly doubles build time
+# for no benefit (per ROBOTIS's own setup instructions).
+rm -rf turtlebot3/turtlebot3_cartographer turtlebot3/turtlebot3_navigation2
+
+cd /home/ubuntu/ros_ws
+source /opt/ros/%s/setup.bash
+colcon build --symlink-install --parallel-workers 1
+chown -R ubuntu:ubuntu /home/ubuntu/ros_ws
+chown ubuntu:ubuntu /home/ubuntu
+mkdir -p /home/ubuntu/.ros
+chown -R ubuntu:ubuntu /home/ubuntu/.ros
+
+# Udev Rules
+cp /home/ubuntu/ros_ws/src/turtlebot3/turtlebot3_bringup/script/99-turtlebot3-cdc.rules /etc/udev/rules.d/
+
+# Cleanup
+apt-get clean
+rm -rf /var/lib/apt/lists/*
+`, rosDistro, rosDistro, rosDistro, rosDistro)
+}
+
+// runChrootStage writes one build stage's script into the chroot and runs
+// it, streaming output into the build log with a "[stage-name]" prefix.
+// Used identically whether this is a fresh stage or a first attempt at a
+// resumed one.
+func (c *Controller) runChrootStage(mntDir string, stage buildStage) error {
+	scriptPath := filepath.Join(mntDir, "tmp/install-stage.sh")
+	if err := os.WriteFile(scriptPath, []byte(stage.script), 0755); err != nil {
+		return fmt.Errorf("write %s stage script: %w", stage.name, err)
+	}
+	defer os.Remove(scriptPath)
+
+	c.logBuild("=== stage: %s ===", stage.name)
+	cmd := exec.Command("chroot", mntDir, "/bin/bash", "/tmp/install-stage.sh")
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("stage %s start: %w", stage.name, err)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			c.logBuild("[%s] %s", stage.name, scanner.Text())
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			c.logBuild("[%s/err] %s", stage.name, scanner.Text())
+		}
+	}()
+	wg.Wait()
+
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("stage %s failed: %w", stage.name, err)
+	}
+	return nil
+}
+
+// buildCheckpoint tracks how far a chroot install got, so a retry against
+// the same workImage can resume instead of starting over. Stored as a small
+// JSON sidecar next to workImage -- see runBuild's resume-detection block.
+type buildCheckpoint struct {
+	RobotModel     string    `json:"robot_model"`
+	ROSVersion     string    `json:"ros_version"`
+	OverlayEnabled bool      `json:"overlay_enabled"`
+	CompletedStage int       `json:"completed_stage"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+func checkpointPathFor(workImage string) string {
+	return workImage + ".checkpoint.json"
+}
+
+func loadBuildCheckpoint(path string) (*buildCheckpoint, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var cp buildCheckpoint
+	if err := json.Unmarshal(data, &cp); err != nil {
+		return nil, err
+	}
+	return &cp, nil
+}
+
+func saveBuildCheckpoint(path string, cp buildCheckpoint) error {
+	data, err := json.MarshalIndent(cp, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+func (cp *buildCheckpoint) matches(cfg *db.GoldenImageConfig) bool {
+	return cp.RobotModel == cfg.RobotModel && cp.ROSVersion == cfg.ROSVersion && cp.OverlayEnabled == cfg.OverlayEnabled
 }
 
 // parsePartitionStartMiB extracts the start offset (in MiB, truncated to an

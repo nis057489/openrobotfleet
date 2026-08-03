@@ -216,6 +216,12 @@ export const zh = {
       advanced: "高级选项",
       overlayEnabled: "只读黄金镜像 + 可写覆盖层 + 恢复出厂设置",
       overlayEnabledHelp: "构建三分区镜像：基础系统/ROS 安装以只读方式挂载，另有约 4.3GB 可写空间供学生代码、软件包和日志使用。支持远程「恢复出厂设置」，下次启动时仅清空可写空间、恢复到黄金镜像状态，无需重新刷卡。这会改变镜像的启动方式，建议先在一台机器人上验证，再用于整个机队。此功能构建失败可能导致机器人无法启动，需要物理取出 SD 卡才能恢复。",
+      cacheOneEntry: "上次构建 {{image}} 在第 {{completed}}/{{total}} 阶段中断；下次匹配的构建将从该处继续。",
+      cacheManyEntries: "有 {{count}} 个未完成的构建保留了缓存进度。",
+      cacheClear: "清除缓存的构建进度",
+      cacheClearing: "正在清除...",
+      cacheCleared: "已清除缓存的构建进度",
+      cacheClearFailed: "清除缓存的构建进度失败",
     },
     installAgent: {
       title: "添加新 {{type}}",

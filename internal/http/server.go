@@ -87,6 +87,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/golden-image/build", s.handleGoldenImageBuild)
 	mux.HandleFunc("/api/golden-image/status", s.handleGoldenImageStatus)
 	mux.HandleFunc("/api/golden-image/download", s.handleGoldenImageDownload)
+	mux.HandleFunc("/api/golden-image/cache", s.handleGoldenImageCache)
 	mux.HandleFunc("/api/agent/download", s.handleAgentDownload)
 	mux.HandleFunc("/api/robots/identify-all", s.handleIdentifyAll)
 
@@ -697,6 +698,18 @@ func (s *Server) handleGoldenImageDownload(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.Controller.DownloadGoldenImage(w, r)
+}
+
+func (s *Server) handleGoldenImageCache(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		s.Controller.GetGoldenImageBuildCache(w, r)
+		return
+	}
+	if r.Method == http.MethodDelete {
+		s.Controller.ClearGoldenImageBuildCache(w, r)
+		return
+	}
+	methodNotAllowed(w)
 }
 
 func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {

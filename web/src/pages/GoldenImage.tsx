@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { buildGoldenImage, getBuildStatus, getGoldenImageConfig, saveGoldenImageConfig, getSystemConfig } from "../api";
+import { buildGoldenImage, getBuildStatus, getGoldenImageConfig, saveGoldenImageConfig, getSystemConfig, getGoldenImageBuildCache, clearGoldenImageBuildCache, BuildCacheEntry } from "../api";
 import { GoldenImageConfig } from "../types";
-import { Save, Download, Wifi, Server, Radio, Hash, HardDrive, ChevronDown, ChevronRight, Eye, EyeOff } from "lucide-react";
+import { Save, Download, Wifi, Server, Radio, Hash, HardDrive, ChevronDown, ChevronRight, Eye, EyeOff, History } from "lucide-react";
 import { useNotification } from "../contexts/NotificationContext";
 import { useWebSocket, WSEvent } from "../contexts/WebSocketContext";
 
@@ -34,6 +34,12 @@ export function GoldenImage() {
     const [buildImageName, setBuildImageName] = useState<string | null>(null);
     const [showLogs, setShowLogs] = useState(false);
     const [demoMode, setDemoMode] = useState(false);
+    const [buildCache, setBuildCache] = useState<BuildCacheEntry[]>([]);
+    const [clearingCache, setClearingCache] = useState(false);
+
+    const refreshBuildCache = () => {
+        getGoldenImageBuildCache().then(data => setBuildCache(data.entries || [])).catch(console.error);
+    };
 
     useEffect(() => {
         getSystemConfig().then(sys => setDemoMode(sys.demo_mode)).catch(console.error);
@@ -61,6 +67,8 @@ export function GoldenImage() {
             if (status.logs) setBuildLogs(status.logs);
             if (status.image_name) setBuildImageName(status.image_name);
         }).catch(console.error);
+
+        refreshBuildCache();
     }, []);
 
     useEffect(() => {
@@ -73,9 +81,28 @@ export function GoldenImage() {
                 setBuildLogs(data.logs);
                 if (data.error) setBuildError(data.error);
                 if (data.image_name) setBuildImageName(data.image_name);
+                // A build finishing (success or failure) can change what's
+                // cached -- success clears it, failure may leave a new
+                // resumable checkpoint behind.
+                if (data.status === 'success' || data.status === 'error') {
+                    refreshBuildCache();
+                }
             }
         });
     }, [addListener]);
+
+    const handleClearCache = async () => {
+        setClearingCache(true);
+        try {
+            await clearGoldenImageBuildCache();
+            success(t("goldenImage.cacheCleared"));
+            refreshBuildCache();
+        } catch (err) {
+            error(err instanceof Error ? err.message : t("goldenImage.cacheClearFailed"));
+        } finally {
+            setClearingCache(false);
+        }
+    };
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -303,6 +330,29 @@ export function GoldenImage() {
                             </label>
                         </div>
                     </div>
+
+                    {buildCache.length > 0 && buildStatus !== "building" && (
+                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex items-center justify-between gap-4">
+                            <span className="flex items-center gap-2">
+                                <History size={16} className="shrink-0" />
+                                {buildCache.length === 1
+                                    ? t("goldenImage.cacheOneEntry", {
+                                        image: buildCache[0].image_name,
+                                        completed: buildCache[0].completed_stage,
+                                        total: buildCache[0].total_stages
+                                    })
+                                    : t("goldenImage.cacheManyEntries", { count: buildCache.length })}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={handleClearCache}
+                                disabled={clearingCache}
+                                className="text-xs underline text-blue-700 hover:text-blue-900 shrink-0 disabled:opacity-50"
+                            >
+                                {clearingCache ? t("goldenImage.cacheClearing") : t("goldenImage.cacheClear")}
+                            </button>
+                        </div>
+                    )}
 
                     <div className="pt-4 border-t border-gray-100">
                         {buildStatus === "building" ? (
