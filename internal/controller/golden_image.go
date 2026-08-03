@@ -1290,7 +1290,22 @@ if [ -n "$TINYXML2_SO" ]; then
 else
     echo "warning: no libtinyxml2.so.* found under /usr/lib; turtlebot3_description build will likely fail"
 fi
-ldconfig
+
+# ldconfig has been seen segfaulting under qemu-user aarch64 emulation
+# elsewhere in this pipeline (see the camera-build stage) -- this call sits
+# directly upstream of the dynamixel_sdk find_library() checks below, so a
+# silent segfault here (leaving the library cache/symlinks half-updated)
+# is a plausible cause of that failure. Retry rather than assume success.
+for attempt in 1 2 3; do
+    if ldconfig; then
+        break
+    elif [ "$attempt" = 3 ]; then
+        echo "ldconfig segfaulted 3 times under qemu; giving up"
+        exit 1
+    else
+        echo "ldconfig failed (qemu-user flakiness), retrying ($attempt/3)..."
+    fi
+done
 
 # turtlebot3_node's colcon build has been seen failing with "Package
 # 'dynamixel_sdk' exports the library 'dynamixel_sdk' which couldn't be
