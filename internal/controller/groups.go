@@ -241,6 +241,15 @@ func validateGroup(existing []db.Group, g db.Group, selfID int64) error {
 // skipped rather than failing the whole call, since either side may not have
 // checked in yet.
 func (c *Controller) applyGroupNetwork(ctx context.Context, group db.Group) (applied []string, skipped []string) {
+	// Named returns default to nil slices, which encoding/json serializes as
+	// `null` rather than `[]` -- the frontend types these as string[] and
+	// calls .length on them unconditionally (e.g. a group with a robot but
+	// no laptop never appends to either slice), so a nil here crashes the
+	// UI. Start both as empty slices so the JSON response is always an
+	// array.
+	applied = []string{}
+	skipped = []string{}
+
 	var robot, laptop *db.Robot
 	if group.RobotID != nil {
 		if r, err := c.DB.GetRobotByID(ctx, *group.RobotID); err == nil {
