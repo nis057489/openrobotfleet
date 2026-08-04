@@ -25,6 +25,7 @@ export const en = {
       unknown: "Unknown",
       building: "Building",
       ready: "Ready",
+      setting_up: "Setting Up",
       scanNetwork: "Scan Network",
       identifyAll: "Identify All",
       addRobot: "Add Robot",

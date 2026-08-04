@@ -206,6 +206,15 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 		s.JobID = job.ID
 		s.JobStatus = string(job.Status)
 		s.JobError = job.Error
+
+		// install_camera_support can take several minutes (building
+		// libcamera/camera_ros from source) with no other feedback in the
+		// UI, so surface it via the same status field the robot list/detail
+		// pages already render -- no controller or frontend wiring needed,
+		// since status flows through untouched end to end.
+		if job.Type == "install_camera_support" && job.Status == JobStatusRunning {
+			s.Status = "setting_up"
+		}
 	}
 
 	buf, _ := json.Marshal(s)

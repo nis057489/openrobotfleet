@@ -25,6 +25,7 @@ export const zh = {
       unknown: "未知",
       building: "构建中",
       ready: "就绪",
+      setting_up: "设置中",
       scanNetwork: "扫描网络",
       identifyAll: "识别所有",
       addRobot: "添加机器人",
