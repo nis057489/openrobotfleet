@@ -460,20 +460,24 @@ export DEBIAN_FRONTEND=noninteractive
 # workspace-build stage whose cleanup wipes /var/lib/apt/lists -- so the
 # package cache here is empty until apt-get update repopulates it.
 #
-# cloud-initramfs-tools lives in Ubuntu's "universe" component. Nothing else
-# in this pipeline edits sources.list, so universe should already be enabled
-# on the stock preinstalled-server-arm64+raspi base image -- but "Unable to
-# locate package" for a universe package is exactly the symptom of it not
-# being enabled, so log the sources actually in play and make sure universe
-# is on (add-apt-repository is idempotent) before assuming apt-get update
-# alone will fix it.
+# The package that actually provides /etc/overlayroot.conf support and the
+# initramfs local-premount hook is "overlayroot" -- a binary package built
+# from the "cloud-initramfs-tools" *source* package, but not installable
+# under that source name (apt-get install cloud-initramfs-tools fails with
+# "Unable to locate package" regardless of index freshness, since no binary
+# package by that name exists). It lives in Ubuntu's "universe" component.
+# Nothing else in this pipeline edits sources.list, so universe should
+# already be enabled on the stock preinstalled-server-arm64+raspi base image
+# -- but log the sources actually in play and make sure universe is on
+# (add-apt-repository is idempotent) before assuming apt-get update alone
+# will fix a "not found" if this ever regresses again.
 echo "--- overlay apt sources diagnostics ---"
 cat /etc/apt/sources.list 2>&1 || true
 ls /etc/apt/sources.list.d/ 2>&1 || true
 echo "--- end overlay apt sources diagnostics ---"
 add-apt-repository -y universe
 apt-get update
-apt-get install -y cloud-initramfs-tools
+apt-get install -y overlayroot
 
 cat <<'OVERLAYEOF' > /etc/overlayroot.conf
 overlayroot_cfgdisk="disabled"
