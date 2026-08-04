@@ -1175,9 +1175,14 @@ func buildStages(cfg *db.GoldenImageConfig) []buildStage {
 		)
 	} else {
 		stages = append(stages, buildStage{"ros-core", tb3CoreStageScript(cfg)})
-		if featureEnabled(cfg.CameraEnabled) {
-			stages = append(stages, buildStage{"camera-build", tb3CameraStageScript(cfg)})
-		}
+		// camera_ros + libcamera used to be built from source here, but
+		// ldconfig was observed intermittently segfaulting under the
+		// chroot's qemu-aarch64 emulation ("qemu: uncaught target signal
+		// 11") -- a qemu-user flakiness with no equivalent on real
+		// hardware. That build now happens natively on the robot itself, on
+		// explicit request via the "Install Camera Support" semester wizard
+		// action (see HandleInstallCameraSupport in the agent), so it never
+		// runs under emulation at all.
 		stages = append(stages, buildStage{"workspace-build", tb3WorkspaceStageScript(cfg)})
 	}
 	if cfg.OverlayEnabled {
@@ -1319,7 +1324,7 @@ else
 fi
 
 # ldconfig has been seen segfaulting under qemu-user aarch64 emulation
-# elsewhere in this pipeline (see the camera-build stage) -- this call sits
+# elsewhere in this pipeline -- this call sits
 # directly upstream of the dynamixel_sdk find_library() checks below, so a
 # silent segfault here (leaving the library cache/symlinks half-updated)
 # is a plausible cause of that failure. Retry rather than assume success.
@@ -1391,68 +1396,6 @@ echo "--- end dynamixel_sdk cmake probe ---"
 # needs apt again, so this is safe mid-script.
 apt-get clean
 `, corePackages, rosDistro, rosDistro, rosDistro, rosDistro)
-}
-
-func tb3CameraStageScript(cfg *db.GoldenImageConfig) string {
-	rosDistro := rosDistroFor(cfg)
-	return fmt.Sprintf(`#!/bin/bash
-set -e
-export DEBIAN_FRONTEND=noninteractive
-
-# Defensive re-sync: this stage may run as a separately-resumed process well
-# after the ros-core stage's apt-get update, so don't assume the package
-# lists are still fresh.
-apt-get update
-
-# camera_ros (libcamera-based ROS camera driver). v4l2_camera can't produce a
-# real image from this Bayer CSI sensor on its own -- it only sets the video
-# node's format, never configures the sensor subdevice pad or routes frames
-# through the ISP for demosaicing, so streaming fails outright and even if it
-# didn't, the output would be raw, uncorrected Bayer data. libcamera is what
-# actually knows how to drive this pipeline; camera_ros just wraps it as a
-# ROS node. Jammy's own libcamera is too old for camera_ros, hence building
-# the Raspberry Pi fork from source.
-apt-get install -y python3-pip python3-jinja2 python3-yaml python3-ply \
-    libboost-dev libgnutls28-dev openssl libtiff-dev pybind11-dev \
-    qtbase5-dev libqt5core5a libqt5widgets5 meson cmake \
-    libglib2.0-dev libgstreamer-plugins-base1.0-dev
-apt-get install -y ros-%s-camera-ros
-
-# Jammy's apt meson (0.61) is too old for this libcamera (needs >= 0.63);
-# pip's meson is newer and installs to /usr/local/bin, which takes PATH
-# precedence over apt's /usr/bin/meson.
-pip3 install --upgrade 'meson>=0.63'
-
-git clone -b v0.5.2 --depth 1 https://github.com/raspberrypi/libcamera.git /tmp/libcamera
-cd /tmp/libcamera
-meson setup build --buildtype=release -Dpipelines=rpi/vc4,rpi/pisp -Dipas=rpi/vc4,rpi/pisp -Dv4l2=true -Dgstreamer=enabled -Dtest=false -Dlc-compliance=disabled -Dcam=disabled -Dqcam=disabled -Ddocumentation=disabled -Dpycamera=enabled
-ninja -C build -j 1
-ninja -C build install -j 1
-cd /
-rm -rf /tmp/libcamera
-
-# ninja install puts libcamera under /usr/local/lib/<triplet>; make it a
-# permanent part of the linker's search path via ld.so.conf.d instead of an
-# env var, so every process (agent, ros.service, an interactive shell) picks
-# it up automatically without each needing to know to export LD_LIBRARY_PATH.
-echo "/usr/local/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)" > /etc/ld.so.conf.d/openrobotfleet-libcamera.conf
-
-# ldconfig has been seen segfaulting here with "qemu: uncaught target
-# signal 11" -- a known qemu-user-static flakiness under aarch64 emulation,
-# not anything wrong with the cache it's building. ldconfig is idempotent,
-# so just retry it a couple of times before giving up.
-for attempt in 1 2 3; do
-    if ldconfig; then
-        break
-    elif [ "$attempt" = 3 ]; then
-        echo "ldconfig segfaulted 3 times under qemu; giving up"
-        exit 1
-    else
-        echo "ldconfig failed (qemu-user flakiness), retrying ($attempt/3)..."
-    fi
-done
-apt-get clean
-`, rosDistro)
 }
 
 func tb3WorkspaceStageScript(cfg *db.GoldenImageConfig) string {

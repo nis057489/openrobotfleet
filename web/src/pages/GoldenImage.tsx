@@ -348,19 +348,6 @@ export function GoldenImage() {
                                 <label className={`flex items-start gap-2 p-3 border rounded-lg ${config.robot_model === "TB4" ? "border-gray-200 bg-gray-50 opacity-50" : "border-gray-200"}`}>
                                     <input
                                         type="checkbox"
-                                        checked={config.camera_enabled ?? true}
-                                        disabled={config.robot_model === "TB4"}
-                                        onChange={e => setConfig({ ...config, camera_enabled: e.target.checked })}
-                                        className="mt-1"
-                                    />
-                                    <span>
-                                        <span className="block text-sm font-medium text-gray-900">{t("goldenImage.featureCamera")}</span>
-                                        <span className="block text-xs text-gray-500 mt-1">{t("goldenImage.featureCameraHelp")}</span>
-                                    </span>
-                                </label>
-                                <label className={`flex items-start gap-2 p-3 border rounded-lg ${config.robot_model === "TB4" ? "border-gray-200 bg-gray-50 opacity-50" : "border-gray-200"}`}>
-                                    <input
-                                        type="checkbox"
                                         checked={config.teleop_enabled ?? true}
                                         disabled={config.robot_model === "TB4"}
                                         onChange={e => setConfig({ ...config, teleop_enabled: e.target.checked })}
