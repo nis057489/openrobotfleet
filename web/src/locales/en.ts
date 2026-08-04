@@ -218,7 +218,7 @@ export const en = {
       saving: "Saving...",
       advanced: "Advanced",
       overlayEnabled: "Read-only golden image with writable overlay + Factory Reset",
-      overlayEnabledHelp: "Builds a 3-partition image: the base OS/ROS install is mounted read-only, with about 4.3GB of writable space on top for student code, packages, and logs. Enables a remote \"Factory Reset\" that wipes just the writable space back to the golden state on next boot -- no reflash needed. This changes how the image boots; validate on one robot before using it fleet-wide. A build failure here can leave a robot that won't boot without physically pulling the SD card.",
+      overlayEnabledHelp: "Builds a 3-partition image: the base OS/ROS install is mounted read-only, with about 3.3GB of writable space on top for student code, packages, and logs. Enables a remote \"Factory Reset\" that wipes just the writable space back to the golden state on next boot -- no reflash needed. This changes how the image boots; validate on one robot before using it fleet-wide. A build failure here can leave a robot that won't boot without physically pulling the SD card.",
       cacheOneEntry: "A previous build of {{image}} stopped after stage {{completed}}/{{total}}; the next matching build will resume from there.",
       cacheManyEntries: "{{count}} incomplete builds have cached progress.",
       cacheClear: "Clear cached build progress",

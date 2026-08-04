@@ -199,7 +199,7 @@ hostname: openrobot
 manage_etc_hosts: true
 {{if .OverlayEnabled}}
 # Overlay builds partition the disk explicitly at build time (golden root
-# fixed at ~9GiB, remainder is a separate writable overlay partition -- see
+# fixed at ~10GiB, remainder is a separate writable overlay partition -- see
 # runBuild's partitioning step). growpart resizing "/" at first boot is
 # incompatible with that fixed layout, so both it and the matching resizefs
 # step are disabled here.
@@ -459,6 +459,19 @@ export DEBIAN_FRONTEND=noninteractive
 # This runs as its own chroot stage (see runChrootStage), separate from the
 # workspace-build stage whose cleanup wipes /var/lib/apt/lists -- so the
 # package cache here is empty until apt-get update repopulates it.
+#
+# cloud-initramfs-tools lives in Ubuntu's "universe" component. Nothing else
+# in this pipeline edits sources.list, so universe should already be enabled
+# on the stock preinstalled-server-arm64+raspi base image -- but "Unable to
+# locate package" for a universe package is exactly the symptom of it not
+# being enabled, so log the sources actually in play and make sure universe
+# is on (add-apt-repository is idempotent) before assuming apt-get update
+# alone will fix it.
+echo "--- overlay apt sources diagnostics ---"
+cat /etc/apt/sources.list 2>&1 || true
+ls /etc/apt/sources.list.d/ 2>&1 || true
+echo "--- end overlay apt sources diagnostics ---"
+add-apt-repository -y universe
 apt-get update
 apt-get install -y cloud-initramfs-tools
 
@@ -889,7 +902,17 @@ func (c *Controller) runBuild() {
 				c.failBuild(fmt.Sprintf("failed to determine partition 2 start: %v", err))
 				return
 			}
-			goldenRootEndMiB := p2StartMiB + 9*1024 // ~9GiB golden root
+			// 9GiB previously left workspace-build (colcon's turtlebot3
+			// workspace build, run with --parallel-workers 1 so disk usage
+			// peaks late and gradually) too little headroom on top of the
+			// ros-core stage's package install -- confirmed by a build that
+			// completed ros-core cleanly (including its own tinyxml2 sanity
+			// checks) and then failed with a bogus-looking "TinyXML2 not
+			// found" CMake error mid colcon-build, on a config that only
+			// fails with the overlay cap enabled. 10GiB brings this in line
+			// with what the non-overlay path already gets (parted resizepart
+			// 2 100% against the same ~14GB expanded disk).
+			goldenRootEndMiB := p2StartMiB + 10*1024 // ~10GiB golden root
 
 			if out, err := exec.Command("parted", "-s", loopDev, "resizepart", "2", fmt.Sprintf("%dMiB", goldenRootEndMiB)).CombinedOutput(); err != nil {
 				c.failBuild(fmt.Sprintf("parted resize golden root failed: %v: %s", err, string(out)))
@@ -1463,8 +1486,21 @@ source /opt/ros/%s/setup.bash
 # directory) gets torn down the moment the stage fails, capture the actual
 # CMake trace and cache state for turtlebot3_node's configure right here,
 # before that happens, instead of guessing further.
+#
+# Also seen: unrelated-looking CMake "package not found" errors (e.g.
+# TinyXML2) on turtlebot3_description, on overlay/read-only builds only --
+# that build's root partition is capped at a fixed size (see runBuild's
+# partitioning step) rather than filling the disk, and colcon's disk usage
+# peaks right around here. Log free space up front so a future recurrence is
+# unambiguous instead of another red herring chase through CMake output.
+echo "--- disk usage before colcon build ---"
+df -h /
+echo "--- end disk usage before colcon build ---"
 if ! colcon build --symlink-install --parallel-workers 1; then
-    echo "colcon build failed; capturing turtlebot3_node CMake diagnostics before the chroot is torn down..."
+    echo "colcon build failed; capturing diagnostics before the chroot is torn down..."
+    echo "--- disk usage at failure ---"
+    df -h /
+    echo "--- end disk usage at failure ---"
     NODE_BUILD_DIR=/home/ubuntu/ros_ws/build/turtlebot3_node
     echo "--- turtlebot3_node CMakeCache.txt (dynamixel_sdk entries) ---"
     grep -i dynamixel "$NODE_BUILD_DIR/CMakeCache.txt" 2>&1 || true
