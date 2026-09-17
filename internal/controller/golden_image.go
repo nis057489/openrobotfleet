@@ -415,20 +415,24 @@ runcmd:
   # ROS Bringup Service (turtlebot3_bringup: motor/LDS drivers, TF, odometry).
   # Named "ros" to match the agent's default ROS_SERVICE_NAME so the
   # dashboard's "Restart ROS" command works without extra configuration.
-  # Restart=on-failure (not "always") avoids a tight crash loop if OpenCR
-  # isn't connected yet; it'll pick back up once it is.
+  # Restart=always, not on-failure: ros2 launch exits 0 even when every node
+  # crashed (e.g. Cyclone starting before Wi-Fi has an address), so
+  # on-failure never retried. RestartSec=10 keeps it from spinning if OpenCR
+  # isn't connected yet. The agent also installs a drop-in
+  # (EnsureROSServiceOverride) that waits for the pinned interface's address.
   - |
     cat <<EOF > /etc/systemd/system/ros.service
     [Unit]
     Description=OpenRobot ROS Bringup (turtlebot3_bringup)
-    After=network.target
+    Wants=network-online.target
+    After=network-online.target
 
     [Service]
     Type=simple
     User=ubuntu
     Environment=HOME=/home/ubuntu
     ExecStart=/usr/local/bin/openrobotfleet-ros-start
-    Restart=on-failure
+    Restart=always
     RestartSec=10
 
     [Install]

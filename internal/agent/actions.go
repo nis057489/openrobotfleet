@@ -286,6 +286,80 @@ func ensureShellsSourceROSEnv() error {
 	return nil
 }
 
+const (
+	networkWaitPath   = "/usr/local/bin/openrobotfleet-wait-network"
+	networkWaitScript = `#!/bin/bash
+# Installed by openrobotfleet-agent. Blocks ROS startup until the network
+# interface Cyclone DDS is pinned to has an IPv4 address: at boot, Wi-Fi comes
+# up after network.target, and Cyclone can't create a domain on an interface
+# with no address -- every node dies with "rmw handle is invalid".
+cfg=/etc/openrobotfleet-agent/cyclonedds.xml
+dev=$(sed -n 's/.*NetworkInterface name="\([^"]*\)".*/\1/p' "$cfg" 2>/dev/null | head -n1)
+[ -n "$dev" ] || exit 0
+for _ in $(seq 60); do
+  ip -4 -o addr show dev "$dev" 2>/dev/null | grep -q inet && exit 0
+  sleep 1
+done
+echo "openrobotfleet: $dev still has no IPv4 address after 60s, starting anyway" >&2
+exit 0
+`
+	rosOverrideDir = "/etc/systemd/system/"
+	rosOverride    = `# Installed by openrobotfleet-agent.
+[Unit]
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+ExecStartPre=` + networkWaitPath + `
+# ros2 launch exits 0 even when every node crashed, so on-failure never
+# retries; restart whenever it exits (a manual systemctl stop still sticks).
+Restart=always
+RestartSec=10
+`
+)
+
+// EnsureROSServiceOverride installs a systemd drop-in for the ROS bringup
+// service so it waits for the pinned network interface and restarts whenever
+// it exits. A drop-in rather than editing the unit, so it applies to robots
+// imaged before this existed. No-op where there's no ROS service (laptops).
+func EnsureROSServiceOverride() error {
+	unit := rosServiceName() + ".service"
+	if _, err := runCmd(defaultCmdTimeout, "systemctl", "cat", unit); err != nil {
+		return nil
+	}
+	if err := os.WriteFile(networkWaitPath, []byte(networkWaitScript), 0o755); err != nil {
+		return fmt.Errorf("write %s: %w", networkWaitPath, err)
+	}
+
+	dropInDir := filepath.Join(rosOverrideDir, unit+".d")
+	dropInPath := filepath.Join(dropInDir, "openrobotfleet.conf")
+	if existing, _ := os.ReadFile(dropInPath); string(existing) == rosOverride {
+		return nil
+	}
+	if err := os.MkdirAll(dropInDir, 0o755); err != nil {
+		return fmt.Errorf("create %s: %w", dropInDir, err)
+	}
+	if err := os.WriteFile(dropInPath, []byte(rosOverride), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", dropInPath, err)
+	}
+	if out, err := runCmd(defaultCmdTimeout, "systemctl", "daemon-reload"); err != nil {
+		return fmt.Errorf("systemctl daemon-reload: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	log.Printf("[agent] installed %s", dropInPath)
+
+	// A bringup that already died before this override existed won't be
+	// retried by it, so start an enabled-but-dead service once now.
+	if _, err := runCmd(defaultCmdTimeout, "systemctl", "is-enabled", "--quiet", unit); err == nil {
+		if _, err := runCmd(defaultCmdTimeout, "systemctl", "is-active", "--quiet", unit); err != nil {
+			if out, err := runCmd(2*time.Minute, "systemctl", "start", unit); err != nil {
+				return fmt.Errorf("start %s: %w: %s", unit, err, strings.TrimSpace(string(out)))
+			}
+			log.Printf("[agent] started %s", unit)
+		}
+	}
+	return nil
+}
+
 // HandleRestartROS restarts the ROS service via systemd or a custom command.
 func HandleRestartROS(cfg Config) error {
 	cmdArgs := customRestartCommand()
