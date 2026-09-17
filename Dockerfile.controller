@@ -17,7 +17,14 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -trimpath -o agent-amd64 ./cmd/agent \
     && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -trimpath -o agent-arm64 ./cmd/agent
 
-FROM debian:stable-slim
+# Pinned to bookworm (not "stable"): on trixie, qemu-user-static is a
+# transitional package that pulls in qemu-user (~450MB, every arch, all
+# dynamically linked) and symlinks qemu-aarch64-static to the non-static
+# qemu-aarch64 binary. That breaks the chroot emulation in golden_image.go,
+# which needs a genuinely static binary. Bookworm still ships real static
+# per-arch binaries under qemu-user-static, which the find/delete below trims
+# down to just qemu-aarch64-static.
+FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     wget \
