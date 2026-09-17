@@ -11,7 +11,7 @@ export function Discovery() {
     const navigate = useNavigate();
     const location = useLocation();
     const query = new URLSearchParams(location.search);
-    const type = query.get("type") || "robot";
+    const [type, setType] = useState<'robot' | 'laptop'>(query.get("type") === "laptop" ? "laptop" : "robot");
     const [scanning, setScanning] = useState(false);
     const [candidates, setCandidates] = useState<DiscoveryCandidate[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -52,16 +52,32 @@ export function Discovery() {
         <div className="max-w-4xl mx-auto space-y-8">
             <div>
                 <h1 className="text-2xl font-bold text-gray-900">{t("discovery.title")}</h1>
-                <p className="text-gray-500">{t("discovery.subtitle")}</p>
+                <p className="text-gray-500">{type === 'laptop' ? t("discovery.subtitleLaptop") : t("discovery.subtitle")}</p>
+            </div>
+
+            <div className="flex gap-1">
+                {(['robot', 'laptop'] as const).map((key) => (
+                    <button
+                        key={key}
+                        onClick={() => setType(key)}
+                        className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${
+                            type === key
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                    >
+                        {key === 'laptop' ? t("common.laptops") : t("common.robots")}
+                    </button>
+                ))}
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
                 <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
                     <Search size={32} className="text-blue-600" />
                 </div>
-                <h2 className="text-lg font-semibold text-gray-900 mb-2">{t("discovery.findRobots")}</h2>
+                <h2 className="text-lg font-semibold text-gray-900 mb-2">{type === 'laptop' ? t("discovery.findLaptops") : t("discovery.findRobots")}</h2>
                 <p className="text-gray-500 mb-6 max-w-md mx-auto">
-                    {t("discovery.description")}
+                    {type === 'laptop' ? t("discovery.descriptionLaptop") : t("discovery.description")}
                 </p>
                 <button
                     onClick={handleScan}

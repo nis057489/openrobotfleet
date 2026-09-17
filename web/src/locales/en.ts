@@ -164,8 +164,11 @@ export const en = {
     discovery: {
       title: "Network Discovery",
       subtitle: "Scan the local network for available robots",
+      subtitleLaptop: "Scan the local network for available laptops",
       findRobots: "Find Robots",
+      findLaptops: "Find Laptops",
       description: "Scan the local subnet for devices with SSH (port 22) open. This helps find robots that have acquired new IP addresses.",
+      descriptionLaptop: "Scan the local subnet for devices with SSH (port 22) open. This helps find laptops that have acquired new IP addresses.",
       scanning: "Scanning Network...",
       startScan: "Start Scan",
       scanFailed: "Scan failed",

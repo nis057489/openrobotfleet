@@ -37,7 +37,6 @@ func runCmd(timeout time.Duration, name string, args ...string) ([]byte, error) 
 	return out, err
 }
 
-// HandleConfigureAgent updates the agent configuration and restarts the service.
 // HandleSetHostname updates only the OS hostname -- it never touches the
 // agent's permanent identity, so unlike the legacy configure_agent command
 // it needs no config rewrite or service restart.
@@ -154,7 +153,15 @@ func HandleConfigureNetwork(cfg Config, data ConfigureNetworkData) error {
 
 	if len(data.StaticPeers) > 0 {
 		var xml strings.Builder
-		xml.WriteString("<CycloneDDS><Domain><Discovery><Peers AddLocalhost=\"true\">\n")
+		// Avoid the Peers AddLocalhost attribute: Cyclone 0.10.x (ROS 2 Humble)
+		// rejects it and every node fails to create a domain. An explicit
+		// localhost peer works on all versions. Raise the auto participant index
+		// cap so unicast discovery still reaches ports beyond the default ~9 nodes.
+		xml.WriteString("<CycloneDDS><Domain><Discovery>\n")
+		xml.WriteString("<ParticipantIndex>auto</ParticipantIndex>\n")
+		xml.WriteString("<MaxAutoParticipantIndex>100</MaxAutoParticipantIndex>\n")
+		xml.WriteString("<Peers>\n")
+		xml.WriteString("  <Peer Address=\"localhost\"/>\n")
 		for _, peer := range data.StaticPeers {
 			fmt.Fprintf(&xml, "  <Peer Address=\"%s\"/>\n", peer)
 		}

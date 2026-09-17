@@ -163,8 +163,11 @@ export const zh = {
     discovery: {
       title: "网络发现",
       subtitle: "扫描本地网络以查找可用机器人",
+      subtitleLaptop: "扫描本地网络以查找可用笔记本电脑",
       findRobots: "查找机器人",
+      findLaptops: "查找笔记本电脑",
       description: "扫描本地子网以查找开启 SSH（端口 22）的设备。这有助于找到已获取新 IP 地址的机器人。",
+      descriptionLaptop: "扫描本地子网以查找开启 SSH（端口 22）的设备。这有助于找到已获取新 IP 地址的笔记本电脑。",
       scanning: "正在扫描网络...",
       startScan: "开始扫描",
       scanFailed: "扫描失败",
@@ -172,6 +175,7 @@ export const zh = {
       enrolled: "已注册",
       portOpen: "端口 {{port}} 开启",
       setupRobot: "设置机器人",
+      setupLaptop: "设置笔记本电脑",
       alreadyManaged: "已管理",
     },
     goldenImage: {

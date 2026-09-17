@@ -109,6 +109,25 @@ func (e *AgentEngine) mqttHandler(_ mqttlib.Client, msg mqttlib.Message) {
 		log.Printf("invalid command JSON: %v", err)
 		return
 	}
+
+	// Non-durable commands (reboot, identify, etc.) are one-shot actions,
+	// not desired state -- retained on the broker only so a briefly-offline
+	// device still gets them once it reconnects. Left retained after that,
+	// a command whose *own execution* causes a reconnect (reboot being the
+	// worst case) would receive itself again every time, inside the
+	// staleness window, for as long as the reconnect happens faster than
+	// that window closes -- a real reboot loop, observed in practice. Clear
+	// it from the device's own topic the instant it's received, before
+	// dispatch even succeeds, so it can never re-fire. Never done for
+	// lab/commands/all: that retained message is shared by every device,
+	// and one agent clearing it would rob any other device that hasn't
+	// reconnected yet.
+	if !durableCommandTypes[cmd.Type] && msg.Topic() == "lab/commands/"+e.Config.AgentID {
+		if e.MQTTClient != nil {
+			e.MQTTClient.Publish(msg.Topic(), 1, true, nil)
+		}
+	}
+
 	// Non-blocking send
 	select {
 	case e.cmdChan <- cmd:
