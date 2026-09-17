@@ -331,7 +331,9 @@ write_files:
       # For the onboard Pi camera (a raw Bayer CSI sensor), use camera_ros --
       # it's the libcamera-backed driver, which is what actually knows how to
       # configure the sensor and run frames through the ISP for demosaicing:
-      #   ros2 run camera_ros camera_node
+      #   ros2 run camera_ros camera_node --ros-args -p format:=RGB888
+      # (format:=RGB888 is required -- the default NV21 isn't displayable in
+      # RViz and yields an empty /camera/image_raw/compressed payload.)
       # v4l2_camera works too, but only for a plain USB/UVC webcam (one that
       # already outputs ready-to-use YUYV/MJPEG); it can't drive the CSI
       # sensor's raw Bayer pipeline. If you have a USB webcam instead, this

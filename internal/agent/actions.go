@@ -8,11 +8,15 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -551,6 +555,240 @@ func ensureCameraAutoDetect() (bool, error) {
 	return true, nil
 }
 
+// cameraUdevRulesPath and cameraUdevRules hand the camera device nodes to the
+// video group. The agent runs as root so its own captures never notice, but on
+// Ubuntu's Pi images /dev/media* (and /dev/dma_heap/*, which libcamera also
+// opens) come up root:root, so a user running camera_ros or v4l2_camera by
+// hand gets "permission denied" even when they're in the video group.
+const (
+	cameraUdevRulesPath = "/etc/udev/rules.d/99-openrobotfleet-camera.rules"
+	cameraUdevRules     = `SUBSYSTEM=="media", GROUP="video", MODE="0660"
+SUBSYSTEM=="video4linux", GROUP="video", MODE="0660"
+SUBSYSTEM=="dma_heap", GROUP="video", MODE="0660"
+`
+)
+
+// ensureCameraPermissions installs cameraUdevRules (re-triggering udev so the
+// existing nodes pick them up without a reboot) and adds the workspace owner
+// to the video group. Both steps are idempotent. A group change only reaches
+// new login sessions, so an already-open SSH shell still needs to reconnect.
+func ensureCameraPermissions(cfg Config) error {
+	existing, _ := os.ReadFile(cameraUdevRulesPath)
+	if string(existing) != cameraUdevRules {
+		if err := os.WriteFile(cameraUdevRulesPath, []byte(cameraUdevRules), 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", cameraUdevRulesPath, err)
+		}
+		if out, err := runCmd(defaultCmdTimeout, "udevadm", "control", "--reload-rules"); err != nil {
+			return fmt.Errorf("reload udev rules: %w: %s", err, strings.TrimSpace(string(out)))
+		}
+		for _, subsystem := range []string{"media", "video4linux", "dma_heap"} {
+			if out, err := runCmd(defaultCmdTimeout, "udevadm", "trigger", "--action=change", "--subsystem-match="+subsystem); err != nil {
+				return fmt.Errorf("trigger udev for %s: %w: %s", subsystem, err, strings.TrimSpace(string(out)))
+			}
+		}
+		log.Printf("[agent] installed camera udev rules at %s", cameraUdevRulesPath)
+	}
+
+	username := workspaceUsername(cfg)
+	if username == "" {
+		return errors.New("could not determine the workspace user to add to the video group")
+	}
+	u, err := user.Lookup(username)
+	if err != nil {
+		return fmt.Errorf("look up user %s: %w", username, err)
+	}
+	video, err := user.LookupGroup("video")
+	if err != nil {
+		return fmt.Errorf("look up video group: %w", err)
+	}
+	if gids, err := u.GroupIds(); err == nil && slices.Contains(gids, video.Gid) {
+		return nil
+	}
+	if out, err := runCmd(defaultCmdTimeout, "usermod", "-aG", "video", username); err != nil {
+		return fmt.Errorf("add %s to video group: %w: %s", username, err, strings.TrimSpace(string(out)))
+	}
+	log.Printf("[agent] added %s to the video group", username)
+	return nil
+}
+
+// cameraFrameID is the TurtleBot3 Waffle Pi URDF's optical frame for the Pi
+// camera. camera_ros defaults to frame_id "camera", which isn't in the TF
+// tree, so RViz's Camera display can't place the image without this.
+const cameraFrameID = "camera_rgb_optical_frame"
+
+// sensorHFOVDegrees is the full-sensor horizontal field of view of each Pi CSI
+// camera we know how to approximate intrinsics for. It doubles as the filter
+// for which i2c devices detectCSICameras treats as cameras.
+var sensorHFOVDegrees = map[string]float64{
+	"imx219": 62.2, // Pi Camera v2
+	"ov5647": 53.5, // Pi Camera v1
+}
+
+// cameraCalibrationResolutions are the 4:3 modes an approximate calibration
+// file is written for. camera_ros looks up a separate file per resolution.
+var cameraCalibrationResolutions = [][2]int{
+	{320, 240}, {640, 480}, {800, 600}, {1024, 768}, {1280, 960}, {1640, 1232},
+}
+
+type csiCamera struct {
+	model string
+	// name is the calibration name camera_ros derives from libcamera's
+	// camera: model + "_" + the device tree path with every non-alphanumeric
+	// character replaced by "_", e.g. imx219__base_soc_i2c0mux_i2c_1_imx219_10.
+	name string
+}
+
+// detectCSICameras finds CSI sensors by their device tree nodes, the same
+// path libcamera uses as the camera id. Reading sysfs rather than starting
+// camera_ros to see what it logs means this never holds the camera open.
+func detectCSICameras() []csiCamera {
+	nodes, _ := filepath.Glob("/sys/bus/i2c/devices/*/of_node")
+	var cams []csiCamera
+	for _, node := range nodes {
+		target, err := filepath.EvalSymlinks(node)
+		if err != nil {
+			continue
+		}
+		id, ok := strings.CutPrefix(target, "/sys/firmware/devicetree")
+		if !ok {
+			continue
+		}
+		model, _, _ := strings.Cut(filepath.Base(id), "@")
+		if _, known := sensorHFOVDegrees[model]; !known {
+			continue
+		}
+		sanitized := strings.Map(func(r rune) rune {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+				return r
+			}
+			return '_'
+		}, id)
+		cams = append(cams, csiCamera{model: model, name: model + "_" + sanitized})
+	}
+	return cams
+}
+
+// approximateCalibrationYAML returns a pinhole calibration with no distortion
+// derived from the sensor's field of view: accurate enough for RViz's Camera
+// display to overlay the scene, not for anything metric.
+func approximateCalibrationYAML(name string, hfovDeg float64, width, height int) string {
+	f := float64(width) / 2 / math.Tan(hfovDeg/2*math.Pi/180)
+	cx, cy := float64(width)/2, float64(height)/2
+	return fmt.Sprintf(`# Approximate calibration written by openrobotfleet-agent from the sensor's
+# field of view. Replace it by running camera_calibration's cameracalibrator.
+image_width: %[2]d
+image_height: %[3]d
+camera_name: %[1]s
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [%.2[4]f, 0.0, %.1[5]f, 0.0, %.2[4]f, %.1[6]f, 0.0, 0.0, 1.0]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.0, 0.0, 0.0, 0.0, 0.0]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [%.2[4]f, 0.0, %.1[5]f, 0.0, 0.0, %.2[4]f, %.1[6]f, 0.0, 0.0, 0.0, 1.0, 0.0]
+`, name, width, height, f, cx, cy)
+}
+
+// cameraROSParams is written to the workspace user's home so a manual run is
+// just `ros2 run camera_ros camera_node --ros-args --params-file
+// ~/camera_ros.yaml`. RGB888 because camera_ros's default NV21 isn't
+// displayable in RViz and yields an empty compressed image.
+const cameraROSParams = `/**:
+  ros__parameters:
+    format: RGB888
+    width: 320
+    height: 240
+    frame_id: ` + cameraFrameID + `
+`
+
+// EnsureCameraCalibration writes approximate calibration files for each
+// detected CSI camera into the workspace user's ~/.ros/camera_info (the
+// default location camera_ros reads), plus ~/camera_ros.yaml. Existing files
+// are never overwritten, so a real cameracalibrator result survives. It's a
+// no-op until camera support is installed, and cheap enough to run at every
+// agent start -- which also covers the reboot HandleInstallCameraSupport
+// triggers after enabling camera_auto_detect, before which no sensor shows up.
+func EnsureCameraCalibration(cfg Config) error {
+	if _, err := os.Stat(cameraInstalledMarker); err != nil {
+		return nil
+	}
+	cams := detectCSICameras()
+	if len(cams) == 0 {
+		return nil
+	}
+
+	username := workspaceUsername(cfg)
+	if username == "" {
+		return errors.New("could not determine the workspace user for camera calibration files")
+	}
+	u, err := user.Lookup(username)
+	if err != nil {
+		return fmt.Errorf("look up user %s: %w", username, err)
+	}
+	uid, _ := strconv.Atoi(u.Uid)
+	gid, _ := strconv.Atoi(u.Gid)
+	writeOwned := func(path, content string) error {
+		if _, err := os.Stat(path); err == nil {
+			return nil
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", path, err)
+		}
+		log.Printf("[agent] wrote %s", path)
+		return os.Chown(path, uid, gid)
+	}
+
+	rosDir := filepath.Join(u.HomeDir, ".ros")
+	infoDir := filepath.Join(rosDir, "camera_info")
+	if err := os.MkdirAll(infoDir, 0o755); err != nil {
+		return fmt.Errorf("create %s: %w", infoDir, err)
+	}
+	for _, dir := range []string{rosDir, infoDir} {
+		if err := os.Chown(dir, uid, gid); err != nil {
+			return fmt.Errorf("chown %s: %w", dir, err)
+		}
+	}
+
+	for _, cam := range cams {
+		for _, res := range cameraCalibrationResolutions {
+			path := filepath.Join(infoDir, fmt.Sprintf("%s_%dx%d.yaml", cam.name, res[0], res[1]))
+			content := approximateCalibrationYAML(filepath.Base(strings.TrimSuffix(path, ".yaml")), sensorHFOVDegrees[cam.model], res[0], res[1])
+			if err := writeOwned(path, content); err != nil {
+				return err
+			}
+		}
+	}
+	return writeOwned(filepath.Join(u.HomeDir, "camera_ros.yaml"), cameraROSParams)
+}
+
+// workspaceUsername resolves the login name of the robot's workspace user.
+// cfg.WorkspaceOwner may be a name, "name:group", or "uid:gid" (the form
+// detectOwnerFromPath produces), so numeric ids are looked up.
+func workspaceUsername(cfg Config) string {
+	owner := strings.TrimSpace(cfg.WorkspaceOwner)
+	if owner == "" {
+		owner = detectOwnerFromPath(cfg.WorkspacePath)
+	}
+	owner, _, _ = strings.Cut(owner, ":")
+	if owner == "" {
+		return ""
+	}
+	if u, err := user.LookupId(owner); err == nil {
+		return u.Username
+	}
+	return owner
+}
+
 // libcameraBuildScript builds and installs the Raspberry Pi libcamera fork
 // from source, natively on the robot's own ARM64 CPU. This used to run
 // inside the golden image's chroot build under qemu-aarch64 emulation, where
@@ -604,6 +842,10 @@ touch %q
 // this as a single long-running job and reports success/failure back to the
 // controller the same way any other command does.
 func HandleInstallCameraSupport(cfg Config) error {
+	if err := ensureCameraPermissions(cfg); err != nil {
+		log.Printf("[agent] warning: could not ensure camera device permissions: %v", err)
+	}
+
 	configChanged, err := ensureCameraAutoDetect()
 	if err != nil {
 		log.Printf("[agent] warning: could not ensure camera_auto_detect: %v", err)
@@ -611,6 +853,9 @@ func HandleInstallCameraSupport(cfg Config) error {
 
 	if _, err := os.Stat(cameraInstalledMarker); err == nil {
 		log.Printf("[agent] camera support already installed")
+		if err := EnsureCameraCalibration(cfg); err != nil {
+			log.Printf("[agent] warning: could not write camera calibration: %v", err)
+		}
 		if configChanged {
 			log.Printf("[agent] camera_auto_detect was just enabled -- rebooting to apply it")
 			return HandleReboot(cfg)
@@ -632,6 +877,9 @@ func HandleInstallCameraSupport(cfg Config) error {
 		return fmt.Errorf("camera stack build failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	log.Printf("[agent] camera_ros/libcamera build complete")
+	if err := EnsureCameraCalibration(cfg); err != nil {
+		log.Printf("[agent] warning: could not write camera calibration: %v", err)
+	}
 	if configChanged {
 		log.Printf("[agent] camera_auto_detect was just enabled -- rebooting to apply it")
 		return HandleReboot(cfg)

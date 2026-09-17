@@ -36,6 +36,10 @@ func main() {
 		}
 	}
 
+	if err := agent.EnsureCameraCalibration(cfg); err != nil {
+		log.Printf("failed to ensure camera calibration: %v", err)
+	}
+
 	log.Printf("Starting Agent %s (Behavior Tree Mode)", cfg.AgentID)
 
 	// Create Engine
