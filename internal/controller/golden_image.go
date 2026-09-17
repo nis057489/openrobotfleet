@@ -747,9 +747,9 @@ func (c *Controller) runBuild() {
 		c.failBuild(fmt.Sprintf(
 			"not enough free disk space to build a golden image here (%.1f GB free, need at least %d GB). "+
 				"Golden images are built by downloading and expanding a full OS image -- routers and other "+
-				"small devices don't have room for that. Clone this repo and run the controller with "+
-				"\"docker compose up\" on a machine with more disk space (a laptop or desktop) to build the "+
-				"image there instead.",
+				"small devices don't have room for that. Clone https://github.com/nis057489/openrobotfleet "+
+				"and run \"docker compose up\" on a machine with more disk space (a laptop or desktop) to "+
+				"build the image there instead.",
 			float64(status.FreeBytes)/(1<<30), minGoldenImageFreeBytes/(1<<30),
 		))
 		return

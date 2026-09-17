@@ -239,7 +239,7 @@ export const zh = {
       featureTeleopHelp: "键盘和手柄遥控操作软件包。",
       featuresTb4Note: "Turtlebot 4 安装使用其自带的软件包集，这些开关不适用于它。",
       notEnoughSpaceTitle: "磁盘空间不足，无法在此构建",
-      notEnoughSpaceBody: "构建黄金镜像需要下载并扩展完整的操作系统镜像，至少需要 {{required}}GB 可用空间。此设备仅剩 {{free}}GB 可用空间 -- 请克隆本仓库，在磁盘空间更充裕的机器（笔记本电脑或台式机）上运行 \"docker compose up\" 来构建镜像。",
+      notEnoughSpaceBody: "构建黄金镜像需要下载并扩展完整的操作系统镜像，至少需要 {{required}}GB 可用空间。此设备仅剩 {{free}}GB 可用空间 -- 请克隆 https://github.com/nis057489/openrobotfleet，在磁盘空间更充裕的机器（笔记本电脑或台式机）上运行 \"docker compose up\" 来构建镜像。",
     },
     installAgent: {
       title: "添加新 {{type}}",
