@@ -473,6 +473,7 @@ type statusPayload struct {
 	JobID     string `json:"job_id"`
 	JobStatus string `json:"job_status"`
 	JobError  string `json:"job_error"`
+	Camera    string `json:"camera,omitempty"`
 }
 
 func (s *Server) subscribeStatusUpdates() {

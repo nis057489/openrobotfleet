@@ -36,8 +36,8 @@ func main() {
 		}
 	}
 
-	if err := agent.EnsureCameraCalibration(cfg); err != nil {
-		log.Printf("failed to ensure camera calibration: %v", err)
+	if err := agent.EnsureCameraSetup(cfg); err != nil {
+		log.Printf("failed to set up camera: %v", err)
 	}
 
 	log.Printf("Starting Agent %s (Behavior Tree Mode)", cfg.AgentID)

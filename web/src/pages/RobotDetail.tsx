@@ -30,6 +30,8 @@ export function RobotDetail() {
     const [path, setPath] = useState("");
     const [cmdLoading, setCmdLoading] = useState(false);
     const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
+    // Only known once the first heartbeat arrives after the page loads.
+    const [cameraState, setCameraState] = useState<string | undefined>(undefined);
 
     // Tag state
     const [newTag, setNewTag] = useState("");
@@ -77,6 +79,7 @@ export function RobotDetail() {
                     ip: event.data.ip,
                     last_seen: event.data.ts,
                 }) : null);
+                setCameraState(event.data.camera);
             }
         });
     }, [addListener, robot]);
@@ -380,6 +383,22 @@ export function RobotDetail() {
                                 </div>
                                 <p className="text-xs text-gray-500">{t("settings.restartRosDesc")}</p>
                             </button>
+                            {cameraState && (
+                                <button
+                                    onClick={async () => {
+                                        const starting = cameraState !== "active";
+                                        await handleCommand(starting ? "camera_start" : "camera_stop");
+                                        setCameraState(starting ? "active" : "inactive");
+                                    }}
+                                    disabled={cmdLoading}
+                                    className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 text-left transition-colors"
+                                >
+                                    <div className="flex items-center gap-2 font-medium text-gray-700 mb-1">
+                                        <Camera size={16} /> {t(cameraState === "active" ? "robotDetail.stopCamera" : "robotDetail.startCamera")}
+                                    </div>
+                                    <p className="text-xs text-gray-500">{t(cameraState === "active" ? "robotDetail.stopCameraDesc" : "robotDetail.startCameraDesc")}</p>
+                                </button>
+                            )}
                             <button
                                 onClick={() => handleCommand("reboot")}
                                 disabled={cmdLoading}

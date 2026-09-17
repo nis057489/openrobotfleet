@@ -339,10 +339,12 @@ write_files:
       # sensor's raw Bayer pipeline. If you have a USB webcam instead, this
       # image_size param file applies there:
       #   ros2 run v4l2_camera v4l2_camera_node --ros-args --params-file camera_params.example.yaml
-      # Nothing starts a camera node automatically -- it would hold the
-      # device open and block both the dashboard's Test Camera button and any
-      # camera node your scenario launches -- so start one yourself when you
-      # want a live stream. The /camera/image_raw/compressed topic is
+      # Once "Install Camera Support" has run, the agent installs a
+      # ros-camera systemd service that streams alongside ros.service using
+      # ~/camera_ros.yaml (RGB888, frame_id camera_rgb_optical_frame). It holds
+      # the camera open, so to launch the camera from your own scenario
+      # instead, run: sudo systemctl disable --now ros-camera. The
+      # /camera/image_raw/compressed topic is
       # published automatically alongside the raw one once
       # compressed_image_transport is installed.
       /**:

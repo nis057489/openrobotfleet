@@ -711,14 +711,15 @@ const cameraROSParams = `/**:
     frame_id: ` + cameraFrameID + `
 `
 
-// EnsureCameraCalibration writes approximate calibration files for each
-// detected CSI camera into the workspace user's ~/.ros/camera_info (the
-// default location camera_ros reads), plus ~/camera_ros.yaml. Existing files
+// EnsureCameraSetup writes approximate calibration files for each detected
+// CSI camera into the workspace user's ~/.ros/camera_info (the default
+// location camera_ros reads) and ~/camera_ros.yaml, then installs the
+// ros-camera service that streams with those settings. Existing files
 // are never overwritten, so a real cameracalibrator result survives. It's a
 // no-op until camera support is installed, and cheap enough to run at every
 // agent start -- which also covers the reboot HandleInstallCameraSupport
 // triggers after enabling camera_auto_detect, before which no sensor shows up.
-func EnsureCameraCalibration(cfg Config) error {
+func EnsureCameraSetup(cfg Config) error {
 	if _, err := os.Stat(cameraInstalledMarker); err != nil {
 		return nil
 	}
@@ -768,7 +769,119 @@ func EnsureCameraCalibration(cfg Config) error {
 			}
 		}
 	}
-	return writeOwned(filepath.Join(u.HomeDir, "camera_ros.yaml"), cameraROSParams)
+	paramsPath := filepath.Join(u.HomeDir, "camera_ros.yaml")
+	if err := writeOwned(paramsPath, cameraROSParams); err != nil {
+		return err
+	}
+	return ensureCameraService(u, paramsPath)
+}
+
+const (
+	cameraServiceName = "ros-camera"
+	cameraServicePath = "/etc/systemd/system/" + cameraServiceName + ".service"
+	cameraStartPath   = "/usr/local/bin/openrobotfleet-camera-start"
+	cameraStartScript = `#!/bin/bash
+for setup in /opt/ros/*/setup.bash; do
+  [ -f "$setup" ] && source "$setup" && break
+done
+[ -f /etc/openrobotfleet-agent/ros_env.sh ] && source /etc/openrobotfleet-agent/ros_env.sh
+exec ros2 run camera_ros camera_node --ros-args --params-file "$1"
+`
+)
+
+// cameraServiceUnit ties the camera to the bringup service: PartOf means
+// stopping or restarting ROS (including the dashboard's Restart ROS, which
+// also picks up a new ROS_DOMAIN_ID) takes the camera with it, and
+// WantedBy means starting ROS starts the camera.
+func cameraServiceUnit(u *user.User, paramsPath string) string {
+	ros := rosServiceName()
+	return fmt.Sprintf(`[Unit]
+Description=OpenRobot camera (camera_ros)
+PartOf=%[1]s.service
+After=%[1]s.service
+
+[Service]
+Type=simple
+User=%[2]s
+Environment=HOME=%[3]s
+ExecStart=%[4]s %[5]s
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=%[1]s.service
+`, ros, u.Username, u.HomeDir, cameraStartPath, paramsPath)
+}
+
+// ensureCameraService installs the ros-camera systemd unit so the camera
+// streams whenever bringup runs. It's only enabled when the agent first
+// creates the unit: someone who later runs `systemctl disable ros-camera` to
+// launch the camera from their own scenario instead stays disabled across
+// agent restarts.
+func ensureCameraService(u *user.User, paramsPath string) error {
+	_, statErr := os.Stat(cameraServicePath)
+	firstInstall := errors.Is(statErr, os.ErrNotExist)
+
+	if err := os.WriteFile(cameraStartPath, []byte(cameraStartScript), 0o755); err != nil {
+		return fmt.Errorf("write %s: %w", cameraStartPath, err)
+	}
+	unit := cameraServiceUnit(u, paramsPath)
+	existing, _ := os.ReadFile(cameraServicePath)
+	if string(existing) == unit {
+		return nil
+	}
+	if err := os.WriteFile(cameraServicePath, []byte(unit), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", cameraServicePath, err)
+	}
+	if out, err := runCmd(defaultCmdTimeout, "systemctl", "daemon-reload"); err != nil {
+		return fmt.Errorf("systemctl daemon-reload: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	if !firstInstall {
+		log.Printf("[agent] updated %s", cameraServicePath)
+		return nil
+	}
+	if out, err := runCmd(defaultCmdTimeout, "systemctl", "enable", "--now", cameraServiceName); err != nil {
+		return fmt.Errorf("enable %s: %w: %s", cameraServiceName, err, strings.TrimSpace(string(out)))
+	}
+	log.Printf("[agent] installed and started %s", cameraServiceName)
+	return nil
+}
+
+// HandleCameraService starts or stops the ros-camera service from the
+// dashboard. Stopping doesn't disable it, so the camera comes back the next
+// time ROS starts.
+func HandleCameraService(start bool) error {
+	if _, err := os.Stat(cameraServicePath); err != nil {
+		return errors.New("camera service isn't installed on this robot -- run \"Install Camera Support\" from the Semester Wizard first")
+	}
+	verb := "stop"
+	if start {
+		verb = "start"
+	}
+	if out, err := runCmd(defaultCmdTimeout, "systemctl", verb, cameraServiceName); err != nil {
+		return fmt.Errorf("%s %s: %w: %s", verb, cameraServiceName, err, strings.TrimSpace(string(out)))
+	}
+	log.Printf("[agent] camera service %s", verb)
+	return nil
+}
+
+// CameraServiceState is reported in the heartbeat so the dashboard can show
+// the right start/stop button: "active" or "inactive", or "" when the
+// service isn't installed (a laptop, or a robot without camera support).
+func CameraServiceState() string {
+	if _, err := os.Stat(cameraServicePath); err != nil {
+		return ""
+	}
+	if cameraServiceActive() {
+		return "active"
+	}
+	return "inactive"
+}
+
+// cameraServiceActive reports whether ros-camera is currently streaming.
+func cameraServiceActive() bool {
+	_, err := runCmd(defaultCmdTimeout, "systemctl", "is-active", "--quiet", cameraServiceName)
+	return err == nil
 }
 
 // workspaceUsername resolves the login name of the robot's workspace user.
@@ -853,8 +966,8 @@ func HandleInstallCameraSupport(cfg Config) error {
 
 	if _, err := os.Stat(cameraInstalledMarker); err == nil {
 		log.Printf("[agent] camera support already installed")
-		if err := EnsureCameraCalibration(cfg); err != nil {
-			log.Printf("[agent] warning: could not write camera calibration: %v", err)
+		if err := EnsureCameraSetup(cfg); err != nil {
+			log.Printf("[agent] warning: could not set up camera: %v", err)
 		}
 		if configChanged {
 			log.Printf("[agent] camera_auto_detect was just enabled -- rebooting to apply it")
@@ -877,8 +990,8 @@ func HandleInstallCameraSupport(cfg Config) error {
 		return fmt.Errorf("camera stack build failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	log.Printf("[agent] camera_ros/libcamera build complete")
-	if err := EnsureCameraCalibration(cfg); err != nil {
-		log.Printf("[agent] warning: could not write camera calibration: %v", err)
+	if err := EnsureCameraSetup(cfg); err != nil {
+		log.Printf("[agent] warning: could not set up camera: %v", err)
 	}
 	if configChanged {
 		log.Printf("[agent] camera_auto_detect was just enabled -- rebooting to apply it")
@@ -887,11 +1000,11 @@ func HandleInstallCameraSupport(cfg Config) error {
 	return nil
 }
 
-// HandleCaptureImage takes a photo via ROS and uploads it. Nothing keeps a
-// camera node running persistently (see the golden image's
-// camera_params.example.yaml), so this starts a short-lived camera_ros node
-// just for the duration of the capture and kills it afterward -- it can't
-// collide with a scenario's own camera usage. camera_ros (libcamera-backed),
+// HandleCaptureImage takes a photo via ROS and uploads it. When the camera
+// service (see ensureCameraService) is already streaming, it just grabs a
+// frame from that topic -- starting a second camera_ros node would fail on
+// the busy device. Otherwise it starts a short-lived camera_ros node just for
+// the duration of the capture and kills it afterward. camera_ros (libcamera-backed),
 // not v4l2_camera, because the TB3 Pi camera is a raw Bayer CSI sensor:
 // v4l2_camera only talks to the plain V4L2 video node and never configures
 // the sensor's media-controller pad or routes frames through the ISP for
@@ -916,18 +1029,20 @@ func HandleCaptureImage(cfg Config, data CaptureImageData) error {
 	// practice during development: an agent restart orphaned a camera child
 	// process, which then held /dev/video0 open indefinitely and blocked
 	// every capture after it until something manually killed it.
-	camCmd := exec.Command("timeout", "--kill-after=5s", "30s",
-		"ros2", "run", "camera_ros", "camera_node", "--ros-args",
-		"-p", "format:=RGB888", "-p", "width:=640", "-p", "height:=480")
-	if err := camCmd.Start(); err != nil {
-		return fmt.Errorf("failed to start camera node: %w", err)
-	}
-	defer func() {
-		if camCmd.Process != nil {
-			_ = camCmd.Process.Kill()
-			_ = camCmd.Wait()
+	if !cameraServiceActive() {
+		camCmd := exec.Command("timeout", "--kill-after=5s", "30s",
+			"ros2", "run", "camera_ros", "camera_node", "--ros-args",
+			"-p", "format:=RGB888", "-p", "width:=640", "-p", "height:=480")
+		if err := camCmd.Start(); err != nil {
+			return fmt.Errorf("failed to start camera node: %w", err)
 		}
-	}()
+		defer func() {
+			if camCmd.Process != nil {
+				_ = camCmd.Process.Kill()
+				_ = camCmd.Wait()
+			}
+		}()
+	}
 
 	if out, err := runCmd(25*time.Second, "python3", "-c", snapshotGrabScript, tmpPath); err != nil {
 		log.Printf("[agent] camera capture failed: %v: %s", err, string(out))
@@ -1079,11 +1194,14 @@ func customRestartCommand() []string {
 			return parts
 		}
 	}
-	service := os.Getenv("ROS_SERVICE_NAME")
-	if service == "" {
-		service = "ros"
+	return []string{"systemctl", "restart", rosServiceName()}
+}
+
+func rosServiceName() string {
+	if service := os.Getenv("ROS_SERVICE_NAME"); service != "" {
+		return service
 	}
-	return []string{"systemctl", "restart", service}
+	return "ros"
 }
 
 func ensureOwnership(target string, cfg Config) error {

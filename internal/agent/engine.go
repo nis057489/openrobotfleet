@@ -244,6 +244,7 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 		JobID     string `json:"job_id,omitempty"`
 		JobStatus string `json:"job_status,omitempty"`
 		JobError  string `json:"job_error,omitempty"`
+		Camera    string `json:"camera,omitempty"`
 	}
 
 	s := status{
@@ -252,6 +253,7 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 		IP:     e.lastIP,
 		Type:   e.Config.Type,
 		Name:   e.Config.AgentID,
+		Camera: CameraServiceState(),
 	}
 	if hn, err := os.Hostname(); err == nil && hn != "" {
 		s.Name = hn
@@ -327,6 +329,10 @@ func (e *AgentEngine) mapCommandToAction(cmd Command) func() error {
 			return func() error { return err }
 		}
 		return func() error { return HandleCaptureImage(cfg, payload) }
+	case "camera_start":
+		return func() error { return HandleCameraService(true) }
+	case "camera_stop":
+		return func() error { return HandleCameraService(false) }
 	case "install_camera_support":
 		return func() error { return HandleInstallCameraSupport(cfg) }
 	case "identify":
