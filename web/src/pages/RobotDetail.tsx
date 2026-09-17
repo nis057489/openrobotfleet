@@ -401,7 +401,7 @@ export function RobotDetail() {
                                 <p className="text-xs text-gray-500 group-hover:text-red-600">{t("robotDetail.factoryResetDesc")}</p>
                             </button>
                             <button
-                                onClick={() => navigate("/install", { state: { ip: robot.ip, name: robot.name } })}
+                                onClick={() => navigate("/install?type=robot", { state: { ip: robot.ip, name: robot.name } })}
                                 className="p-3 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-100 text-left transition-colors group col-span-2"
                             >
                                 <div className="flex items-center gap-2 font-medium text-gray-700 group-hover:text-blue-700 mb-1">
