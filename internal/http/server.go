@@ -85,6 +85,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/golden-image", s.handleGoldenImage)
 	mux.HandleFunc("/api/golden-image/build", s.handleGoldenImageBuild)
 	mux.HandleFunc("/api/golden-image/status", s.handleGoldenImageStatus)
+	mux.HandleFunc("/api/golden-image/disk-space", s.handleGoldenImageDiskSpace)
 	mux.HandleFunc("/api/golden-image/download", s.handleGoldenImageDownload)
 	mux.HandleFunc("/api/golden-image/cache", s.handleGoldenImageCache)
 	mux.HandleFunc("/api/agent/download", s.handleAgentDownload)
@@ -717,6 +718,14 @@ func (s *Server) handleGoldenImageStatus(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	s.Controller.GetBuildStatus(w, r)
+}
+
+func (s *Server) handleGoldenImageDiskSpace(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	s.Controller.GetGoldenImageDiskSpace(w, r)
 }
 
 func (s *Server) handleSystemConfig(w http.ResponseWriter, r *http.Request) {

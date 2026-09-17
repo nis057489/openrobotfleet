@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"text/template"
 	"time"
 
@@ -735,6 +736,24 @@ func (c *Controller) runBuild() {
 	}
 	workImage = filepath.Join(imagesDir, imageName)
 	cpPath = checkpointPathFor(workImage)
+
+	// Building a golden image downloads a full OS image and expands it up to
+	// ~14GB (see step 5 below), which small devices running the controller
+	// (e.g. a router) don't have room for. The page already warns the user
+	// before they reach this button (GetGoldenImageDiskSpace), but re-check
+	// live here too as the last-resort guard against actually filling up the
+	// disk -- free space can change between page load and clicking build.
+	if status := checkGoldenImageDiskSpace(); !status.Sufficient {
+		c.failBuild(fmt.Sprintf(
+			"not enough free disk space to build a golden image here (%.1f GB free, need at least %d GB). "+
+				"Golden images are built by downloading and expanding a full OS image -- routers and other "+
+				"small devices don't have room for that. Clone this repo and run the controller with "+
+				"\"docker compose up\" on a machine with more disk space (a laptop or desktop) to build the "+
+				"image there instead.",
+			float64(status.FreeBytes)/(1<<30), minGoldenImageFreeBytes/(1<<30),
+		))
+		return
+	}
 
 	// Resume detection: a checkpoint only applies if it matches this exact
 	// config (robot model / ROS version / overlay toggle -- the fields that
@@ -1691,4 +1710,56 @@ func fetchRemoteHash(imageURL string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("hash not found in SHA256SUMS")
+}
+
+// minGoldenImageFreeBytes is the minimum free space required on the
+// filesystem backing imagesDir before a build is allowed to start.
+const minGoldenImageFreeBytes = 16 * 1024 * 1024 * 1024 // 16GB
+
+// diskSpaceStatus is the result of checkGoldenImageDiskSpace.
+type diskSpaceStatus struct {
+	FreeBytes     uint64 `json:"free_bytes"`
+	RequiredBytes uint64 `json:"required_bytes"`
+	Sufficient    bool   `json:"sufficient"`
+}
+
+// checkGoldenImageDiskSpace statfs's the filesystem backing imagesDir. It's
+// cheap enough to call fresh on every page load and build attempt rather
+// than caching -- a user freeing up disk space (or filling it) shouldn't
+// require restarting the controller to be reflected. If free space can't be
+// determined, it optimistically reports enough space so a real error
+// surfaces later (during the build) instead of blocking the page on a
+// spurious check failure.
+func checkGoldenImageDiskSpace() diskSpaceStatus {
+	imagesDir := imagesDirPath()
+	if err := os.MkdirAll(imagesDir, 0755); err != nil {
+		log.Printf("golden image disk space check: mkdir %s failed: %v", imagesDir, err)
+		return diskSpaceStatus{RequiredBytes: minGoldenImageFreeBytes, Sufficient: true}
+	}
+	free, err := freeDiskSpace(imagesDir)
+	if err != nil {
+		log.Printf("golden image disk space check: statfs %s failed: %v", imagesDir, err)
+		return diskSpaceStatus{RequiredBytes: minGoldenImageFreeBytes, Sufficient: true}
+	}
+	return diskSpaceStatus{
+		FreeBytes:     free,
+		RequiredBytes: minGoldenImageFreeBytes,
+		Sufficient:    free >= minGoldenImageFreeBytes,
+	}
+}
+
+// freeDiskSpace returns the bytes available (to an unprivileged user) on the
+// filesystem containing path.
+func freeDiskSpace(path string) (uint64, error) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(path, &stat); err != nil {
+		return 0, err
+	}
+	return stat.Bavail * uint64(stat.Bsize), nil
+}
+
+// GetGoldenImageDiskSpace lets the frontend warn the user before they even
+// try to configure a build.
+func (c *Controller) GetGoldenImageDiskSpace(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, checkGoldenImageDiskSpace())
 }

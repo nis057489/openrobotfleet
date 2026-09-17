@@ -248,6 +248,16 @@ export function getBuildStatus(): Promise<{ status: string; error?: string; prog
   return request('/api/golden-image/status');
 }
 
+export interface GoldenImageDiskSpace {
+  free_bytes: number;
+  required_bytes: number;
+  sufficient: boolean;
+}
+
+export function getGoldenImageDiskSpace(): Promise<GoldenImageDiskSpace> {
+  return request('/api/golden-image/disk-space');
+}
+
 export interface BuildCacheEntry {
   image_name: string;
   robot_model: string;

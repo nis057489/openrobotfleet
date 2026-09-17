@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { buildGoldenImage, getBuildStatus, getGoldenImageConfig, saveGoldenImageConfig, getSystemConfig, getGoldenImageBuildCache, clearGoldenImageBuildCache, BuildCacheEntry } from "../api";
+import { buildGoldenImage, getBuildStatus, getGoldenImageConfig, saveGoldenImageConfig, getSystemConfig, getGoldenImageBuildCache, clearGoldenImageBuildCache, getGoldenImageDiskSpace, BuildCacheEntry, GoldenImageDiskSpace } from "../api";
 import { GoldenImageConfig } from "../types";
 import { Save, Download, Wifi, Server, Radio, Hash, HardDrive, ChevronDown, ChevronRight, Eye, EyeOff, History, Package } from "lucide-react";
 import { useNotification } from "../contexts/NotificationContext";
@@ -39,6 +39,7 @@ export function GoldenImage() {
     const [demoMode, setDemoMode] = useState(false);
     const [buildCache, setBuildCache] = useState<BuildCacheEntry[]>([]);
     const [clearingCache, setClearingCache] = useState(false);
+    const [diskSpace, setDiskSpace] = useState<GoldenImageDiskSpace | null>(null);
 
     const refreshBuildCache = () => {
         getGoldenImageBuildCache().then(data => setBuildCache(data.entries || [])).catch(console.error);
@@ -46,6 +47,8 @@ export function GoldenImage() {
 
     useEffect(() => {
         getSystemConfig().then(sys => setDemoMode(sys.demo_mode)).catch(console.error);
+
+        getGoldenImageDiskSpace().then(setDiskSpace).catch(console.error);
 
         getGoldenImageConfig()
             .then(data => {
@@ -144,6 +147,25 @@ export function GoldenImage() {
     };
 
     if (loading) return <div className="p-8">{t("common.loading")}</div>;
+
+    if (diskSpace && !diskSpace.sufficient) {
+        const freeGB = (diskSpace.free_bytes / (1024 ** 3)).toFixed(1);
+        const requiredGB = Math.round(diskSpace.required_bytes / (1024 ** 3));
+        return (
+            <div className="max-w-3xl mx-auto">
+                <div className="mb-8">
+                    <h1 className="text-2xl font-bold text-gray-900">{t("goldenImage.title")}</h1>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-8 text-center">
+                    <HardDrive className="mx-auto mb-4 text-amber-600" size={40} />
+                    <h2 className="text-lg font-semibold text-amber-900 mb-2">{t("goldenImage.notEnoughSpaceTitle")}</h2>
+                    <p className="text-sm text-amber-800 max-w-lg mx-auto">
+                        {t("goldenImage.notEnoughSpaceBody", { free: freeGB, required: requiredGB })}
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="max-w-3xl mx-auto">

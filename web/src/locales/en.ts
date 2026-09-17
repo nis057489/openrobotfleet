@@ -239,6 +239,8 @@ export const en = {
       featureTeleop: "Teleop Controls",
       featureTeleopHelp: "Keyboard and joystick teleoperation packages.",
       featuresTb4Note: "Turtlebot 4 setup installs its own package set; these toggles don't apply.",
+      notEnoughSpaceTitle: "Not enough disk space to build here",
+      notEnoughSpaceBody: "Building a golden image downloads and expands a full OS image, which needs at least {{required}}GB free. This device only has {{free}}GB free -- clone this repo and run \"docker compose up\" on a machine with more disk space (a laptop or desktop) to build the image there instead.",
     },
     installAgent: {
       title: "Add New {{type}}",
