@@ -125,9 +125,19 @@ func InstallAgent(h HostSpec, cfg agent.Config, hostname string, agentBinary []b
 				fmt.Sprintf("rm -f %s", file.tmp))
 		}
 	}
+	// cfg.WorkspaceOwner is the actual login user on the target box (already
+	// resolved from req.User by determineWorkspaceOwner) -- hardcoding
+	// "ubuntu" here broke installs onto any non-fleet machine (e.g. a lab
+	// laptop with its own account): chown on a user/group that doesn't
+	// exist fails the whole `set -e` chain, well after sudo auth already
+	// succeeded, which looked identical to a wrong sudo password.
+	owner := cfg.WorkspaceOwner
+	if owner == "" {
+		owner = "ubuntu"
+	}
 	commands = append(commands,
-		"mkdir -p /home/ubuntu/.ros",
-		"chown -R ubuntu:ubuntu /home/ubuntu/.ros",
+		fmt.Sprintf("mkdir -p /home/%s/.ros", owner),
+		fmt.Sprintf("chown -R %s:%s /home/%s/.ros", owner, owner, owner),
 	)
 	// Set the hostname before (re)starting the agent so its very first
 	// heartbeat already reports the intended display name, not a stale one.
