@@ -1,9 +1,11 @@
 package controller
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -58,8 +60,16 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 		sudoPwd = os.Getenv("AGENT_SUDO_PASSWORD")
 	}
 	useSudo := req.Sudo || strings.ToLower(req.User) != "root"
+	sudoPwdGuessed := false
 	if useSudo && sudoPwd == "" {
+		// "ubuntu" is the convention for our own TurtleBot fleet images, not
+		// a safe assumption for arbitrary hosts (e.g. lab laptops with their
+		// own accounts) -- kept as a convenience default for the common
+		// case, but tracked so a failure below can say so explicitly instead
+		// of surfacing an opaque "exit status 1, no output" (sudo -S with no
+		// pty produces no diagnosable stderr on a wrong password).
 		sudoPwd = "ubuntu"
+		sudoPwdGuessed = true
 	}
 	if useSudo && sudoPwd == "" {
 		respondError(w, http.StatusBadRequest, "sudo password required")
@@ -82,6 +92,13 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	agentID, err := sshc.DetectPrimaryMAC(host)
+	if err != nil {
+		log.Printf("install agent: detect mac: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to detect device identity: "+err.Error())
+		return
+	}
+
 	binaryDir := os.Getenv("AGENT_BINARY_DIR")
 	if binaryDir == "" {
 		binaryDir = "/app"
@@ -100,19 +117,22 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	broker := agentBrokerURL()
+	broker := c.agentBrokerURL(r.Context())
 	cfg := agent.Config{
-		AgentID:        req.Name,
+		AgentID:        agentID,
 		MQTTBroker:     broker,
 		WorkspacePath:  workspace,
 		WorkspaceOwner: determineWorkspaceOwner(req),
 	}
 
-	if err := sshc.InstallAgent(host, cfg, binary); err != nil {
+	if err := sshc.InstallAgent(host, cfg, req.Name, binary); err != nil {
 		log.Printf("install agent: ssh failure: %v", err)
 		msg := "failed to install agent"
-		if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "no route to host") || strings.Contains(err.Error(), "i/o timeout") {
+		switch {
+		case strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "no route to host") || strings.Contains(err.Error(), "i/o timeout"):
 			msg = "Connection failed. Please check the connection or restart the robot."
+		case useSudo && sudoPwdGuessed && strings.Contains(err.Error(), "exited with status 1"):
+			msg = "Install failed running a privileged command. No sudo password was entered, so \"ubuntu\" (our default for the robot fleet) was tried -- if this device's sudo password is different, enter it explicitly and try again."
 		}
 		respondError(w, http.StatusInternalServerError, msg)
 		return
@@ -128,6 +148,12 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := c.DB.UpsertRobotWithType(r.Context(), cfg.AgentID, req.Name, robotIP, "installed", rType); err != nil {
 		log.Printf("install agent: upsert robot: %v", err)
+		if strings.Contains(err.Error(), "robots.agent_id") {
+			if existing, lookupErr := c.DB.GetRobotByAgentID(r.Context(), cfg.AgentID); lookupErr == nil {
+				respondError(w, http.StatusConflict, fmt.Sprintf("this device is already registered as %q -- rename it there instead of reinstalling under a new name", existing.Name))
+				return
+			}
+		}
 		respondError(w, http.StatusInternalServerError, "failed to update robot")
 		return
 	}
@@ -187,7 +213,14 @@ func (c *Controller) DownloadAgentBinary(w http.ResponseWriter, r *http.Request)
 	http.ServeFile(w, r, basePath)
 }
 
-func agentBrokerURL() string {
+// agentBrokerURL resolves the MQTT broker address to bake into a newly
+// (re)installed agent's config. Env vars are an explicit operator override;
+// docker-compose's own AGENT_MQTT_BROKER default is "tcp://localhost:1883",
+// which can never work for a robot (that's the robot's own loopback, not the
+// controller), so before falling back to a placeholder we prefer whatever
+// broker address the admin already entered in the Golden Image config --
+// it's already known-correct for this deployment's network.
+func (c *Controller) agentBrokerURL(ctx context.Context) string {
 	if v := os.Getenv("AGENT_MQTT_BROKER"); v != "" {
 		return v
 	}
@@ -196,6 +229,9 @@ func agentBrokerURL() string {
 	}
 	if v := os.Getenv("MQTT_BROKER"); v != "" && !strings.Contains(v, "tcp://mqtt") {
 		return v
+	}
+	if cfg, err := c.DB.GetGoldenImageConfig(ctx); err == nil && cfg != nil && cfg.MQTTBroker != "" {
+		return cfg.MQTTBroker
 	}
 	return "tcp://192.168.1.10:1883"
 }

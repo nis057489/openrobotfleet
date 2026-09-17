@@ -5,12 +5,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"example.com/openrobot-fleet/internal/agent/behavior"
 	mqttc "example.com/openrobot-fleet/internal/mqtt"
 	mqttlib "github.com/eclipse/paho.mqtt.golang"
 )
+
+const (
+	reconnectBackoffFloor = 5 * time.Second
+	reconnectBackoffCap   = 60 * time.Second
+	commandStaleThreshold = 10 * time.Minute
+)
+
+// durableCommandTypes represent desired state rather than one-shot actions
+// (mirroring configure_network's existing retained-command idiom) -- they
+// should always apply whenever a robot next connects, however long that
+// takes, so they're exempt from the staleness check in processCommands.
+var durableCommandTypes = map[string]bool{
+	"configure_network": true,
+	"set_hostname":      true,
+}
 
 type AgentEngine struct {
 	Config     Config
@@ -24,6 +40,7 @@ type AgentEngine struct {
 	lastHeartbeat          time.Time
 	lastConnectAttempt     time.Time
 	lastProcessedCommandID string
+	reconnectBackoff       time.Duration
 }
 
 func NewAgentEngine(cfg Config) *AgentEngine {
@@ -92,6 +109,25 @@ func (e *AgentEngine) mqttHandler(_ mqttlib.Client, msg mqttlib.Message) {
 		log.Printf("invalid command JSON: %v", err)
 		return
 	}
+
+	// Non-durable commands (reboot, identify, etc.) are one-shot actions,
+	// not desired state -- retained on the broker only so a briefly-offline
+	// device still gets them once it reconnects. Left retained after that,
+	// a command whose *own execution* causes a reconnect (reboot being the
+	// worst case) would receive itself again every time, inside the
+	// staleness window, for as long as the reconnect happens faster than
+	// that window closes -- a real reboot loop, observed in practice. Clear
+	// it from the device's own topic the instant it's received, before
+	// dispatch even succeeds, so it can never re-fire. Never done for
+	// lab/commands/all: that retained message is shared by every device,
+	// and one agent clearing it would rob any other device that hasn't
+	// reconnected yet.
+	if !durableCommandTypes[cmd.Type] && msg.Topic() == "lab/commands/"+e.Config.AgentID {
+		if e.MQTTClient != nil {
+			e.MQTTClient.Publish(msg.Topic(), 1, true, nil)
+		}
+	}
+
 	// Non-blocking send
 	select {
 	case e.cmdChan <- cmd:
@@ -117,8 +153,12 @@ func (e *AgentEngine) maintainConnection(ctx context.Context, bb *behavior.Black
 		return behavior.StatusFailure
 	}
 	if !e.MQTTClient.Client.IsConnected() {
-		if time.Since(e.lastConnectAttempt) > 5*time.Second {
-			log.Println("MQTT disconnected, attempting reconnect...")
+		wait := e.reconnectBackoff
+		if wait <= 0 {
+			wait = reconnectBackoffFloor
+		}
+		if time.Since(e.lastConnectAttempt) > wait {
+			log.Printf("MQTT disconnected, attempting reconnect (backoff=%s)...", wait)
 			go func() {
 				token := e.MQTTClient.Client.Connect()
 				if token.Wait() && token.Error() != nil {
@@ -126,9 +166,15 @@ func (e *AgentEngine) maintainConnection(ctx context.Context, bb *behavior.Black
 				}
 			}()
 			e.lastConnectAttempt = time.Now()
+			next := wait * 2
+			if next > reconnectBackoffCap {
+				next = reconnectBackoffCap
+			}
+			e.reconnectBackoff = next
 		}
 		return behavior.StatusFailure
 	}
+	e.reconnectBackoff = 0
 	return behavior.StatusSuccess
 }
 
@@ -152,6 +198,13 @@ func (e *AgentEngine) processCommands(ctx context.Context, bb *behavior.Blackboa
 		if cmd.ID != "" && cmd.ID == e.lastProcessedCommandID {
 			log.Printf("Ignoring duplicate command ID: %s", cmd.ID)
 			return behavior.StatusSuccess
+		}
+		if !durableCommandTypes[cmd.Type] {
+			age := time.Since(time.Unix(cmd.Timestamp, 0))
+			if cmd.Timestamp == 0 || age > commandStaleThreshold {
+				log.Printf("Ignoring stale command %s (type=%s, age=%s)", cmd.ID, cmd.Type, age)
+				return behavior.StatusSuccess
+			}
 		}
 		e.lastProcessedCommandID = cmd.ID
 
@@ -191,6 +244,7 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 		JobID     string `json:"job_id,omitempty"`
 		JobStatus string `json:"job_status,omitempty"`
 		JobError  string `json:"job_error,omitempty"`
+		Camera    string `json:"camera,omitempty"`
 	}
 
 	s := status{
@@ -199,6 +253,10 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 		IP:     e.lastIP,
 		Type:   e.Config.Type,
 		Name:   e.Config.AgentID,
+		Camera: CameraServiceState(),
+	}
+	if hn, err := os.Hostname(); err == nil && hn != "" {
+		s.Name = hn
 	}
 
 	// Add Job info
@@ -206,6 +264,15 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 		s.JobID = job.ID
 		s.JobStatus = string(job.Status)
 		s.JobError = job.Error
+
+		// install_camera_support can take several minutes (building
+		// libcamera/camera_ros from source) with no other feedback in the
+		// UI, so surface it via the same status field the robot list/detail
+		// pages already render -- no controller or frontend wiring needed,
+		// since status flows through untouched end to end.
+		if job.Type == "install_camera_support" && job.Status == JobStatusRunning {
+			s.Status = "setting_up"
+		}
 	}
 
 	buf, _ := json.Marshal(s)
@@ -216,12 +283,18 @@ func (e *AgentEngine) mapCommandToAction(cmd Command) func() error {
 	cfg := e.Config
 
 	switch cmd.Type {
-	case "configure_agent":
-		var payload ConfigureAgentData
+	case "set_hostname":
+		var payload SetHostnameData
 		if err := json.Unmarshal(cmd.Data, &payload); err != nil {
 			return func() error { return err }
 		}
-		return func() error { return HandleConfigureAgent(cfg, payload) }
+		return func() error { return HandleSetHostname(payload) }
+	case "configure_network":
+		var payload ConfigureNetworkData
+		if err := json.Unmarshal(cmd.Data, &payload); err != nil {
+			return func() error { return err }
+		}
+		return func() error { return HandleConfigureNetwork(cfg, payload) }
 	case "update_repo":
 		var payload UpdateRepoData
 		if err := json.Unmarshal(cmd.Data, &payload); err != nil {
@@ -256,6 +329,12 @@ func (e *AgentEngine) mapCommandToAction(cmd Command) func() error {
 			return func() error { return err }
 		}
 		return func() error { return HandleCaptureImage(cfg, payload) }
+	case "camera_start":
+		return func() error { return HandleCameraService(true) }
+	case "camera_stop":
+		return func() error { return HandleCameraService(false) }
+	case "install_camera_support":
+		return func() error { return HandleInstallCameraSupport(cfg) }
 	case "identify":
 		var payload IdentifyData
 		if err := json.Unmarshal(cmd.Data, &payload); err != nil {
@@ -264,6 +343,8 @@ func (e *AgentEngine) mapCommandToAction(cmd Command) func() error {
 		return func() error { return HandleIdentify(cfg, payload) }
 	case "reboot":
 		return func() error { return HandleReboot(cfg) }
+	case "factory_reset":
+		return func() error { return HandleFactoryReset(cfg) }
 	case "batch":
 		var payload BatchData
 		if err := json.Unmarshal(cmd.Data, &payload); err != nil {

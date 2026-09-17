@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { getRobot, sendCommand, updateRobotTags, getSystemConfig, deleteRobot, updateRobotName } from "../api";
+import { getRobot, sendCommand, updateRobotTags, getSystemConfig, deleteRobot, updateRobotName, getInstallDefaults } from "../api";
 import { Robot } from "../types";
-import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Tag, Plus, X, Camera, Play, Lightbulb, Trash2, Edit2 } from "lucide-react";
+import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Tag, Plus, X, Camera, Play, Lightbulb, Trash2, Edit2, Network, Copy, Check, RotateCcw, AlertTriangle, Loader2 } from "lucide-react";
 import { Terminal as TerminalView } from "../components/Terminal";
+import { LogsView } from "../components/LogsView";
 import { useNotification } from "../contexts/NotificationContext";
 import { useWebSocket, WSEvent } from "../contexts/WebSocketContext";
 
@@ -19,6 +20,9 @@ export function RobotDetail() {
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<"overview" | "logs" | "terminal">("overview");
     const [demoMode, setDemoMode] = useState(false);
+    const [defaultSshUser, setDefaultSshUser] = useState("ubuntu");
+    const [defaultSshPublicKey, setDefaultSshPublicKey] = useState("");
+    const [sshCopied, setSshCopied] = useState(false);
 
     // Command state
     const [repoUrl, setRepoUrl] = useState("");
@@ -26,6 +30,8 @@ export function RobotDetail() {
     const [path, setPath] = useState("");
     const [cmdLoading, setCmdLoading] = useState(false);
     const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
+    // Only known once the first heartbeat arrives after the page loads.
+    const [cameraState, setCameraState] = useState<string | undefined>(undefined);
 
     // Tag state
     const [newTag, setNewTag] = useState("");
@@ -35,6 +41,11 @@ export function RobotDetail() {
     const [isEditingName, setIsEditingName] = useState(false);
     const [newName, setNewName] = useState("");
 
+    // Factory reset state
+    const [showFactoryResetModal, setShowFactoryResetModal] = useState(false);
+    const [factoryResetConfirmText, setFactoryResetConfirmText] = useState("");
+    const [factoryResetLoading, setFactoryResetLoading] = useState(false);
+
     useEffect(() => {
         if (location.state && (location.state as any).tab === 'logs') {
             setActiveTab('logs');
@@ -43,10 +54,16 @@ export function RobotDetail() {
 
     useEffect(() => {
         if (id) {
-            Promise.all([getRobot(id), getSystemConfig()])
-                .then(([robotData, sysConfig]) => {
+            Promise.all([getRobot(id), getSystemConfig(), getInstallDefaults()])
+                .then(([robotData, sysConfig, installDefaults]) => {
                     setRobot(robotData);
                     setDemoMode(sysConfig.demo_mode);
+                    if (installDefaults.install_config?.user) {
+                        setDefaultSshUser(installDefaults.install_config.user);
+                    }
+                    if (installDefaults.install_config?.ssh_public_key) {
+                        setDefaultSshPublicKey(installDefaults.install_config.ssh_public_key);
+                    }
                 })
                 .catch(console.error)
                 .finally(() => setLoading(false));
@@ -62,6 +79,7 @@ export function RobotDetail() {
                     ip: event.data.ip,
                     last_seen: event.data.ts,
                 }) : null);
+                setCameraState(event.data.camera);
             }
         });
     }, [addListener, robot]);
@@ -175,8 +193,46 @@ export function RobotDetail() {
         }
     };
 
+    const handleFactoryReset = async () => {
+        if (!robot) return;
+        setFactoryResetLoading(true);
+        try {
+            await sendCommand(robot.id, { type: "factory_reset", data: {} });
+            success(t("robotDetail.factoryResetSent"));
+            setShowFactoryResetModal(false);
+            setFactoryResetConfirmText("");
+        } catch (err) {
+            error(err instanceof Error ? err.message : t("robotDetail.commandFailed"));
+        } finally {
+            setFactoryResetLoading(false);
+        }
+    };
+
     if (loading) return <div className="p-8 text-gray-500">{t("robots.loading")}</div>;
     if (!robot) return <div className="p-8 text-red-500">Robot not found</div>;
+
+    const sshHost = robot.ip || robot.install_config?.address;
+    const sshUser = robot.install_config?.user || defaultSshUser;
+    // Embedding the fleet's public key means this one line both connects and
+    // (re)installs key-based access, so it works whether or not this machine
+    // already has the fleet's private key configured locally.
+    const sshCommand = sshHost
+        ? (defaultSshPublicKey
+            ? `ssh ${sshUser}@${sshHost} "mkdir -p ~/.ssh && echo '${defaultSshPublicKey}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"`
+            : `ssh ${sshUser}@${sshHost}`)
+        : "";
+
+    const handleCopySsh = async () => {
+        if (!sshCommand) return;
+        try {
+            await navigator.clipboard.writeText(sshCommand);
+            setSshCopied(true);
+            success(t("robotDetail.sshCopied"));
+            setTimeout(() => setSshCopied(false), 2000);
+        } catch (err) {
+            error(t("robotDetail.copySshFailed"));
+        }
+    };
 
     return (
         <div className="max-w-4xl mx-auto space-y-6">
@@ -228,6 +284,15 @@ export function RobotDetail() {
                             >
                                 <Trash2 size={20} />
                             </button>
+                            {robot.group && (
+                                <button
+                                    onClick={() => navigate("/groups")}
+                                    title={t("groups.viewGroup") || ""}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-purple-50 text-purple-700 text-xs font-medium border border-purple-100 hover:bg-purple-100"
+                                >
+                                    <Network size={12} /> {robot.group.name} · domain {robot.group.ros_domain_id}
+                                </button>
+                            )}
                             {robot.tags?.map(tag => (
                                 <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-medium border border-blue-100">
                                     {tag}
@@ -253,11 +318,24 @@ export function RobotDetail() {
                             )}
                         </div>
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
+                    <div className="flex items-center gap-2 text-sm text-gray-500 mt-1 flex-wrap">
                         <span className={`w-2 h-2 rounded-full ${robot.status !== 'offline' ? 'bg-green-500' : 'bg-gray-300'}`} />
                         <span className="capitalize">{t(`common.${robot.status}`) || robot.status || t("common.unknown")}</span>
                         <span>•</span>
                         <span className="font-mono">{robot.ip}</span>
+                        {sshCommand && (
+                            <>
+                                <span>•</span>
+                                <button
+                                    onClick={handleCopySsh}
+                                    title={t("robotDetail.copySsh") || ""}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 hover:bg-gray-200 font-mono text-xs text-gray-700 transition-colors"
+                                >
+                                    {sshCommand}
+                                    {sshCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} />}
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
@@ -305,6 +383,22 @@ export function RobotDetail() {
                                 </div>
                                 <p className="text-xs text-gray-500">{t("settings.restartRosDesc")}</p>
                             </button>
+                            {cameraState && (
+                                <button
+                                    onClick={async () => {
+                                        const starting = cameraState !== "active";
+                                        await handleCommand(starting ? "camera_start" : "camera_stop");
+                                        setCameraState(starting ? "active" : "inactive");
+                                    }}
+                                    disabled={cmdLoading}
+                                    className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 text-left transition-colors"
+                                >
+                                    <div className="flex items-center gap-2 font-medium text-gray-700 mb-1">
+                                        <Camera size={16} /> {t(cameraState === "active" ? "robotDetail.stopCamera" : "robotDetail.startCamera")}
+                                    </div>
+                                    <p className="text-xs text-gray-500">{t(cameraState === "active" ? "robotDetail.stopCameraDesc" : "robotDetail.startCameraDesc")}</p>
+                                </button>
+                            )}
                             <button
                                 onClick={() => handleCommand("reboot")}
                                 disabled={cmdLoading}
@@ -316,7 +410,17 @@ export function RobotDetail() {
                                 <p className="text-xs text-gray-500 group-hover:text-red-600">{t("robotDetail.rebootSystemDesc")}</p>
                             </button>
                             <button
-                                onClick={() => navigate("/install", { state: { ip: robot.ip, name: robot.name } })}
+                                onClick={() => setShowFactoryResetModal(true)}
+                                disabled={cmdLoading}
+                                className="p-3 border border-gray-200 rounded-lg hover:bg-red-50 hover:border-red-100 text-left transition-colors group"
+                            >
+                                <div className="flex items-center gap-2 font-medium text-gray-700 group-hover:text-red-700 mb-1">
+                                    <RotateCcw size={16} /> {t("robotDetail.factoryReset")}
+                                </div>
+                                <p className="text-xs text-gray-500 group-hover:text-red-600">{t("robotDetail.factoryResetDesc")}</p>
+                            </button>
+                            <button
+                                onClick={() => navigate("/install?type=robot", { state: { ip: robot.ip, name: robot.name } })}
                                 className="p-3 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-100 text-left transition-colors group col-span-2"
                             >
                                 <div className="flex items-center gap-2 font-medium text-gray-700 group-hover:text-blue-700 mb-1">
@@ -495,15 +599,8 @@ export function RobotDetail() {
                         </div>
                     </div>
                 ) : (
-                    <div className="bg-black rounded-xl p-6 font-mono text-sm text-gray-300 min-h-[400px]">
-                        <div className="flex items-center gap-2 text-gray-500 mb-4 border-b border-gray-800 pb-2">
-                            <Terminal size={16} />
-                            <span>/var/log/syslog</span>
-                        </div>
-                        <p>{t("robotDetail.logsNotImplemented")}</p>
-                        <p className="text-gray-600 mt-2">
-                            {t("robotDetail.logsHelp")}
-                        </p>
+                    <div className="h-[600px] bg-black rounded-xl overflow-hidden border border-gray-800">
+                        <LogsView robotId={robot.id} />
                     </div>
                 )
             ) : (
@@ -520,6 +617,61 @@ export function RobotDetail() {
                         <TerminalView robotId={robot.id} />
                     </div>
                 )
+            )}
+
+            {showFactoryResetModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-lg w-full overflow-hidden flex flex-col">
+                        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                            <h2 className="text-xl font-bold text-gray-900">{t("robotDetail.factoryReset")}</h2>
+                            <button
+                                onClick={() => { setShowFactoryResetModal(false); setFactoryResetConfirmText(""); }}
+                                className="text-gray-400 hover:text-gray-600"
+                            >
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="p-4 rounded-lg border bg-red-50 border-red-200">
+                                <div className="flex items-start gap-3">
+                                    <AlertTriangle className="shrink-0 text-red-600" size={20} />
+                                    <div>
+                                        <h3 className="font-medium text-red-900">{t("robotDetail.factoryReset")}</h3>
+                                        <p className="text-sm mt-1 text-red-700">{t("robotDetail.factoryResetModalDesc")}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Type <span className="font-mono font-bold text-red-600">RESET</span> to confirm
+                                </label>
+                                <input
+                                    type="text"
+                                    value={factoryResetConfirmText}
+                                    onChange={e => setFactoryResetConfirmText(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                    placeholder="RESET"
+                                />
+                            </div>
+                            <div className="flex gap-3 justify-end pt-2">
+                                <button
+                                    onClick={() => { setShowFactoryResetModal(false); setFactoryResetConfirmText(""); }}
+                                    className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                >
+                                    {t("common.cancel")}
+                                </button>
+                                <button
+                                    onClick={handleFactoryReset}
+                                    disabled={factoryResetLoading || factoryResetConfirmText !== "RESET"}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-white transition-colors bg-red-600 hover:bg-red-700 disabled:bg-red-300"
+                                >
+                                    {factoryResetLoading && <Loader2 className="animate-spin" size={18} />}
+                                    {t("common.confirm")}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

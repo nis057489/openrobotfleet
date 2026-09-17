@@ -1,4 +1,4 @@
-import { LayoutDashboard, Bot, Laptop, FileCode, Settings, Menu, GraduationCap, Disc, Languages, X } from "lucide-react";
+import { LayoutDashboard, Bot, Laptop, FileCode, Settings, Menu, GraduationCap, Disc, Languages, X, Network } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { clsx, type ClassValue } from "clsx";
@@ -27,6 +27,7 @@ export function Layout() {
         { icon: LayoutDashboard, label: t("common.dashboard"), path: "/" },
         { icon: Bot, label: t("common.robots"), path: "/robots" },
         { icon: Laptop, label: t("common.laptops"), path: "/laptops" },
+        { icon: Network, label: t("common.groups"), path: "/groups" },
         { icon: FileCode, label: t("common.scenarios"), path: "/scenarios" },
         { icon: GraduationCap, label: t("common.semesterWizard"), path: "/semester-wizard" },
         { icon: Disc, label: t("common.goldenImage"), path: "/golden-image" },

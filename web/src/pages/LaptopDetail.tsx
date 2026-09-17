@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { getRobot, sendCommand, updateRobotTags, getSystemConfig, deleteRobot, updateRobotName } from "../api";
+import { getRobot, sendCommand, updateRobotTags, getSystemConfig, deleteRobot, updateRobotName, getInstallDefaults } from "../api";
 import { Robot } from "../types";
-import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Plus, X, Lightbulb, Trash2, Edit2 } from "lucide-react";
+import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Plus, X, Lightbulb, Trash2, Edit2, Network, Copy, Check } from "lucide-react";
 import { Terminal as TerminalView } from "../components/Terminal";
 import { useNotification } from "../contexts/NotificationContext";
 import { useWebSocket, WSEvent } from "../contexts/WebSocketContext";
@@ -19,6 +19,9 @@ export function LaptopDetail() {
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<"overview" | "logs" | "terminal">("overview");
     const [demoMode, setDemoMode] = useState(false);
+    const [defaultSshUser, setDefaultSshUser] = useState("ubuntu");
+    const [defaultSshPublicKey, setDefaultSshPublicKey] = useState("");
+    const [sshCopied, setSshCopied] = useState(false);
 
     // Command state
     const [repoUrl, setRepoUrl] = useState("");
@@ -42,10 +45,16 @@ export function LaptopDetail() {
 
     useEffect(() => {
         if (id) {
-            Promise.all([getRobot(id), getSystemConfig()])
-                .then(([robotData, sysConfig]) => {
+            Promise.all([getRobot(id), getSystemConfig(), getInstallDefaults()])
+                .then(([robotData, sysConfig, installDefaults]) => {
                     setRobot(robotData);
                     setDemoMode(sysConfig.demo_mode);
+                    if (installDefaults.install_config?.user) {
+                        setDefaultSshUser(installDefaults.install_config.user);
+                    }
+                    if (installDefaults.install_config?.ssh_public_key) {
+                        setDefaultSshPublicKey(installDefaults.install_config.ssh_public_key);
+                    }
                 })
                 .catch(console.error)
                 .finally(() => setLoading(false));
@@ -129,6 +138,29 @@ export function LaptopDetail() {
     if (loading) return <div className="p-8 text-gray-500">{t("robots.loading")}</div>;
     if (!robot) return <div className="p-8 text-red-500">Laptop not found</div>;
 
+    const sshHost = robot.ip || robot.install_config?.address;
+    const sshUser = robot.install_config?.user || defaultSshUser;
+    // Embedding the fleet's public key means this one line both connects and
+    // (re)installs key-based access, so it works whether or not this machine
+    // already has the fleet's private key configured locally.
+    const sshCommand = sshHost
+        ? (defaultSshPublicKey
+            ? `ssh ${sshUser}@${sshHost} "mkdir -p ~/.ssh && echo '${defaultSshPublicKey}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"`
+            : `ssh ${sshUser}@${sshHost}`)
+        : "";
+
+    const handleCopySsh = async () => {
+        if (!sshCommand) return;
+        try {
+            await navigator.clipboard.writeText(sshCommand);
+            setSshCopied(true);
+            success(t("robotDetail.sshCopied"));
+            setTimeout(() => setSshCopied(false), 2000);
+        } catch (err) {
+            error(t("robotDetail.copySshFailed"));
+        }
+    };
+
     return (
         <div className="max-w-4xl mx-auto space-y-6">
             {/* Header */}
@@ -179,6 +211,15 @@ export function LaptopDetail() {
                             >
                                 <Trash2 size={20} />
                             </button>
+                            {robot.group && (
+                                <button
+                                    onClick={() => navigate("/groups")}
+                                    title={t("groups.viewGroup") || ""}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-purple-50 text-purple-700 text-xs font-medium border border-purple-100 hover:bg-purple-100"
+                                >
+                                    <Network size={12} /> {robot.group.name} · domain {robot.group.ros_domain_id}
+                                </button>
+                            )}
                             {robot.tags?.map(tag => (
                                 <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-medium border border-blue-100">
                                     {tag}
@@ -204,11 +245,24 @@ export function LaptopDetail() {
                             )}
                         </div>
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
+                    <div className="flex items-center gap-2 text-sm text-gray-500 mt-1 flex-wrap">
                         <span className={`w-2 h-2 rounded-full ${robot.status !== 'offline' ? 'bg-green-500' : 'bg-gray-300'}`} />
                         <span className="capitalize">{t(`common.${robot.status}`) || robot.status || t("common.unknown")}</span>
                         <span>•</span>
                         <span className="font-mono">{robot.ip}</span>
+                        {sshCommand && (
+                            <>
+                                <span>•</span>
+                                <button
+                                    onClick={handleCopySsh}
+                                    title={t("robotDetail.copySsh") || ""}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 hover:bg-gray-200 font-mono text-xs text-gray-700 transition-colors"
+                                >
+                                    {sshCommand}
+                                    {sshCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} />}
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
@@ -267,7 +321,7 @@ export function LaptopDetail() {
                                 <p className="text-xs text-gray-500 group-hover:text-red-600">{t("robotDetail.rebootSystemDesc")}</p>
                             </button>
                             <button
-                                onClick={() => navigate("/install", { state: { ip: robot.ip, name: robot.name } })}
+                                onClick={() => navigate("/install?type=laptop", { state: { ip: robot.ip, name: robot.name } })}
                                 className="p-3 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-100 text-left transition-colors group col-span-2"
                             >
                                 <div className="flex items-center gap-2 font-medium text-gray-700 group-hover:text-blue-700 mb-1">

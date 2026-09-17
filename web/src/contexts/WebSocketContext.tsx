@@ -9,6 +9,8 @@ export interface StatusPayload {
     job_id?: string;
     job_status?: string;
     job_error?: string;
+    // ros-camera service state: "active" | "inactive"; absent when not installed.
+    camera?: string;
 }
 
 export interface StatusUpdateEvent {

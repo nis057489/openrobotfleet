@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { buildGoldenImage, getBuildStatus, getGoldenImageConfig, saveGoldenImageConfig, getSystemConfig } from "../api";
+import { buildGoldenImage, getBuildStatus, getGoldenImageConfig, saveGoldenImageConfig, getSystemConfig, getGoldenImageBuildCache, clearGoldenImageBuildCache, BuildCacheEntry } from "../api";
 import { GoldenImageConfig } from "../types";
-import { Save, Download, Wifi, Server, Radio, Hash, HardDrive, ChevronDown, ChevronRight, Eye, EyeOff } from "lucide-react";
+import { Save, Download, Wifi, Server, Radio, Hash, HardDrive, ChevronDown, ChevronRight, Eye, EyeOff, History, Package } from "lucide-react";
 import { useNotification } from "../contexts/NotificationContext";
 import { useWebSocket, WSEvent } from "../contexts/WebSocketContext";
 
@@ -21,7 +21,10 @@ export function GoldenImage() {
         robot_model: "TB3",
         ros_version: "Humble",
         ubuntu_password: "",
-        include_extras: true
+        overlay_enabled: false,
+        navigation_enabled: true,
+        camera_enabled: true,
+        teleop_enabled: true
     });
     const [showUbuntuPassword, setShowUbuntuPassword] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -34,6 +37,12 @@ export function GoldenImage() {
     const [buildImageName, setBuildImageName] = useState<string | null>(null);
     const [showLogs, setShowLogs] = useState(false);
     const [demoMode, setDemoMode] = useState(false);
+    const [buildCache, setBuildCache] = useState<BuildCacheEntry[]>([]);
+    const [clearingCache, setClearingCache] = useState(false);
+
+    const refreshBuildCache = () => {
+        getGoldenImageBuildCache().then(data => setBuildCache(data.entries || [])).catch(console.error);
+    };
 
     useEffect(() => {
         getSystemConfig().then(sys => setDemoMode(sys.demo_mode)).catch(console.error);
@@ -46,7 +55,9 @@ export function GoldenImage() {
                         ...data.config,
                         robot_model: data.config.robot_model || "TB3",
                         ros_version: data.config.ros_version || "Humble",
-                        include_extras: data.config.include_extras ?? true
+                        navigation_enabled: data.config.navigation_enabled ?? true,
+                        camera_enabled: data.config.camera_enabled ?? true,
+                        teleop_enabled: data.config.teleop_enabled ?? true
                     });
                 }
             })
@@ -62,6 +73,8 @@ export function GoldenImage() {
             if (status.logs) setBuildLogs(status.logs);
             if (status.image_name) setBuildImageName(status.image_name);
         }).catch(console.error);
+
+        refreshBuildCache();
     }, []);
 
     useEffect(() => {
@@ -74,9 +87,28 @@ export function GoldenImage() {
                 setBuildLogs(data.logs);
                 if (data.error) setBuildError(data.error);
                 if (data.image_name) setBuildImageName(data.image_name);
+                // A build finishing (success or failure) can change what's
+                // cached -- success clears it, failure may leave a new
+                // resumable checkpoint behind.
+                if (data.status === 'success' || data.status === 'error') {
+                    refreshBuildCache();
+                }
             }
         });
     }, [addListener]);
+
+    const handleClearCache = async () => {
+        setClearingCache(true);
+        try {
+            await clearGoldenImageBuildCache();
+            success(t("goldenImage.cacheCleared"));
+            refreshBuildCache();
+        } catch (err) {
+            error(err instanceof Error ? err.message : t("goldenImage.cacheClearFailed"));
+        } finally {
+            setClearingCache(false);
+        }
+    };
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -267,6 +299,7 @@ export function GoldenImage() {
                                     >
                                         <option value="LDS-01">LDS-01</option>
                                         <option value="LDS-02">LDS-02</option>
+                                        <option value="LDS-03">LDS-03</option>
                                     </select>
                                 </div>
                                 <div>
@@ -283,25 +316,96 @@ export function GoldenImage() {
                                 </div>
                             </div>
                         </div>
-
-                        {/* Extras */}
-                        {config.robot_model !== "TB4" && (
-                            <div className="col-span-2">
-                                <label className="flex items-center gap-3 cursor-pointer">
+                        {/* Feature Packages */}
+                        <div className="col-span-2">
+                            <h4 className="text-sm font-medium text-gray-900 mb-1 flex items-center gap-2">
+                                <Package size={16} /> {t("goldenImage.featuresTitle")}
+                            </h4>
+                            <p className="text-xs text-gray-500 mb-4">
+                                {t("goldenImage.featuresHelp")}
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <label className="flex items-start gap-2 p-3 border border-gray-200 rounded-lg bg-gray-50 opacity-75">
+                                    <input type="checkbox" checked disabled className="mt-1" />
+                                    <span>
+                                        <span className="block text-sm font-medium text-gray-900">{t("goldenImage.featureBase")}</span>
+                                        <span className="block text-xs text-gray-500 mt-1">{t("goldenImage.featureBaseHelp")}</span>
+                                    </span>
+                                </label>
+                                <label className={`flex items-start gap-2 p-3 border rounded-lg ${config.robot_model === "TB4" ? "border-gray-200 bg-gray-50 opacity-50" : "border-gray-200"}`}>
                                     <input
                                         type="checkbox"
-                                        checked={config.include_extras ?? true}
-                                        onChange={e => setConfig({ ...config, include_extras: e.target.checked })}
-                                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        checked={config.navigation_enabled ?? true}
+                                        disabled={config.robot_model === "TB4"}
+                                        onChange={e => setConfig({ ...config, navigation_enabled: e.target.checked })}
+                                        className="mt-1"
                                     />
-                                    <div>
-                                        <span className="text-sm font-medium text-gray-900">{t("goldenImage.includeExtras")}</span>
-                                        <p className="text-xs text-gray-500">{t("goldenImage.includeExtrasHelp")}</p>
-                                    </div>
+                                    <span>
+                                        <span className="block text-sm font-medium text-gray-900">{t("goldenImage.featureNav")}</span>
+                                        <span className="block text-xs text-gray-500 mt-1">{t("goldenImage.featureNavHelp")}</span>
+                                    </span>
+                                </label>
+                                <label className={`flex items-start gap-2 p-3 border rounded-lg ${config.robot_model === "TB4" ? "border-gray-200 bg-gray-50 opacity-50" : "border-gray-200"}`}>
+                                    <input
+                                        type="checkbox"
+                                        checked={config.teleop_enabled ?? true}
+                                        disabled={config.robot_model === "TB4"}
+                                        onChange={e => setConfig({ ...config, teleop_enabled: e.target.checked })}
+                                        className="mt-1"
+                                    />
+                                    <span>
+                                        <span className="block text-sm font-medium text-gray-900">{t("goldenImage.featureTeleop")}</span>
+                                        <span className="block text-xs text-gray-500 mt-1">{t("goldenImage.featureTeleopHelp")}</span>
+                                    </span>
                                 </label>
                             </div>
-                        )}
+                            {config.robot_model === "TB4" && (
+                                <p className="text-xs text-gray-400 mt-2">{t("goldenImage.featuresTb4Note")}</p>
+                            )}
+                        </div>
                     </div>
+
+                    {/* Advanced: overlay root + factory reset */}
+                    <div className="border-t border-gray-100 pt-6">
+                        <h4 className="text-sm font-medium text-gray-900 mb-4">{t("goldenImage.advanced")}</h4>
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                            <label className="flex items-start gap-2">
+                                <input
+                                    type="checkbox"
+                                    checked={!!config.overlay_enabled}
+                                    onChange={e => setConfig({ ...config, overlay_enabled: e.target.checked })}
+                                    className="mt-1"
+                                />
+                                <span>
+                                    <span className="block text-sm font-medium text-amber-900">{t("goldenImage.overlayEnabled")}</span>
+                                    <span className="block text-xs text-amber-800 mt-1">{t("goldenImage.overlayEnabledHelp")}</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
+                    {buildCache.length > 0 && buildStatus !== "building" && (
+                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex items-center justify-between gap-4">
+                            <span className="flex items-center gap-2">
+                                <History size={16} className="shrink-0" />
+                                {buildCache.length === 1
+                                    ? t("goldenImage.cacheOneEntry", {
+                                        image: buildCache[0].image_name,
+                                        completed: buildCache[0].completed_stage,
+                                        total: buildCache[0].total_stages
+                                    })
+                                    : t("goldenImage.cacheManyEntries", { count: buildCache.length })}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={handleClearCache}
+                                disabled={clearingCache}
+                                className="text-xs underline text-blue-700 hover:text-blue-900 shrink-0 disabled:opacity-50"
+                            >
+                                {clearingCache ? t("goldenImage.cacheClearing") : t("goldenImage.cacheClear")}
+                            </button>
+                        </div>
+                    )}
 
                     <div className="pt-4 border-t border-gray-100">
                         {buildStatus === "building" ? (

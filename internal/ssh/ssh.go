@@ -25,8 +25,9 @@ type HostSpec struct {
 	SudoPassword string
 }
 
-// InstallAgent uploads the agent binary/config/service and enables the unit remotely.
-func InstallAgent(h HostSpec, cfg agent.Config, agentBinary []byte) error {
+// InstallAgent uploads the agent binary/config/service, sets the device's
+// OS hostname to match its fleet display name, and enables the unit remotely.
+func InstallAgent(h HostSpec, cfg agent.Config, hostname string, agentBinary []byte) error {
 	if h.Addr == "" || h.User == "" {
 		return fmt.Errorf("host addr and user required")
 	}
@@ -92,6 +93,7 @@ func InstallAgent(h HostSpec, cfg agent.Config, agentBinary []byte) error {
 	}
 	files := []remoteFile{
 		{dst: "/usr/local/bin/openrobotfleet-agent", mode: 0o755, data: agentBinary},
+		{dst: "/usr/local/bin/openrobotfleet-agent-start", mode: 0o755, data: []byte(agentStartScript)},
 		{dst: "/etc/openrobotfleet-agent/config.yaml", mode: 0o644, data: cfgBytes},
 		{dst: "/etc/systemd/system/openrobotfleet-agent.service", mode: 0o644, data: []byte(systemdUnit)},
 	}
@@ -123,9 +125,26 @@ func InstallAgent(h HostSpec, cfg agent.Config, agentBinary []byte) error {
 				fmt.Sprintf("rm -f %s", file.tmp))
 		}
 	}
+	// cfg.WorkspaceOwner is the actual login user on the target box (already
+	// resolved from req.User by determineWorkspaceOwner) -- hardcoding
+	// "ubuntu" here broke installs onto any non-fleet machine (e.g. a lab
+	// laptop with its own account): chown on a user/group that doesn't
+	// exist fails the whole `set -e` chain, well after sudo auth already
+	// succeeded, which looked identical to a wrong sudo password.
+	owner := cfg.WorkspaceOwner
+	if owner == "" {
+		owner = "ubuntu"
+	}
 	commands = append(commands,
-		"mkdir -p /home/ubuntu/.ros",
-		"chown -R ubuntu:ubuntu /home/ubuntu/.ros",
+		fmt.Sprintf("mkdir -p /home/%s/.ros", owner),
+		fmt.Sprintf("chown -R %s:%s /home/%s/.ros", owner, owner, owner),
+	)
+	// Set the hostname before (re)starting the agent so its very first
+	// heartbeat already reports the intended display name, not a stale one.
+	if sanitized := agent.SanitizeHostname(hostname); sanitized != "" {
+		commands = append(commands, fmt.Sprintf("hostnamectl set-hostname %s", sanitized))
+	}
+	commands = append(commands,
 		"systemctl daemon-reload",
 		"systemctl enable openrobotfleet-agent",
 		"systemctl restart openrobotfleet-agent",
@@ -185,14 +204,30 @@ func runRemote(client *ssh.Client, script, sudoPassword string, useSudo bool) er
 	return nil
 }
 
+// agentStartScript and systemdUnit must stay in sync with the golden image's
+// equivalent write_files entries (internal/controller/golden_image.go,
+// "openrobotfleet-agent-start" / the ExecStart unit in userDataTemplate).
+// Without sourcing ros_env.sh, every ros2 command the agent runs (test_drive,
+// identify, capture_image's camera node) ends up on the default
+// ROS_DOMAIN_ID/RMW instead of whatever domain this robot's Group assigned
+// it, silently disconnected from the rest of its own ROS graph.
+const agentStartScript = `#!/bin/bash
+for setup in /opt/ros/*/setup.bash; do
+  [ -f "$setup" ] && source "$setup" && break
+done
+[ -f /etc/openrobotfleet-agent/ros_env.sh ] && source /etc/openrobotfleet-agent/ros_env.sh
+exec /usr/local/bin/openrobotfleet-agent
+`
+
 const systemdUnit = `[Unit]
 Description=OpenRobot Agent
-After=network-online.target
+After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/openrobotfleet-agent
-Environment=AGENT_CONFIG_PATH=/etc/openrobotfleet-agent/config.yaml
+ExecStart=/usr/local/bin/openrobotfleet-agent-start
 Restart=always
+User=root
+Environment=AGENT_CONFIG_PATH=/etc/openrobotfleet-agent/config.yaml
 
 [Install]
 WantedBy=multi-user.target
@@ -250,4 +285,60 @@ func DetectArch(h HostSpec) (string, error) {
 	default:
 		return arch, nil
 	}
+}
+
+// DetectPrimaryMAC connects to the host and returns its stable agent
+// identity, derived from the first non-loopback interface's MAC address
+// (sorted by name, matching agent.DeriveAgentIDFromMAC's own selection so a
+// device pinned at install time and one that self-derives later agree).
+// Pre-computing this over SSH (rather than leaving agent_id blank for the
+// agent to derive at first boot) avoids a race with install_agent.go's
+// synchronous DB row creation, which happens before the agent ever starts.
+func DetectPrimaryMAC(h HostSpec) (string, error) {
+	if h.Addr == "" || h.User == "" {
+		return "", fmt.Errorf("host addr and user required")
+	}
+
+	var authMethods []ssh.AuthMethod
+	if len(h.PrivateKey) > 0 {
+		signer, err := ssh.ParsePrivateKey(bytes.TrimSpace(h.PrivateKey))
+		if err != nil {
+			return "", fmt.Errorf("parse private key: %w", err)
+		}
+		authMethods = append(authMethods, ssh.PublicKeys(signer))
+	}
+	if h.Password != "" {
+		authMethods = append(authMethods, ssh.Password(h.Password))
+	}
+	if len(authMethods) == 0 {
+		return "", fmt.Errorf("no auth methods provided")
+	}
+
+	sshConfig := &ssh.ClientConfig{
+		User:            h.User,
+		Auth:            authMethods,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         10 * time.Second,
+	}
+	client, err := ssh.Dial("tcp", h.Addr, sshConfig)
+	if err != nil {
+		return "", fmt.Errorf("ssh dial %s: %w", h.Addr, err)
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("new session: %w", err)
+	}
+	defer session.Close()
+
+	out, err := session.Output(`cat /sys/class/net/$(ls /sys/class/net | grep -v '^lo$' | sort | head -1)/address`)
+	if err != nil {
+		return "", fmt.Errorf("detect mac address: %w", err)
+	}
+	mac := strings.TrimSpace(string(out))
+	if mac == "" {
+		return "", fmt.Errorf("no usable network interface found on %s", h.Addr)
+	}
+	return agent.FormatAgentIDFromMAC(mac), nil
 }

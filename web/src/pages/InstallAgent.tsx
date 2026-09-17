@@ -5,6 +5,12 @@ import { installAgent, getInstallDefaults } from "../api";
 import { Loader2, Terminal, Eye, EyeOff, Usb, Network } from "lucide-react";
 import { SerialTerminal, SerialTerminalRef } from "../components/SerialTerminal";
 
+// Mirrors internal/agent/identity.go's SanitizeHostname on the backend.
+function sanitizeHostname(name: string): string {
+    const collapsed = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return collapsed.slice(0, 63).replace(/-+$/g, "");
+}
+
 export function InstallAgent() {
     const { t } = useTranslation();
     const navigate = useNavigate();
@@ -111,7 +117,6 @@ export function InstallAgent() {
             `mkdir -p /etc/openrobotfleet-agent`,
             `echo "Writing config..."`,
             `cat <<EOF > /etc/openrobotfleet-agent/config.yaml`,
-            `agent_id: "${formData.name}"`,
             `type: "${formData.type}"`,
             `mqtt_broker: "${mqttBroker}"`,
             `workspace_path: "/home/${formData.user}/ros_ws/src/course"`,
@@ -129,6 +134,7 @@ export function InstallAgent() {
             `[Install]`,
             `WantedBy=multi-user.target`,
             `EOF`,
+            `hostnamectl set-hostname ${sanitizeHostname(formData.name)}`,
             `echo "Enabling service..."`,
             `systemctl daemon-reload`,
             `systemctl enable openrobotfleet-agent`,

@@ -20,14 +20,16 @@ import (
 )
 
 type semesterRequest struct {
-	RobotIDs       []int64              `json:"robot_ids"`
-	Reinstall      bool                 `json:"reinstall"`
-	ResetLogs      bool                 `json:"reset_logs"`
-	UpdateRepo     bool                 `json:"update_repo"`
-	RunSelfTest    bool                 `json:"run_self_test"`
-	RepoConfig     agent.UpdateRepoData `json:"repo_config"`
-	ApplyScenarios bool                 `json:"apply_scenarios"`
-	ScenarioIDs    []int64              `json:"scenario_ids"`
+	RobotIDs             []int64              `json:"robot_ids"`
+	Reinstall            bool                 `json:"reinstall"`
+	ResetLogs            bool                 `json:"reset_logs"`
+	UpdateRepo           bool                 `json:"update_repo"`
+	RunSelfTest          bool                 `json:"run_self_test"`
+	InstallCameraSupport bool                 `json:"install_camera_support"`
+	RepoConfig           agent.UpdateRepoData `json:"repo_config"`
+	ApplyScenarios       bool                 `json:"apply_scenarios"`
+	ScenarioIDs          []int64              `json:"scenario_ids"`
+	FactoryReset         bool                 `json:"factory_reset"`
 
 	// Internal
 	ScenarioConfigs []agent.UpdateRepoData `json:"-"`
@@ -138,7 +140,7 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 	if workspace == "" {
 		workspace = "/home/ubuntu/ros_ws/src/course"
 	}
-	broker := agentBrokerURL()
+	broker := c.agentBrokerURL(ctx)
 
 	var wg sync.WaitGroup
 	for _, id := range req.RobotIDs {
@@ -228,13 +230,6 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 						sudoPwd = "ubuntu"
 					}
 
-					cfg := agent.Config{
-						AgentID:        robot.Name, // Use name as AgentID for consistency
-						MQTTBroker:     broker,
-						WorkspacePath:  workspace,
-						WorkspaceOwner: determineWorkspaceOwner(installAgentRequest{User: robot.InstallConfig.User}),
-					}
-
 					host := sshc.HostSpec{
 						Addr:         addr,
 						User:         robot.InstallConfig.User,
@@ -252,6 +247,24 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 						batchStatus.Completed++
 						batchStatus.Unlock()
 						return
+					}
+
+					agentID, err := sshc.DetectPrimaryMAC(host)
+					if err != nil {
+						log.Printf("semester: failed to detect device identity for %s: %v", robot.Name, err)
+						batchStatus.Lock()
+						batchStatus.Errors[id] = "failed to detect device identity: " + err.Error()
+						batchStatus.Robots[id] = "error"
+						batchStatus.Completed++
+						batchStatus.Unlock()
+						return
+					}
+
+					cfg := agent.Config{
+						AgentID:        agentID,
+						MQTTBroker:     broker,
+						WorkspacePath:  workspace,
+						WorkspaceOwner: determineWorkspaceOwner(installAgentRequest{User: robot.InstallConfig.User}),
 					}
 
 					binaryDir := os.Getenv("AGENT_BINARY_DIR")
@@ -275,7 +288,7 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 					}
 
 					installStart := time.Now()
-					if err := sshc.InstallAgent(host, cfg, binary); err != nil {
+					if err := sshc.InstallAgent(host, cfg, robot.Name, binary); err != nil {
 						log.Printf("semester: failed to install agent on %s: %v", robot.Name, err)
 						batchStatus.Lock()
 						msg := fmt.Sprintf("install failed: %v", err)
@@ -283,6 +296,27 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 							msg = "Connection failed. Check connection or restart robot."
 						}
 						batchStatus.Errors[id] = msg
+						batchStatus.Robots[id] = "error"
+						batchStatus.Completed++
+						batchStatus.Unlock()
+						return
+					}
+
+					// Pin the newly-detected agent_id onto this same row now,
+					// rather than waiting for the agent's first heartbeat to
+					// do it -- UpsertRobotStatus (heartbeat writes) is keyed
+					// by agent_id, so until this row's agent_id column is
+					// updated to match what the reinstalled agent will
+					// report, a heartbeat can't find it and would instead
+					// create a duplicate row.
+					robotIP := robot.InstallConfig.Address
+					if host, _, err := net.SplitHostPort(addr); err == nil {
+						robotIP = host
+					}
+					if err := c.DB.UpsertRobotWithType(ctx, agentID, robot.Name, robotIP, "installed", robot.Type); err != nil {
+						log.Printf("semester: failed to pin agent_id for %s: %v", robot.Name, err)
+						batchStatus.Lock()
+						batchStatus.Errors[id] = "failed to update robot: " + err.Error()
 						batchStatus.Robots[id] = "error"
 						batchStatus.Completed++
 						batchStatus.Unlock()
@@ -417,6 +451,42 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 					log.Printf("semester: failed to queue capture_image for %s: %v", robot.Name, err)
 					batchStatus.Lock()
 					batchStatus.Errors[id] = "failed to queue capture_image"
+					batchStatus.Robots[id] = "error"
+					batchStatus.Completed++
+					batchStatus.Unlock()
+					return
+				}
+			}
+
+			if req.InstallCameraSupport {
+				log.Printf("semester: installing camera support for %s", robot.Name)
+				batchStatus.Lock()
+				batchStatus.Robots[id] = "installing_camera_support"
+				batchStatus.Unlock()
+
+				cmd := agent.Command{Type: "install_camera_support", Data: []byte("{}")}
+				if _, err := c.queueRobotCommand(ctx, robot, cmd); err != nil {
+					log.Printf("semester: failed to queue install_camera_support for %s: %v", robot.Name, err)
+					batchStatus.Lock()
+					batchStatus.Errors[id] = "failed to queue install_camera_support"
+					batchStatus.Robots[id] = "error"
+					batchStatus.Completed++
+					batchStatus.Unlock()
+					return
+				}
+			}
+
+			if req.FactoryReset {
+				log.Printf("semester: requesting factory reset for %s", robot.Name)
+				batchStatus.Lock()
+				batchStatus.Robots[id] = "factory_reset"
+				batchStatus.Unlock()
+
+				cmd := agent.Command{Type: "factory_reset", Data: []byte("{}")}
+				if _, err := c.queueRobotCommand(ctx, robot, cmd); err != nil {
+					log.Printf("semester: failed to queue factory_reset for %s: %v", robot.Name, err)
+					batchStatus.Lock()
+					batchStatus.Errors[id] = "failed to queue factory_reset"
 					batchStatus.Robots[id] = "error"
 					batchStatus.Completed++
 					batchStatus.Unlock()

@@ -3,7 +3,6 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -74,6 +73,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/robots/command/broadcast", s.handleRobotCommandBroadcast)
 	mux.HandleFunc("/api/scenarios", s.handleScenariosCollection)
 	mux.HandleFunc("/api/scenarios/", s.handleScenarioItem)
+	mux.HandleFunc("/api/groups", s.handleGroupsCollection)
+	mux.HandleFunc("/api/groups/rviz-launcher", s.handleGroupsRvizLauncher)
+	mux.HandleFunc("/api/groups/", s.handleGroupItem)
 	mux.HandleFunc("/api/jobs", s.handleListJobs)
 	mux.HandleFunc("/api/semester/start", s.handleSemesterStart)
 	mux.HandleFunc("/api/semester/status", s.handleSemesterStatus)
@@ -84,6 +86,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/golden-image/build", s.handleGoldenImageBuild)
 	mux.HandleFunc("/api/golden-image/status", s.handleGoldenImageStatus)
 	mux.HandleFunc("/api/golden-image/download", s.handleGoldenImageDownload)
+	mux.HandleFunc("/api/golden-image/cache", s.handleGoldenImageCache)
 	mux.HandleFunc("/api/agent/download", s.handleAgentDownload)
 	mux.HandleFunc("/api/robots/identify-all", s.handleIdentifyAll)
 
@@ -109,8 +112,13 @@ func (s *Server) routes() http.Handler {
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Allow public endpoints
-		if !strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api/login" {
+		// Allow public endpoints. Robot image uploads are called by the agent
+		// itself (capture_image), not a logged-in browser, so it can't carry
+		// the session cookie; MQTT commands to agents are equally
+		// unauthenticated on this trusted-LAN model, so this isn't a new
+		// class of exposure.
+		isRobotUpload := strings.HasPrefix(r.URL.Path, "/api/robots/") && strings.HasSuffix(r.URL.Path, "/upload")
+		if !strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api/login" || isRobotUpload {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -243,6 +251,10 @@ func (s *Server) handleRobotSubroutes(w http.ResponseWriter, r *http.Request) {
 		s.Controller.HandleTerminal(w, r)
 		return
 	}
+	if strings.HasSuffix(trimmed, "/logs") {
+		s.Controller.HandleLogs(w, r)
+		return
+	}
 	if strings.HasSuffix(trimmed, "/upload") {
 		if r.Method != http.MethodPost {
 			methodNotAllowed(w)
@@ -301,6 +313,47 @@ func (s *Server) handleScenarioItem(w http.ResponseWriter, r *http.Request) {
 	default:
 		methodNotAllowed(w)
 	}
+}
+
+func (s *Server) handleGroupsCollection(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.Controller.ListGroups(w, r)
+	case http.MethodPost:
+		s.Controller.CreateGroup(w, r)
+	default:
+		methodNotAllowed(w)
+	}
+}
+
+func (s *Server) handleGroupItem(w http.ResponseWriter, r *http.Request) {
+	trimmed := strings.TrimSuffix(r.URL.Path, "/")
+	if strings.HasSuffix(trimmed, "/apply") {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		s.Controller.ApplyGroup(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		s.Controller.GetGroup(w, r)
+	case http.MethodPut:
+		s.Controller.UpdateGroup(w, r)
+	case http.MethodDelete:
+		s.Controller.DeleteGroup(w, r)
+	default:
+		methodNotAllowed(w)
+	}
+}
+
+func (s *Server) handleGroupsRvizLauncher(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	s.Controller.DownloadRvizLauncher(w, r)
 }
 
 func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
@@ -420,6 +473,7 @@ type statusPayload struct {
 	JobID     string `json:"job_id"`
 	JobStatus string `json:"job_status"`
 	JobError  string `json:"job_error"`
+	Camera    string `json:"camera,omitempty"`
 }
 
 func (s *Server) subscribeStatusUpdates() {
@@ -448,33 +502,16 @@ func (s *Server) subscribeStatusUpdates() {
 		// Update job status in controller memory
 		s.Controller.UpdateRobotJobStatus(agentID, payload.JobID, payload.JobStatus, payload.JobError)
 
-		// Check if we have a pending rename (DB name != Agent name)
-		// We look up by AgentID because that's what the robot is currently using.
+		// agent_id is the device's permanent identity; name is only used to
+		// seed a brand-new row's initial label -- UpsertRobotStatus never
+		// lets a heartbeat overwrite an existing (possibly admin-renamed) name.
 		existing, err := s.DB.GetRobotByAgentID(context.Background(), agentID)
-
 		var dbID int64
 		if err == nil {
 			dbID = existing.ID
 		}
 
-		targetName := name
-		if err == nil && existing.Name != "" && existing.Name != name {
-			log.Printf("status: robot %s (agent_id=%s) reports name %s, but DB has %s. Sending rename command.", existing.Name, agentID, name, existing.Name)
-
-			// Send configure_agent command to rename the robot
-			cmd := map[string]interface{}{
-				"type": "configure_agent",
-				"id":   fmt.Sprintf("%d", time.Now().UnixNano()),
-				"data": map[string]string{"agent_id": existing.Name},
-			}
-			payloadBytes, _ := json.Marshal(cmd)
-			topic := fmt.Sprintf("lab/commands/%s", agentID)
-			s.MQTT.Publish(topic, 1, true, payloadBytes)
-
-			targetName = existing.Name
-		}
-
-		if err := s.DB.UpsertRobotStatus(context.Background(), agentID, targetName, payload.IP, payload.Status, payload.Type); err != nil {
+		if err := s.DB.UpsertRobotStatus(context.Background(), agentID, name, payload.IP, payload.Status, payload.Type); err != nil {
 			log.Printf("status: failed to upsert robot %s: %v", agentID, err)
 		}
 
@@ -644,6 +681,18 @@ func (s *Server) handleGoldenImageDownload(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.Controller.DownloadGoldenImage(w, r)
+}
+
+func (s *Server) handleGoldenImageCache(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		s.Controller.GetGoldenImageBuildCache(w, r)
+		return
+	}
+	if r.Method == http.MethodDelete {
+		s.Controller.ClearGoldenImageBuildCache(w, r)
+		return
+	}
+	methodNotAllowed(w)
 }
 
 func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {

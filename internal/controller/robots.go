@@ -118,7 +118,7 @@ func (c *Controller) BroadcastCommand(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "command type required")
 		return
 	}
-	cmd := agent.Command{Type: req.Type, Data: req.Data}
+	cmd := agent.Command{Type: req.Type, Data: req.Data, Timestamp: time.Now().Unix()}
 	payload, err := json.Marshal(cmd)
 	if err != nil {
 		log.Printf("marshal broadcast: %v", err)
@@ -244,6 +244,7 @@ func (c *Controller) DeleteRobot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Controller) queueRobotCommand(ctx context.Context, robot db.Robot, cmd agent.Command) (db.Job, error) {
+	cmd.Timestamp = time.Now().Unix()
 	payload, err := json.Marshal(cmd)
 	if err != nil {
 		return db.Job{}, fmt.Errorf("marshal command: %w", err)
@@ -291,8 +292,9 @@ func (c *Controller) IdentifyAll(w http.ResponseWriter, r *http.Request) {
 
 		// Send command directly via MQTT (ephemeral, no DB job needed)
 		cmd := agent.Command{
-			Type: "identify",
-			ID:   fmt.Sprintf("%d", time.Now().UnixNano()),
+			Type:      "identify",
+			ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
+			Timestamp: time.Now().Unix(),
 		}
 		// Manually construct JSON to avoid struct definition here if possible,
 		// or use the struct from agent package if visible.
@@ -386,20 +388,20 @@ func (c *Controller) UpdateRobotName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send command to agent to update its config
+	// Renaming a robot no longer touches its permanent identity -- just
+	// sync the OS hostname on the live device to match the new display name.
 	if oldRobot.AgentID != "" {
-		// We need to add ID to the commandRequest or use agent.Command
-		// commandRequest is defined locally or in types?
-		// It seems to be defined in robots.go or similar.
-		// Let's use a map to be safe and include ID.
-		cmdMap := map[string]interface{}{
-			"type": "configure_agent",
-			"id":   fmt.Sprintf("%d", time.Now().UnixNano()),
-			"data": map[string]string{"agent_id": req.Name},
+		if hostname := agent.SanitizeHostname(req.Name); hostname != "" {
+			cmdMap := map[string]interface{}{
+				"type":      "set_hostname",
+				"id":        fmt.Sprintf("%d", time.Now().UnixNano()),
+				"data":      map[string]string{"hostname": hostname},
+				"timestamp": time.Now().Unix(),
+			}
+			payload, _ := json.Marshal(cmdMap)
+			topic := fmt.Sprintf("lab/commands/%s", oldRobot.AgentID)
+			c.MQTT.Publish(topic, 1, true, payload)
 		}
-		payload, _ := json.Marshal(cmdMap)
-		topic := fmt.Sprintf("lab/commands/%s", oldRobot.AgentID)
-		c.MQTT.Publish(topic, 1, true, payload)
 	}
 
 	robot, err := c.DB.GetRobotByID(r.Context(), id)

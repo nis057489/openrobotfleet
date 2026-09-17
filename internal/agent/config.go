@@ -17,6 +17,16 @@ type Config struct {
 	WorkspaceOwner string `yaml:"workspace_owner"`
 }
 
+// ResolveAgentID returns cfg.AgentID unchanged if it was pinned in the
+// config file (legacy or explicitly-provisioned installs), otherwise
+// derives a stable identity from the device's MAC address.
+func (cfg Config) ResolveAgentID() (string, error) {
+	if cfg.AgentID != "" {
+		return cfg.AgentID, nil
+	}
+	return DeriveAgentIDFromMAC()
+}
+
 // LoadConfig reads and parses a YAML config file.
 func LoadConfig(path string) (Config, error) {
 	var cfg Config

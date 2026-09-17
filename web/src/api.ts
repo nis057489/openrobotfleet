@@ -8,6 +8,7 @@ import {
   InstallDefaultsResponse,
   DiscoveryCandidate,
   GoldenImageConfig,
+  Group,
 } from './types';
 
 const JSON_HEADERS = {
@@ -193,6 +194,7 @@ export interface SemesterRequest {
   reset_logs: boolean;
   update_repo: boolean;
   run_self_test: boolean;
+  install_camera_support?: boolean;
   repo_config: {
     repo: string;
     branch: string;
@@ -200,6 +202,7 @@ export interface SemesterRequest {
   };
   apply_scenarios?: boolean;
   scenario_ids?: number[];
+  factory_reset?: boolean;
 }
 
 export function startSemesterBatch(req: SemesterRequest): Promise<void> {
@@ -245,6 +248,25 @@ export function getBuildStatus(): Promise<{ status: string; error?: string; prog
   return request('/api/golden-image/status');
 }
 
+export interface BuildCacheEntry {
+  image_name: string;
+  robot_model: string;
+  ros_version: string;
+  overlay_enabled: boolean;
+  completed_stage: number;
+  total_stages: number;
+  updated_at: string;
+  size_bytes: number;
+}
+
+export function getGoldenImageBuildCache(): Promise<{ entries: BuildCacheEntry[] }> {
+  return request('/api/golden-image/cache');
+}
+
+export function clearGoldenImageBuildCache(): Promise<{ status: string }> {
+  return request('/api/golden-image/cache', { method: 'DELETE' });
+}
+
 export interface SystemConfig {
   demo_mode: boolean;
 }
@@ -264,4 +286,52 @@ export function identifyAll(): Promise<Record<number, string>> {
     method: 'POST',
     headers: JSON_HEADERS,
   });
+}
+
+export type GroupPayload = Omit<Group, 'id'>;
+
+export interface ApplyGroupResult {
+  group?: Group;
+  applied: string[];
+  skipped: string[];
+}
+
+export function getGroups(): Promise<Group[]> {
+  return request<Group[]>('/api/groups');
+}
+
+export function getGroup(id: number | string): Promise<Group> {
+  return request<Group>(`/api/groups/${id}`);
+}
+
+export function createGroup(payload: GroupPayload): Promise<ApplyGroupResult> {
+  return request<ApplyGroupResult>('/api/groups', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateGroup(id: number | string, payload: GroupPayload): Promise<ApplyGroupResult> {
+  return request<ApplyGroupResult>(`/api/groups/${id}`, {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteGroup(id: number | string): Promise<void> {
+  return request<void>(`/api/groups/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export function applyGroup(id: number | string): Promise<ApplyGroupResult> {
+  return request<ApplyGroupResult>(`/api/groups/${id}/apply`, {
+    method: 'POST',
+  });
+}
+
+export function downloadRvizLauncher(): void {
+  window.location.href = '/api/groups/rviz-launcher';
 }

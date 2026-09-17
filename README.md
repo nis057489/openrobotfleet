@@ -391,7 +391,7 @@ repo:
   path: my-package
 ```
 
-Create the Scenario in the dashboard, then apply it to one robot or your entire fleet with a single click.
+Create scenarios in the dashboard (**Scenarios**) and paste the YAML. Then apply the scenario to one robot to validate, and finally to the whole fleet.
 
 A good practice is to deploy a new Scenario to one robot first, verify it, and then deploy it to the full fleet.
 
