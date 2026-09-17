@@ -2,6 +2,8 @@ package agent
 
 import (
 	"errors"
+	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -102,4 +104,24 @@ func SanitizeHostname(name string) string {
 		s = strings.Trim(s[:63], "-")
 	}
 	return s
+}
+
+// fleetTimezone is applied to every device so timestamps in logs and on the
+// dashboard read the same across the fleet. Australia/Brisbane is AEST
+// (UTC+10) with no daylight saving. ROS/DDS time is UTC epoch, so this has no
+// effect on TF or message stamps -- clock sync does.
+const fleetTimezone = "Australia/Brisbane"
+
+// EnsureTimezone sets the OS timezone to fleetTimezone via timedatectl if it
+// isn't already.
+func EnsureTimezone() error {
+	out, err := runCmd(defaultCmdTimeout, "timedatectl", "show", "--property=Timezone", "--value")
+	if err == nil && strings.TrimSpace(string(out)) == fleetTimezone {
+		return nil
+	}
+	if out, err := runCmd(defaultCmdTimeout, "timedatectl", "set-timezone", fleetTimezone); err != nil {
+		return fmt.Errorf("set timezone %s: %w: %s", fleetTimezone, err, strings.TrimSpace(string(out)))
+	}
+	log.Printf("[agent] set timezone to %s", fleetTimezone)
+	return nil
 }

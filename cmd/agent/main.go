@@ -36,6 +36,14 @@ func main() {
 		}
 	}
 
+	if err := agent.EnsureTimezone(); err != nil {
+		log.Printf("failed to set timezone: %v", err)
+	}
+
+	if err := agent.EnsureROSServiceOverride(); err != nil {
+		log.Printf("failed to install ROS service override: %v", err)
+	}
+
 	if err := agent.EnsureCameraSetup(cfg); err != nil {
 		log.Printf("failed to set up camera: %v", err)
 	}
