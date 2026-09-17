@@ -136,11 +136,12 @@ const (
 	cycloneDDSPath = "/etc/openrobotfleet-agent/cyclonedds.xml"
 )
 
-// HandleConfigureNetwork writes the DDS/ROS networking env file (and, if
-// static peers are supplied, a Cyclone DDS peer-discovery config) for this
-// robot's group assignment, then restarts ROS so the new environment takes
-// effect. With no static peers, any previous Cyclone peer config is removed
-// so the robot falls back to normal multicast discovery.
+// HandleConfigureNetwork writes the DDS/ROS networking env file for this
+// device's group assignment and, for Cyclone, a config pinning the network
+// interface plus any static peers. It makes sure interactive shells load that
+// env (so a student's ros2/rviz2 on a laptop matches the robot, not just the
+// agent's own commands), installs the RMW package if it's missing, then
+// restarts ROS where there's a ROS service to restart.
 func HandleConfigureNetwork(cfg Config, data ConfigureNetworkData) error {
 	if err := os.MkdirAll(filepath.Dir(rosEnvPath), 0o755); err != nil {
 		return fmt.Errorf("prepare config dir: %w", err)
@@ -155,22 +156,11 @@ func HandleConfigureNetwork(cfg Config, data ConfigureNetworkData) error {
 	fmt.Fprintf(&env, "export RMW_IMPLEMENTATION=%s\n", rmw)
 	fmt.Fprintf(&env, "export ROS_DOMAIN_ID=%d\n", data.ROSDomainID)
 
-	if len(data.StaticPeers) > 0 {
-		var xml strings.Builder
-		// Avoid the Peers AddLocalhost attribute: Cyclone 0.10.x (ROS 2 Humble)
-		// rejects it and every node fails to create a domain. An explicit
-		// localhost peer works on all versions. Raise the auto participant index
-		// cap so unicast discovery still reaches ports beyond the default ~9 nodes.
-		xml.WriteString("<CycloneDDS><Domain><Discovery>\n")
-		xml.WriteString("<ParticipantIndex>auto</ParticipantIndex>\n")
-		xml.WriteString("<MaxAutoParticipantIndex>100</MaxAutoParticipantIndex>\n")
-		xml.WriteString("<Peers>\n")
-		xml.WriteString("  <Peer Address=\"localhost\"/>\n")
-		for _, peer := range data.StaticPeers {
-			fmt.Fprintf(&xml, "  <Peer Address=\"%s\"/>\n", peer)
+	if rmw == "rmw_cyclonedds_cpp" {
+		if err := ensureCycloneInstalled(); err != nil {
+			return err
 		}
-		xml.WriteString("</Peers></Discovery></Domain></CycloneDDS>\n")
-		if err := os.WriteFile(cycloneDDSPath, []byte(xml.String()), 0o644); err != nil {
+		if err := os.WriteFile(cycloneDDSPath, []byte(cycloneConfig(data.StaticPeers)), 0o644); err != nil {
 			return fmt.Errorf("write cyclonedds config: %w", err)
 		}
 		fmt.Fprintf(&env, "export CYCLONEDDS_URI=file://%s\n", cycloneDDSPath)
@@ -181,9 +171,119 @@ func HandleConfigureNetwork(cfg Config, data ConfigureNetworkData) error {
 	if err := os.WriteFile(rosEnvPath, []byte(env.String()), 0o644); err != nil {
 		return fmt.Errorf("write ros env: %w", err)
 	}
+	if err := ensureShellsSourceROSEnv(); err != nil {
+		log.Printf("[agent] warning: %v", err)
+	}
 
 	log.Printf("[agent] configured network: domain=%d rmw=%s static_peers=%d", data.ROSDomainID, rmw, len(data.StaticPeers))
+	if os.Getenv("ROS_RESTART_CMD") == "" {
+		if _, err := runCmd(defaultCmdTimeout, "systemctl", "cat", rosServiceName()+".service"); err != nil {
+			log.Printf("[agent] no %s service on this device, skipping ROS restart", rosServiceName())
+			return nil
+		}
+	}
 	return HandleRestartROS(cfg)
+}
+
+// cycloneConfig pins Cyclone to the interface that routes to the group's
+// peer (or the default route): Cyclone binds to a single interface of its own
+// choosing, which on a laptop with Docker, VM or VPN bridges is often the
+// wrong one, and then nothing is discovered. Static peers, when given, are
+// listed for unicast discovery. Avoid the Peers AddLocalhost attribute:
+// Cyclone 0.10.x (ROS 2 Humble) rejects it and every node fails to create a
+// domain; an explicit localhost peer works on all versions. The auto
+// participant index cap is raised so unicast discovery still reaches ports
+// beyond the default ~9 nodes.
+func cycloneConfig(staticPeers []string) string {
+	routeTarget := "1.1.1.1"
+	if len(staticPeers) > 0 {
+		routeTarget = staticPeers[0]
+	}
+
+	var xml strings.Builder
+	xml.WriteString("<CycloneDDS><Domain>\n")
+	if dev := routeInterface(routeTarget); dev != "" {
+		fmt.Fprintf(&xml, "<General><Interfaces><NetworkInterface name=\"%s\"/></Interfaces></General>\n", dev)
+	}
+	if len(staticPeers) > 0 {
+		xml.WriteString("<Discovery>\n")
+		xml.WriteString("<ParticipantIndex>auto</ParticipantIndex>\n")
+		xml.WriteString("<MaxAutoParticipantIndex>100</MaxAutoParticipantIndex>\n")
+		xml.WriteString("<Peers>\n")
+		xml.WriteString("  <Peer Address=\"localhost\"/>\n")
+		for _, peer := range staticPeers {
+			fmt.Fprintf(&xml, "  <Peer Address=\"%s\"/>\n", peer)
+		}
+		xml.WriteString("</Peers></Discovery>\n")
+	}
+	xml.WriteString("</Domain></CycloneDDS>\n")
+	return xml.String()
+}
+
+// routeInterface returns the network interface the kernel would use to reach
+// target, or "" if it can't tell (Cyclone then picks one itself).
+func routeInterface(target string) string {
+	out, err := runCmd(defaultCmdTimeout, "ip", "route", "get", target)
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(string(out))
+	for i := 0; i+1 < len(fields); i++ {
+		if fields[i] == "dev" {
+			return fields[i+1]
+		}
+	}
+	return ""
+}
+
+// ensureCycloneInstalled installs rmw_cyclonedds_cpp when a ROS install lacks
+// it. Golden-imaged robots ship with it, but an SSH-enrolled laptop may not,
+// and exporting RMW_IMPLEMENTATION for a missing RMW makes every ros2 command
+// fail outright. A device with no ROS under /opt/ros is left alone.
+func ensureCycloneInstalled() error {
+	if libs, _ := filepath.Glob("/opt/ros/*/lib/librmw_cyclonedds_cpp.so"); len(libs) > 0 {
+		return nil
+	}
+	setups, _ := filepath.Glob("/opt/ros/*/setup.bash")
+	if len(setups) == 0 {
+		return nil
+	}
+	distro := filepath.Base(filepath.Dir(setups[0]))
+	pkg := fmt.Sprintf("ros-%s-rmw-cyclonedds-cpp", distro)
+	log.Printf("[agent] installing %s", pkg)
+	// Update first: package lists are often stale or (on golden images) wiped.
+	if out, err := runCmd(10*time.Minute, "bash", "-c", "DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y "+pkg); err != nil {
+		return fmt.Errorf("install %s: %w: %s", pkg, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// bashRCPath is read by every interactive bash on Debian/Ubuntu, login or
+// not, so a new terminal picks up a group's domain change immediately --
+// unlike /etc/profile.d, which only applies at the next desktop login.
+const bashRCPath = "/etc/bash.bashrc"
+
+// ensureShellsSourceROSEnv hooks ros_env.sh into bashRCPath once, so the
+// laptop's users run ros2/rviz2 on the same domain and RMW as the robot.
+func ensureShellsSourceROSEnv() error {
+	existing, err := os.ReadFile(bashRCPath)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", bashRCPath, err)
+	}
+	if strings.Contains(string(existing), rosEnvPath) {
+		return nil
+	}
+	f, err := os.OpenFile(bashRCPath, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", bashRCPath, err)
+	}
+	defer f.Close()
+	hook := fmt.Sprintf("\n# Added by openrobotfleet-agent: ROS domain/RMW for this device's group.\n[ -f %[1]s ] && . %[1]s\n", rosEnvPath)
+	if _, err := f.WriteString(hook); err != nil {
+		return fmt.Errorf("append to %s: %w", bashRCPath, err)
+	}
+	log.Printf("[agent] %s now sources %s", bashRCPath, rosEnvPath)
+	return nil
 }
 
 // HandleRestartROS restarts the ROS service via systemd or a custom command.

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"text/template"
@@ -326,9 +327,31 @@ func (c *Controller) DownloadRvizLauncher(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Each group's robot and laptop IPs become Cyclone unicast peers, so RViz
+	// finds the group even where multicast discovery doesn't reach (Wi-Fi,
+	// static-peer groups). IPs are agent-reported, so only well-formed ones
+	// are written into the script.
+	type launcherGroup struct {
+		db.Group
+		Peers []string
+	}
+	entries := make([]launcherGroup, 0, len(groups))
+	for _, g := range groups {
+		entry := launcherGroup{Group: g}
+		for _, id := range []*int64{g.RobotID, g.LaptopID} {
+			if id == nil {
+				continue
+			}
+			if device, err := c.DB.GetRobotByID(r.Context(), *id); err == nil && net.ParseIP(device.IP) != nil {
+				entry.Peers = append(entry.Peers, device.IP)
+			}
+		}
+		entries = append(entries, entry)
+	}
+
 	w.Header().Set("Content-Type", "text/x-shellscript")
 	w.Header().Set("Content-Disposition", "attachment; filename=rviz-domain")
-	if err := tmpl.Execute(w, map[string]interface{}{"Groups": groups}); err != nil {
+	if err := tmpl.Execute(w, map[string]interface{}{"Groups": entries}); err != nil {
 		log.Printf("rviz launcher: execute template: %v", err)
 	}
 }
@@ -346,9 +369,37 @@ const rvizLauncherTemplate = `#!/bin/bash
 
 set -e
 
+# launch <domain> [peer-ip...] runs RViz on Cyclone DDS (what every robot
+# uses) with a generated config: the group's robot and laptop as unicast
+# peers, and the network interface that routes to them. Cyclone otherwise
+# binds to a single interface of its own choosing, which on a machine with
+# container, VM or VPN bridges is often the wrong one -- and then no topics
+# show up at all.
+launch() {
+  local domain=$1 peers="" dev=""
+  shift
+  for ip in "$@"; do
+    peers="$peers<Peer Address=\"$ip\"/>"
+    [ -n "$dev" ] || dev=$(ip route get "$ip" 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n1) || true
+  done
+  [ -n "$dev" ] || dev=$(ip route get 1.1.1.1 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n1) || true
+
+  local cfg="${XDG_RUNTIME_DIR:-/tmp}/rviz-domain-$domain.xml"
+  {
+    printf '<CycloneDDS><Domain>'
+    [ -z "$dev" ] || printf '<General><Interfaces><NetworkInterface name="%s"/></Interfaces></General>' "$dev"
+    printf '<Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>100</MaxAutoParticipantIndex>'
+    printf '<Peers><Peer Address="localhost"/>%s</Peers></Discovery></Domain></CycloneDDS>\n' "$peers"
+  } > "$cfg"
+
+  echo "rviz-domain: domain $domain, interface ${dev:-auto}, peers: ${*:-none}" >&2
+  export ROS_DOMAIN_ID="$domain" RMW_IMPLEMENTATION=rmw_cyclonedds_cpp CYCLONEDDS_URI="file://$cfg"
+  exec rviz2
+}
+
 case "$1" in
 {{- range .Groups}}
-  {{.Name}}) exec env ROS_DOMAIN_ID={{.ROSDomainID}} rviz2 ;;
+  {{.Name}}) launch {{.ROSDomainID}}{{range .Peers}} {{.}}{{end}} ;;
 {{- end}}
   list)
 {{- range .Groups}}
