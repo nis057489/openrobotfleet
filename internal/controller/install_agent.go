@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -83,6 +84,13 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	agentID, err := sshc.DetectPrimaryMAC(host)
+	if err != nil {
+		log.Printf("install agent: detect mac: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to detect device identity: "+err.Error())
+		return
+	}
+
 	binaryDir := os.Getenv("AGENT_BINARY_DIR")
 	if binaryDir == "" {
 		binaryDir = "/app"
@@ -103,13 +111,13 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 
 	broker := c.agentBrokerURL(r.Context())
 	cfg := agent.Config{
-		AgentID:        req.Name,
+		AgentID:        agentID,
 		MQTTBroker:     broker,
 		WorkspacePath:  workspace,
 		WorkspaceOwner: determineWorkspaceOwner(req),
 	}
 
-	if err := sshc.InstallAgent(host, cfg, binary); err != nil {
+	if err := sshc.InstallAgent(host, cfg, req.Name, binary); err != nil {
 		log.Printf("install agent: ssh failure: %v", err)
 		msg := "failed to install agent"
 		if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "no route to host") || strings.Contains(err.Error(), "i/o timeout") {
@@ -129,6 +137,12 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := c.DB.UpsertRobotWithType(r.Context(), cfg.AgentID, req.Name, robotIP, "installed", rType); err != nil {
 		log.Printf("install agent: upsert robot: %v", err)
+		if strings.Contains(err.Error(), "robots.agent_id") {
+			if existing, lookupErr := c.DB.GetRobotByAgentID(r.Context(), cfg.AgentID); lookupErr == nil {
+				respondError(w, http.StatusConflict, fmt.Sprintf("this device is already registered as %q -- rename it there instead of reinstalling under a new name", existing.Name))
+				return
+			}
+		}
 		respondError(w, http.StatusInternalServerError, "failed to update robot")
 		return
 	}

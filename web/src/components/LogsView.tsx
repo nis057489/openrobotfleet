@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
@@ -7,8 +7,23 @@ interface LogsViewProps {
     robotId: number;
 }
 
+type LogSource = 'ros' | 'agent' | 'all';
+
+const SOURCE_LABELS: Record<LogSource, string> = {
+    ros: 'ROS',
+    agent: 'Agent',
+    all: 'All',
+};
+
+const SOURCE_BANNERS: Record<LogSource, string> = {
+    ros: '*** Streaming ~/.ros/log/latest/launch.log ***',
+    agent: '*** Streaming openrobotfleet-agent journal ***',
+    all: '*** Streaming ROS log + openrobotfleet-agent journal ***',
+};
+
 export function LogsView({ robotId }: LogsViewProps) {
     const containerRef = useRef<HTMLDivElement>(null);
+    const [source, setSource] = useState<LogSource>('ros');
 
     useEffect(() => {
         if (!containerRef.current) return;
@@ -32,13 +47,13 @@ export function LogsView({ robotId }: LogsViewProps) {
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
-        const wsUrl = `${protocol}//${host}/api/robots/${robotId}/logs`;
+        const wsUrl = `${protocol}//${host}/api/robots/${robotId}/logs?source=${source}`;
 
         const ws = new WebSocket(wsUrl);
         ws.binaryType = 'arraybuffer';
 
         ws.onopen = () => {
-            term.writeln('*** Streaming ~/.ros/log/latest/launch.log ***\r\n');
+            term.writeln(`${SOURCE_BANNERS[source]}\r\n`);
         };
 
         ws.onmessage = (event) => {
@@ -70,7 +85,26 @@ export function LogsView({ robotId }: LogsViewProps) {
             ws.close();
             term.dispose();
         };
-    }, [robotId]);
+    }, [robotId, source]);
 
-    return <div ref={containerRef} className="h-full w-full min-h-[400px] bg-[#1e1e1e] rounded-lg overflow-hidden" />;
+    return (
+        <div className="h-full w-full min-h-[400px] flex flex-col gap-2">
+            <div className="flex gap-1">
+                {(Object.keys(SOURCE_LABELS) as LogSource[]).map((key) => (
+                    <button
+                        key={key}
+                        onClick={() => setSource(key)}
+                        className={`px-2 py-1 text-xs rounded ${
+                            source === key
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'
+                        }`}
+                    >
+                        {SOURCE_LABELS[key]}
+                    </button>
+                ))}
+            </div>
+            <div ref={containerRef} className="flex-1 w-full min-h-[380px] bg-[#1e1e1e] rounded-lg overflow-hidden" />
+        </div>
+    );
 }

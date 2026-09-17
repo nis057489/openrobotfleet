@@ -16,8 +16,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 // defaultCmdTimeout bounds any command the JobManager waits on synchronously.
@@ -40,51 +38,17 @@ func runCmd(timeout time.Duration, name string, args ...string) ([]byte, error) 
 }
 
 // HandleConfigureAgent updates the agent configuration and restarts the service.
-func HandleConfigureAgent(cfg Config, data ConfigureAgentData) error {
-	if data.AgentID == "" {
-		return errors.New("agent_id required")
+// HandleSetHostname updates only the OS hostname -- it never touches the
+// agent's permanent identity, so unlike the legacy configure_agent command
+// it needs no config rewrite or service restart.
+func HandleSetHostname(data SetHostnameData) error {
+	if data.Hostname == "" {
+		return errors.New("hostname required")
 	}
-
-	// Update config struct
-	cfg.AgentID = data.AgentID
-
-	// Write back to file
-	cfgPath := os.Getenv("AGENT_CONFIG_PATH")
-	if cfgPath == "" {
-		cfgPath = "/etc/openrobotfleet-agent/config.yaml"
+	if err := SetHostname(data.Hostname); err != nil {
+		return fmt.Errorf("set hostname: %w", err)
 	}
-
-	// Read existing to preserve other fields if needed, but we have full config in memory usually.
-	// Actually cfg passed here is a copy.
-	// Let's just marshal the updated cfg.
-	// Wait, cfg passed to this function might be incomplete if we don't pass the full config around.
-	// But LoadConfig returns full config.
-	// Let's re-read to be safe or just use what we have.
-	// The cfg passed to HandleConfigureAgent comes from e.Config in engine.go, which is loaded at startup.
-
-	bytes, err := yaml.Marshal(cfg)
-	if err != nil {
-		return fmt.Errorf("marshal config: %w", err)
-	}
-
-	if err := os.WriteFile(cfgPath, bytes, 0644); err != nil {
-		return fmt.Errorf("write config: %w", err)
-	}
-
-	log.Printf("[agent] updated config with new agent_id: %s", data.AgentID)
-
-	// Restart service
-	// We assume systemd
-	go func() {
-		time.Sleep(1 * time.Second)
-		cmd := exec.Command("systemctl", "restart", "openrobotfleet-agent")
-		if err := cmd.Run(); err != nil {
-			log.Printf("failed to restart agent: %v", err)
-			// Fallback: exit and let systemd restart us
-			os.Exit(0)
-		}
-	}()
-
+	log.Printf("[agent] set hostname to %s", data.Hostname)
 	return nil
 }
 
@@ -519,6 +483,67 @@ sys.exit(0 if node.got else 1)
 // built and installed libcamera/camera_ros on this robot.
 const cameraInstalledMarker = "/var/lib/openrobotfleet/camera-installed"
 
+// cameraConfigPaths are checked in order for the Pi firmware config file --
+// Bookworm-based images (and Ubuntu's Pi images) use the first path; older
+// Raspberry Pi OS releases use the second.
+var cameraConfigPaths = []string{"/boot/firmware/config.txt", "/boot/config.txt"}
+
+// ensureCameraAutoDetect makes sure libcamera's device auto-detection is
+// enabled in the Pi's firmware config. Some base images ship with this
+// explicitly disabled in favor of the legacy bcm2835-v4l2 stack, which
+// silently breaks camera_ros: libcamera enumerates zero cameras and
+// camera_node aborts with "no cameras available", no matter how cleanly
+// camera_ros itself was built -- confirmed on hardware where the build had
+// already completed successfully but every capture still failed. Checked on
+// every install_camera_support run, not just the first, so a robot whose
+// software stack built fine but had this firmware setting wrong still gets
+// fixed. Returns whether it changed anything, since that only takes effect
+// after a reboot.
+func ensureCameraAutoDetect() (bool, error) {
+	var path string
+	for _, p := range cameraConfigPaths {
+		if _, err := os.Stat(p); err == nil {
+			path = p
+			break
+		}
+	}
+	if path == "" {
+		return false, fmt.Errorf("no firmware config found at %s", strings.Join(cameraConfigPaths, " or "))
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, fmt.Errorf("read %s: %w", path, err)
+	}
+	lines := strings.Split(string(data), "\n")
+	found := false
+	changed := false
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		if strings.HasPrefix(strings.TrimSpace(line), "camera_auto_detect=") {
+			found = true
+			if strings.TrimSpace(line) != "camera_auto_detect=1" {
+				lines[i] = "camera_auto_detect=1"
+				changed = true
+			}
+		}
+	}
+	if !found {
+		lines = append(lines, "camera_auto_detect=1")
+		changed = true
+	}
+	if !changed {
+		return false, nil
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+		return false, fmt.Errorf("write %s: %w", path, err)
+	}
+	log.Printf("[agent] enabled camera_auto_detect in %s (was disabled or missing)", path)
+	return true, nil
+}
+
 // libcameraBuildScript builds and installs the Raspberry Pi libcamera fork
 // from source, natively on the robot's own ARM64 CPU. This used to run
 // inside the golden image's chroot build under qemu-aarch64 emulation, where
@@ -536,7 +561,8 @@ apt-get update
 apt-get install -y python3-pip python3-jinja2 python3-yaml python3-ply \
     libboost-dev libgnutls28-dev openssl libtiff-dev pybind11-dev \
     qtbase5-dev libqt5core5a libqt5widgets5 meson cmake \
-    libglib2.0-dev libgstreamer-plugins-base1.0-dev ros-%s-camera-ros
+    libglib2.0-dev libgstreamer-plugins-base1.0-dev \
+    ros-%[1]s-camera-ros ros-%[1]s-compressed-image-transport
 
 # Jammy's apt meson (0.61) is too old for this libcamera (needs >= 0.63);
 # pip's meson is newer and installs to /usr/local/bin, which takes PATH
@@ -571,8 +597,17 @@ touch %q
 // this as a single long-running job and reports success/failure back to the
 // controller the same way any other command does.
 func HandleInstallCameraSupport(cfg Config) error {
+	configChanged, err := ensureCameraAutoDetect()
+	if err != nil {
+		log.Printf("[agent] warning: could not ensure camera_auto_detect: %v", err)
+	}
+
 	if _, err := os.Stat(cameraInstalledMarker); err == nil {
 		log.Printf("[agent] camera support already installed")
+		if configChanged {
+			log.Printf("[agent] camera_auto_detect was just enabled -- rebooting to apply it")
+			return HandleReboot(cfg)
+		}
 		return nil
 	}
 
@@ -590,6 +625,10 @@ func HandleInstallCameraSupport(cfg Config) error {
 		return fmt.Errorf("camera stack build failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	log.Printf("[agent] camera_ros/libcamera build complete")
+	if configChanged {
+		log.Printf("[agent] camera_auto_detect was just enabled -- rebooting to apply it")
+		return HandleReboot(cfg)
+	}
 	return nil
 }
 

@@ -235,6 +235,14 @@ func ensureRobotSchema(db *sql.DB) error {
 			return err
 		}
 	}
+	// Partial index (not plain UNIQUE): agent_id is stored as '' rather than
+	// NULL for devices with no agent yet, and multiple such rows must be
+	// allowed to coexist. agent_id is now the true, immutable device
+	// identity key (see UpsertRobotStatus/UpsertRobotWithType) -- name is
+	// just an editable display label.
+	if _, err := db.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_robots_agent_id ON robots(agent_id) WHERE agent_id IS NOT NULL AND agent_id != ''`); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -343,13 +351,20 @@ ORDER BY r.name`)
 	return robots, rows.Err()
 }
 
+// UpsertRobotStatus records a heartbeat from the on-device agent. agent_id
+// is the device's permanent identity (see ensureRobotSchema's partial unique
+// index) -- on conflict, name is deliberately left untouched so a heartbeat
+// never clobbers an admin-set display name; the incoming name is only used
+// to seed a brand-new row's initial label.
 func (d *DB) UpsertRobotStatus(ctx context.Context, agentID, name, ip, status, rType string) error {
+	if agentID == "" {
+		return errors.New("agent id required")
+	}
 	if name == "" {
 		return errors.New("robot name required")
 	}
 	stmt, err := d.SQL.PrepareContext(ctx, `INSERT INTO robots (name, agent_id, ip, last_seen, status, type) VALUES (?, ?, ?, ?, ?, ?)
-ON CONFLICT(name) DO UPDATE SET
-	agent_id=excluded.agent_id,
+ON CONFLICT(agent_id) WHERE agent_id IS NOT NULL AND agent_id != '' DO UPDATE SET
 	ip=excluded.ip,
 	status=excluded.status,
 	last_seen=excluded.last_seen,
@@ -362,7 +377,21 @@ ON CONFLICT(name) DO UPDATE SET
 	return err
 }
 
+// UpsertRobotWithType records the result of an admin-submitted install/
+// reinstall. Unlike UpsertRobotStatus, this is keyed by name rather than
+// agent_id: the admin has just told us, authoritatively, which named robot
+// they're (re)installing, and the whole point is to let a reinstall change
+// that row's agent_id -- e.g. transitioning a legacy name-based agent_id to
+// a freshly-detected MAC-based one on the same row, rather than requiring
+// agent_id to already match. If the newly detected agent_id already belongs
+// to a *different* row (the same physical device previously registered
+// under a different name), this fails loudly on the agent_id unique index
+// instead of silently orphaning a row -- a real but rare edge case (e.g.
+// reinstalling onto what the admin believes is a different robot).
 func (d *DB) UpsertRobotWithType(ctx context.Context, agentID, name, ip, status, rType string) error {
+	if agentID == "" {
+		return errors.New("agent id required")
+	}
 	if name == "" {
 		return errors.New("robot name required")
 	}

@@ -5,12 +5,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"example.com/openrobot-fleet/internal/agent/behavior"
 	mqttc "example.com/openrobot-fleet/internal/mqtt"
 	mqttlib "github.com/eclipse/paho.mqtt.golang"
 )
+
+const (
+	reconnectBackoffFloor = 5 * time.Second
+	reconnectBackoffCap   = 60 * time.Second
+	commandStaleThreshold = 10 * time.Minute
+)
+
+// durableCommandTypes represent desired state rather than one-shot actions
+// (mirroring configure_network's existing retained-command idiom) -- they
+// should always apply whenever a robot next connects, however long that
+// takes, so they're exempt from the staleness check in processCommands.
+var durableCommandTypes = map[string]bool{
+	"configure_network": true,
+	"set_hostname":      true,
+}
 
 type AgentEngine struct {
 	Config     Config
@@ -24,6 +40,7 @@ type AgentEngine struct {
 	lastHeartbeat          time.Time
 	lastConnectAttempt     time.Time
 	lastProcessedCommandID string
+	reconnectBackoff       time.Duration
 }
 
 func NewAgentEngine(cfg Config) *AgentEngine {
@@ -117,8 +134,12 @@ func (e *AgentEngine) maintainConnection(ctx context.Context, bb *behavior.Black
 		return behavior.StatusFailure
 	}
 	if !e.MQTTClient.Client.IsConnected() {
-		if time.Since(e.lastConnectAttempt) > 5*time.Second {
-			log.Println("MQTT disconnected, attempting reconnect...")
+		wait := e.reconnectBackoff
+		if wait <= 0 {
+			wait = reconnectBackoffFloor
+		}
+		if time.Since(e.lastConnectAttempt) > wait {
+			log.Printf("MQTT disconnected, attempting reconnect (backoff=%s)...", wait)
 			go func() {
 				token := e.MQTTClient.Client.Connect()
 				if token.Wait() && token.Error() != nil {
@@ -126,9 +147,15 @@ func (e *AgentEngine) maintainConnection(ctx context.Context, bb *behavior.Black
 				}
 			}()
 			e.lastConnectAttempt = time.Now()
+			next := wait * 2
+			if next > reconnectBackoffCap {
+				next = reconnectBackoffCap
+			}
+			e.reconnectBackoff = next
 		}
 		return behavior.StatusFailure
 	}
+	e.reconnectBackoff = 0
 	return behavior.StatusSuccess
 }
 
@@ -152,6 +179,13 @@ func (e *AgentEngine) processCommands(ctx context.Context, bb *behavior.Blackboa
 		if cmd.ID != "" && cmd.ID == e.lastProcessedCommandID {
 			log.Printf("Ignoring duplicate command ID: %s", cmd.ID)
 			return behavior.StatusSuccess
+		}
+		if !durableCommandTypes[cmd.Type] {
+			age := time.Since(time.Unix(cmd.Timestamp, 0))
+			if cmd.Timestamp == 0 || age > commandStaleThreshold {
+				log.Printf("Ignoring stale command %s (type=%s, age=%s)", cmd.ID, cmd.Type, age)
+				return behavior.StatusSuccess
+			}
 		}
 		e.lastProcessedCommandID = cmd.ID
 
@@ -200,6 +234,9 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 		Type:   e.Config.Type,
 		Name:   e.Config.AgentID,
 	}
+	if hn, err := os.Hostname(); err == nil && hn != "" {
+		s.Name = hn
+	}
 
 	// Add Job info
 	if job := e.JobManager.GetCurrentJob(); job != nil {
@@ -225,12 +262,12 @@ func (e *AgentEngine) mapCommandToAction(cmd Command) func() error {
 	cfg := e.Config
 
 	switch cmd.Type {
-	case "configure_agent":
-		var payload ConfigureAgentData
+	case "set_hostname":
+		var payload SetHostnameData
 		if err := json.Unmarshal(cmd.Data, &payload); err != nil {
 			return func() error { return err }
 		}
-		return func() error { return HandleConfigureAgent(cfg, payload) }
+		return func() error { return HandleSetHostname(payload) }
 	case "configure_network":
 		var payload ConfigureNetworkData
 		if err := json.Unmarshal(cmd.Data, &payload); err != nil {

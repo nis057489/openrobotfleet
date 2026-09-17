@@ -13,9 +13,10 @@ export function getRobotMood(robot: Robot): string {
   }
 
   // Check status
-  if (robot.status === 'offline') return '💤'; // Sleeping
+  if (robot.status === 'offline') return '👻'; // Offline
   if (robot.status === 'busy') return '😰'; // Stressed
   if (robot.status === 'error') return '😵'; // Confused/Error
+  if (robot.status === 'setting_up') return '🚧'; // Setting up
 
   // Default
   return '😎'; // Idle

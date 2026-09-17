@@ -25,8 +25,9 @@ type HostSpec struct {
 	SudoPassword string
 }
 
-// InstallAgent uploads the agent binary/config/service and enables the unit remotely.
-func InstallAgent(h HostSpec, cfg agent.Config, agentBinary []byte) error {
+// InstallAgent uploads the agent binary/config/service, sets the device's
+// OS hostname to match its fleet display name, and enables the unit remotely.
+func InstallAgent(h HostSpec, cfg agent.Config, hostname string, agentBinary []byte) error {
 	if h.Addr == "" || h.User == "" {
 		return fmt.Errorf("host addr and user required")
 	}
@@ -127,6 +128,13 @@ func InstallAgent(h HostSpec, cfg agent.Config, agentBinary []byte) error {
 	commands = append(commands,
 		"mkdir -p /home/ubuntu/.ros",
 		"chown -R ubuntu:ubuntu /home/ubuntu/.ros",
+	)
+	// Set the hostname before (re)starting the agent so its very first
+	// heartbeat already reports the intended display name, not a stale one.
+	if sanitized := agent.SanitizeHostname(hostname); sanitized != "" {
+		commands = append(commands, fmt.Sprintf("hostnamectl set-hostname %s", sanitized))
+	}
+	commands = append(commands,
 		"systemctl daemon-reload",
 		"systemctl enable openrobotfleet-agent",
 		"systemctl restart openrobotfleet-agent",
@@ -267,4 +275,60 @@ func DetectArch(h HostSpec) (string, error) {
 	default:
 		return arch, nil
 	}
+}
+
+// DetectPrimaryMAC connects to the host and returns its stable agent
+// identity, derived from the first non-loopback interface's MAC address
+// (sorted by name, matching agent.DeriveAgentIDFromMAC's own selection so a
+// device pinned at install time and one that self-derives later agree).
+// Pre-computing this over SSH (rather than leaving agent_id blank for the
+// agent to derive at first boot) avoids a race with install_agent.go's
+// synchronous DB row creation, which happens before the agent ever starts.
+func DetectPrimaryMAC(h HostSpec) (string, error) {
+	if h.Addr == "" || h.User == "" {
+		return "", fmt.Errorf("host addr and user required")
+	}
+
+	var authMethods []ssh.AuthMethod
+	if len(h.PrivateKey) > 0 {
+		signer, err := ssh.ParsePrivateKey(bytes.TrimSpace(h.PrivateKey))
+		if err != nil {
+			return "", fmt.Errorf("parse private key: %w", err)
+		}
+		authMethods = append(authMethods, ssh.PublicKeys(signer))
+	}
+	if h.Password != "" {
+		authMethods = append(authMethods, ssh.Password(h.Password))
+	}
+	if len(authMethods) == 0 {
+		return "", fmt.Errorf("no auth methods provided")
+	}
+
+	sshConfig := &ssh.ClientConfig{
+		User:            h.User,
+		Auth:            authMethods,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         10 * time.Second,
+	}
+	client, err := ssh.Dial("tcp", h.Addr, sshConfig)
+	if err != nil {
+		return "", fmt.Errorf("ssh dial %s: %w", h.Addr, err)
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("new session: %w", err)
+	}
+	defer session.Close()
+
+	out, err := session.Output(`cat /sys/class/net/$(ls /sys/class/net | grep -v '^lo$' | sort | head -1)/address`)
+	if err != nil {
+		return "", fmt.Errorf("detect mac address: %w", err)
+	}
+	mac := strings.TrimSpace(string(out))
+	if mac == "" {
+		return "", fmt.Errorf("no usable network interface found on %s", h.Addr)
+	}
+	return agent.FormatAgentIDFromMAC(mac), nil
 }

@@ -21,6 +21,32 @@ import (
 // instead of using journalctl.
 const rosLogPath = "~/.ros/log/latest/launch.log"
 
+// rosTailCmd follows the ROS launch log by name; -F keeps retrying if the
+// file doesn't exist yet (e.g. before ros2 launch has started), matching
+// the same tolerant behavior as the agent-log fallback below.
+const rosTailCmd = "tail -F -n 200 " + rosLogPath
+
+// agentJournalCmd streams the openrobotfleet-agent systemd unit's journal --
+// its logs only ever go to the journal (see ssh.go's systemdUnit, no
+// StandardOutput file redirect), so there's no equivalent log file to tail.
+// Reading the journal needs root on a stock Ubuntu image; try passwordless
+// sudo first (the lab convention for these robots) and fall back to a plain
+// read in case the SSH user already has journal access without it.
+const agentJournalCmd = "(sudo -n journalctl -u openrobotfleet-agent -f -n 200 2>/dev/null || journalctl -u openrobotfleet-agent -f -n 200)"
+
+// buildLogCommand picks the remote command for the requested log source.
+// "all" interleaves both streams from one SSH session.
+func buildLogCommand(source string) string {
+	switch source {
+	case "agent":
+		return agentJournalCmd
+	case "all":
+		return fmt.Sprintf("(%s 2>&1 & %s 2>&1 & wait)", rosTailCmd, agentJournalCmd)
+	default:
+		return rosTailCmd
+	}
+}
+
 // HandleLogs streams the live ROS 2 launch log from the robot to the browser
 // over a websocket, read-only, so instructors can confirm ROS is up.
 func (c *Controller) HandleLogs(w http.ResponseWriter, r *http.Request) {
@@ -114,7 +140,7 @@ func (c *Controller) HandleLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cmd := fmt.Sprintf("tail -F -n 200 %s", rosLogPath)
+	cmd := buildLogCommand(r.URL.Query().Get("source"))
 	if err := session.Start(cmd); err != nil {
 		ws.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("error: failed to start tail: %v\r\n", err)))
 		return

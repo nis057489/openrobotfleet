@@ -4,9 +4,10 @@ import "encoding/json"
 
 // Command represents a controller-issued instruction handled by an agent.
 type Command struct {
-	ID   string          `json:"id"`
-	Type string          `json:"type"`
-	Data json.RawMessage `json:"data"`
+	ID        string          `json:"id"`
+	Type      string          `json:"type"`
+	Data      json.RawMessage `json:"data"`
+	Timestamp int64           `json:"timestamp,omitempty"` // unix seconds, set at publish time
 }
 
 // UpdateRepoData describes git repo sync instructions.
@@ -48,9 +49,10 @@ type IdentifyData struct {
 	URL  string `json:"url,omitempty"`
 }
 
-// ConfigureAgentData describes agent configuration instructions.
-type ConfigureAgentData struct {
-	AgentID string `json:"agent_id"`
+// SetHostnameData describes an OS hostname update, independent of the
+// device's permanent agent identity.
+type SetHostnameData struct {
+	Hostname string `json:"hostname"`
 }
 
 // ConfigureNetworkData describes DDS/ROS networking instructions for a robot

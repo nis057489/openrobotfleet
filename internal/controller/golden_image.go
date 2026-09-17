@@ -276,7 +276,6 @@ write_files:
 
   - path: /etc/openrobotfleet-agent/config.yaml
     content: |
-      agent_id: "ROBOT-UNINITIALIZED"
       mqtt_broker: "{{.MQTTBroker}}"
       workspace_path: "/home/ubuntu/ros_ws/src"
 
@@ -349,12 +348,10 @@ write_files:
           image_size: [320, 240]
 
 runcmd:
-  # Generate unique Agent ID and Hostname
-  - |
-    SUFFIX=$(head /dev/urandom | tr -dc a-z0-9 | head -c 6)
-    sed -i "s/ROBOT-UNINITIALIZED/robot-$SUFFIX/" /etc/openrobotfleet-agent/config.yaml
-    hostnamectl set-hostname robot-$SUFFIX
-    sed -i "s/openrobot/robot-$SUFFIX/g" /etc/hosts
+  # No agent_id is baked in here -- config.yaml has none, so on first start
+  # the agent binary itself derives a stable identity from this device's MAC
+  # address (internal/agent/identity.go) and sets its own default hostname
+  # to match, both of which survive re-flashing the same physical device.
 
   # Fix DNS (Docker/Systemd conflict)
   - rm -f /etc/resolv.conf

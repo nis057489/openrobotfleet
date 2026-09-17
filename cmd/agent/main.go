@@ -19,8 +19,21 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
-	if cfg.AgentID == "" {
-		log.Fatalf("config missing agent_id")
+
+	pinned := cfg.AgentID != ""
+	resolved, err := cfg.ResolveAgentID()
+	if err != nil || resolved == "" {
+		log.Fatalf("failed to determine agent_id: %v", err)
+	}
+	cfg.AgentID = resolved
+
+	if !pinned {
+		// No identity was pinned at provisioning time (e.g. zero-touch
+		// golden-image boot) -- default the OS hostname to the derived ID
+		// until an admin renames the robot in the fleet UI.
+		if err := agent.SetHostname(resolved); err != nil {
+			log.Printf("failed to set default hostname: %v", err)
+		}
 	}
 
 	log.Printf("Starting Agent %s (Behavior Tree Mode)", cfg.AgentID)

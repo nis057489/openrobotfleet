@@ -3,7 +3,6 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -502,33 +501,16 @@ func (s *Server) subscribeStatusUpdates() {
 		// Update job status in controller memory
 		s.Controller.UpdateRobotJobStatus(agentID, payload.JobID, payload.JobStatus, payload.JobError)
 
-		// Check if we have a pending rename (DB name != Agent name)
-		// We look up by AgentID because that's what the robot is currently using.
+		// agent_id is the device's permanent identity; name is only used to
+		// seed a brand-new row's initial label -- UpsertRobotStatus never
+		// lets a heartbeat overwrite an existing (possibly admin-renamed) name.
 		existing, err := s.DB.GetRobotByAgentID(context.Background(), agentID)
-
 		var dbID int64
 		if err == nil {
 			dbID = existing.ID
 		}
 
-		targetName := name
-		if err == nil && existing.Name != "" && existing.Name != name {
-			log.Printf("status: robot %s (agent_id=%s) reports name %s, but DB has %s. Sending rename command.", existing.Name, agentID, name, existing.Name)
-
-			// Send configure_agent command to rename the robot
-			cmd := map[string]interface{}{
-				"type": "configure_agent",
-				"id":   fmt.Sprintf("%d", time.Now().UnixNano()),
-				"data": map[string]string{"agent_id": existing.Name},
-			}
-			payloadBytes, _ := json.Marshal(cmd)
-			topic := fmt.Sprintf("lab/commands/%s", agentID)
-			s.MQTT.Publish(topic, 1, true, payloadBytes)
-
-			targetName = existing.Name
-		}
-
-		if err := s.DB.UpsertRobotStatus(context.Background(), agentID, targetName, payload.IP, payload.Status, payload.Type); err != nil {
+		if err := s.DB.UpsertRobotStatus(context.Background(), agentID, name, payload.IP, payload.Status, payload.Type); err != nil {
 			log.Printf("status: failed to upsert robot %s: %v", agentID, err)
 		}
 
