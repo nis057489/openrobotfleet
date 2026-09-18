@@ -8,6 +8,9 @@ if [ "$MQTT_CONTROLLER_PASSWORD" = "$MQTT_AGENT_PASSWORD" ]; then
 fi
 umask 077
 mkdir -p /mosquitto/security
+# Keep the repository ACL read-only; secure the runtime copy inside the container.
+cp /mosquitto/config/acl /mosquitto/security/acl
+chmod 0600 /mosquitto/security/acl
 mosquitto_passwd -b -c /mosquitto/security/passwords controller "$MQTT_CONTROLLER_PASSWORD"
 mosquitto_passwd -b /mosquitto/security/passwords agents "$MQTT_AGENT_PASSWORD"
 chown -R mosquitto:mosquitto /mosquitto/security

@@ -10,6 +10,11 @@ for attempt in 1 2 3 4 5; do
   sleep 1
 done
 if [ "$ready" != true ]; then cat /tmp/broker.log; exit 1; fi
+[ "$(stat -c '%a:%U:%G' /mosquitto/security/acl)" = '600:mosquitto:mosquitto' ]
+cmp /mosquitto/config/acl /mosquitto/security/acl
+if grep -q 'Warning: File .*acl' /tmp/broker.log; then
+  cat /tmp/broker.log; exit 1
+fi
 
 if mosquitto_pub -h 127.0.0.1 -t lab/commands/robot-a -m anonymous 2>/dev/null; then
   echo 'FAIL: anonymous publisher connected'; exit 1
