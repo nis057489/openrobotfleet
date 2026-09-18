@@ -28,6 +28,13 @@ type ResetBashrcData struct {
 	TurtleBot3Model string `json:"turtlebot3_model"`
 }
 
+// SystemUpdateData refreshes the package lists (`apt update`), then
+// optionally upgrades every installed package and/or installs Packages.
+type SystemUpdateData struct {
+	Upgrade  bool     `json:"upgrade"`
+	Packages []string `json:"packages,omitempty"`
+}
+
 // WifiProfileData describes a wifi connection profile.
 type WifiProfileData struct {
 	SSID     string `json:"ssid"`

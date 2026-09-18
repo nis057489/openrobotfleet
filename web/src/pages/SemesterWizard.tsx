@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getRobots, getInstallDefaults, startSemesterBatch, getSemesterStatus, getScenarios } from "../api";
 import { Robot, InstallConfig, SemesterStatus, Scenario } from "../types";
-import { Check, RefreshCw, GitBranch, Trash2, AlertTriangle, ArrowRight, Clock, Terminal, XCircle, Activity, FileText, RotateCcw, Camera, FileCode } from "lucide-react";
+import { Check, RefreshCw, GitBranch, Trash2, AlertTriangle, ArrowRight, Clock, Terminal, XCircle, Activity, FileText, RotateCcw, Camera, FileCode, Package, ArrowUpCircle } from "lucide-react";
 
 export function SemesterWizard() {
     const { t } = useTranslation();
@@ -24,6 +24,9 @@ export function SemesterWizard() {
     const [doInstallCameraSupport, setDoInstallCameraSupport] = useState(false);
     const [doResetBashrc, setDoResetBashrc] = useState(false);
     const [turtlebot3Model, setTurtlebot3Model] = useState("waffle_pi");
+    const [doSystemUpgrade, setDoSystemUpgrade] = useState(false);
+    const [doInstallPackages, setDoInstallPackages] = useState(false);
+    const [packagesText, setPackagesText] = useState("");
     const [doFactoryReset, setDoFactoryReset] = useState(false);
     const [repoUrl, setRepoUrl] = useState("https://github.com/openrobot-fleet/openrobotfleet-agent.git");
 
@@ -82,9 +85,19 @@ export function SemesterWizard() {
         }
     };
 
+    // Space-, comma- or newline-separated, as typed after `apt install -y`.
+    const packages = packagesText.split(/[\s,]+/).filter(Boolean);
+    const aptCommand = [
+        "sudo apt update",
+        doSystemUpgrade && "sudo apt upgrade -y",
+        doInstallPackages && packages.length > 0 && `sudo apt install -y ${packages.join(" ")}`,
+    ].filter(Boolean).join(" && ");
+
+    const anyAction = doResetLogs || doUpdateRepo || doReinstall || doSelfTest || doApplyScenario || doInstallCameraSupport || doResetBashrc || doSystemUpgrade || doInstallPackages || doFactoryReset;
+    const canExecute = !executing && selectedIds.size > 0 && anyAction && !(doInstallPackages && packages.length === 0);
+
     const handleExecute = async () => {
-        if (selectedIds.size === 0) return;
-        if (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario && !doInstallCameraSupport && !doResetBashrc && !doFactoryReset) return;
+        if (!canExecute) return;
 
         setExecuting(true);
         try {
@@ -97,6 +110,9 @@ export function SemesterWizard() {
                 install_camera_support: doInstallCameraSupport,
                 reset_bashrc: doResetBashrc,
                 turtlebot3_model: turtlebot3Model,
+                system_upgrade: doSystemUpgrade,
+                install_packages: doInstallPackages,
+                packages: doInstallPackages ? packages : [],
                 repo_config: {
                     repo: repoUrl,
                     branch: "main",
@@ -278,6 +294,72 @@ export function SemesterWizard() {
                                     <p className="text-sm text-gray-500">{t("semesterWizard.runSelfTestDesc")}</p>
                                 </div>
                             </label>
+
+                            <hr className="border-gray-100" />
+
+                            {/* System Update & Upgrade */}
+                            <label className={`flex items-start gap-3 ${doFactoryReset ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
+                                <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doSystemUpgrade ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
+                                    {doSystemUpgrade && <Check size={14} />}
+                                    <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={doSystemUpgrade}
+                                        disabled={doFactoryReset}
+                                        onChange={e => {
+                                            setDoSystemUpgrade(e.target.checked);
+                                            if (e.target.checked) setDoFactoryReset(false);
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <div className="font-medium text-gray-900 flex items-center gap-2">
+                                        <ArrowUpCircle size={16} /> {t("semesterWizard.systemUpgrade")}
+                                    </div>
+                                    <p className="text-sm text-gray-500">{t("semesterWizard.systemUpgradeDesc")}</p>
+                                </div>
+                            </label>
+
+                            <hr className="border-gray-100" />
+
+                            {/* Install Packages */}
+                            <label className={`flex items-start gap-3 ${doFactoryReset ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
+                                <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doInstallPackages ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
+                                    {doInstallPackages && <Check size={14} />}
+                                    <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={doInstallPackages}
+                                        disabled={doFactoryReset}
+                                        onChange={e => {
+                                            setDoInstallPackages(e.target.checked);
+                                            if (e.target.checked) setDoFactoryReset(false);
+                                        }}
+                                    />
+                                </div>
+                                <div className="flex-1">
+                                    <div className="font-medium text-gray-900 flex items-center gap-2">
+                                        <Package size={16} /> {t("semesterWizard.installPackages")}
+                                    </div>
+                                    <p className="text-sm text-gray-500">{t("semesterWizard.installPackagesDesc")}</p>
+                                    {doInstallPackages && (
+                                        <textarea
+                                            value={packagesText}
+                                            onChange={e => setPackagesText(e.target.value)}
+                                            placeholder="ros-humble-image-transport vim"
+                                            rows={2}
+                                            className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-md font-mono text-sm"
+                                        />
+                                    )}
+                                </div>
+                            </label>
+
+                            {(doSystemUpgrade || doInstallPackages) && (
+                                <div className="text-xs text-gray-500">
+                                    {t("semesterWizard.aptCommandPreview")}
+                                    <code className="block mt-1 px-2 py-1 bg-gray-50 border border-gray-200 rounded font-mono text-gray-700 break-all">{aptCommand}</code>
+                                </div>
+                            )}
 
                             <hr className="border-gray-100" />
 
@@ -477,6 +559,8 @@ export function SemesterWizard() {
                                                 setDoApplyScenario(false);
                                                 setDoReinstall(false);
                                                 setDoResetBashrc(false);
+                                                setDoSystemUpgrade(false);
+                                                setDoInstallPackages(false);
                                             }
                                         }}
                                     />
@@ -493,8 +577,8 @@ export function SemesterWizard() {
 
                     <button
                         onClick={handleExecute}
-                        disabled={executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario && !doInstallCameraSupport && !doResetBashrc && !doFactoryReset)}
-                        className={`w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 ${executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario && !doInstallCameraSupport && !doResetBashrc && !doFactoryReset)
+                        disabled={!canExecute}
+                        className={`w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 ${!canExecute
                             ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                             : doFactoryReset
                                 ? "bg-red-600 text-white hover:bg-red-700 shadow-sm"

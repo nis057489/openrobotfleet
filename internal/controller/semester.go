@@ -28,6 +28,9 @@ type semesterRequest struct {
 	InstallCameraSupport bool                 `json:"install_camera_support"`
 	ResetBashrc          bool                 `json:"reset_bashrc"`
 	TurtleBot3Model      string               `json:"turtlebot3_model"`
+	SystemUpgrade        bool                 `json:"system_upgrade"`
+	InstallPackages      bool                 `json:"install_packages"`
+	Packages             []string             `json:"packages"`
 	RepoConfig           agent.UpdateRepoData `json:"repo_config"`
 	ApplyScenarios       bool                 `json:"apply_scenarios"`
 	ScenarioIDs          []int64              `json:"scenario_ids"`
@@ -98,6 +101,26 @@ func (c *Controller) HandleSemesterStart(w http.ResponseWriter, r *http.Request)
 			}
 			req.ScenarioConfigs = append(req.ScenarioConfigs, spec.Repo.ToUpdateRepo())
 		}
+	}
+
+	if req.InstallPackages {
+		var pkgs []string
+		for _, p := range req.Packages {
+			if p = strings.TrimSpace(p); p != "" {
+				pkgs = append(pkgs, p)
+			}
+		}
+		if len(pkgs) == 0 {
+			respondError(w, http.StatusBadRequest, "no packages to install")
+			return
+		}
+		if err := agent.ValidatePackageNames(pkgs); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		req.Packages = pkgs
+	} else {
+		req.Packages = nil
 	}
 
 	batchStatus.Lock()
@@ -480,7 +503,39 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 				}
 			}
 
-			if req.InstallCameraSupport {
+			// The agent runs one job at a time and drops any command that
+			// arrives while it's busy, so a long apt run followed by a
+			// separate camera-support command would lose the latter. When
+			// both are wanted, send them as one batch that runs in order.
+			cameraBundled := false
+			if req.SystemUpgrade || req.InstallPackages {
+				log.Printf("semester: updating system packages for %s", robot.Name)
+				batchStatus.Lock()
+				batchStatus.Robots[id] = "updating_system"
+				batchStatus.Unlock()
+
+				data, _ := json.Marshal(agent.SystemUpdateData{Upgrade: req.SystemUpgrade, Packages: req.Packages})
+				cmd := agent.Command{Type: "system_update", Data: data}
+				if req.InstallCameraSupport {
+					batchPayload, _ := json.Marshal(agent.BatchData{Commands: []agent.Command{
+						cmd,
+						{Type: "install_camera_support", Data: []byte("{}")},
+					}})
+					cmd = agent.Command{Type: "batch", Data: batchPayload}
+					cameraBundled = true
+				}
+				if _, err := c.queueRobotCommand(ctx, robot, cmd); err != nil {
+					log.Printf("semester: failed to queue system_update for %s: %v", robot.Name, err)
+					batchStatus.Lock()
+					batchStatus.Errors[id] = "failed to queue system_update"
+					batchStatus.Robots[id] = "error"
+					batchStatus.Completed++
+					batchStatus.Unlock()
+					return
+				}
+			}
+
+			if req.InstallCameraSupport && !cameraBundled {
 				log.Printf("semester: installing camera support for %s", robot.Name)
 				batchStatus.Lock()
 				batchStatus.Robots[id] = "installing_camera_support"

@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -347,6 +348,81 @@ func HandleResetBashrc(cfg Config, data ResetBashrcData) error {
 		return fmt.Errorf("chown %s: %w", path, err)
 	}
 	log.Printf("[agent] reset %s to default (TURTLEBOT3_MODEL=%s)", path, model)
+	return nil
+}
+
+// aptPackagePattern matches a Debian package name, optionally with an
+// :arch qualifier and/or =version pin (e.g. ros-humble-image-transport,
+// libfoo:arm64, vim=2:8.2.3995-1ubuntu2). It never matches a leading '-', so
+// a "package" can't smuggle an option into apt-get.
+var aptPackagePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]+(:[a-z0-9-]+)?(=[A-Za-z0-9.+~:-]+)?$`)
+
+// ValidatePackageNames rejects anything that isn't a plain apt package name.
+func ValidatePackageNames(pkgs []string) error {
+	for _, p := range pkgs {
+		if !aptPackagePattern.MatchString(p) {
+			return fmt.Errorf("invalid package name %q", p)
+		}
+	}
+	return nil
+}
+
+// systemUpdateTimeout bounds each apt-get step. A full upgrade on a Pi over
+// lab wifi can legitimately take a long time, but apt must never be allowed
+// to hang forever and jam the agent's single job slot (see defaultCmdTimeout).
+const systemUpdateTimeout = 60 * time.Minute
+
+// aptGet runs apt-get non-interactively. It waits up to 5 minutes for the
+// dpkg lock (unattended-upgrades often holds it just after boot) and keeps
+// existing config files rather than prompting when a package ships a new one.
+func aptGet(args ...string) error {
+	full := append([]string{
+		"-o", "DPkg::Lock::Timeout=300",
+		"-o", "Dpkg::Options::=--force-confdef",
+		"-o", "Dpkg::Options::=--force-confold",
+	}, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), systemUpdateTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "apt-get", full...)
+	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		err = fmt.Errorf("timed out after %s", systemUpdateTimeout)
+	}
+	if err != nil {
+		// apt's output can run to thousands of lines; the error is at the end.
+		msg := strings.TrimSpace(string(out))
+		if len(msg) > 2000 {
+			msg = "..." + msg[len(msg)-2000:]
+		}
+		return fmt.Errorf("apt-get %s: %w: %s", args[0], err, msg)
+	}
+	return nil
+}
+
+// HandleSystemUpdate is `apt update`, followed by `apt upgrade -y` and/or
+// `apt install -y <packages>` as requested.
+func HandleSystemUpdate(data SystemUpdateData) error {
+	if err := ValidatePackageNames(data.Packages); err != nil {
+		return err
+	}
+	log.Printf("[agent] system update: refreshing package lists")
+	if err := aptGet("update"); err != nil {
+		return err
+	}
+	if data.Upgrade {
+		log.Printf("[agent] system update: upgrading installed packages")
+		if err := aptGet("upgrade", "-y"); err != nil {
+			return err
+		}
+	}
+	if len(data.Packages) > 0 {
+		log.Printf("[agent] system update: installing %s", strings.Join(data.Packages, " "))
+		if err := aptGet(append([]string{"install", "-y"}, data.Packages...)...); err != nil {
+			return err
+		}
+	}
+	log.Printf("[agent] system update complete")
 	return nil
 }
 
