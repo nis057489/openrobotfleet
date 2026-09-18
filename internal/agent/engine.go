@@ -104,6 +104,12 @@ func (e *AgentEngine) connectMQTT() {
 }
 
 func (e *AgentEngine) mqttHandler(_ mqttlib.Client, msg mqttlib.Message) {
+	// An empty payload is a retained-message clear -- usually our own, echoed
+	// back from the clear below -- not a command.
+	if len(msg.Payload()) == 0 {
+		return
+	}
+
 	var cmd Command
 	if err := json.Unmarshal(msg.Payload(), &cmd); err != nil {
 		log.Printf("invalid command JSON: %v", err)
