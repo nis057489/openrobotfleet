@@ -174,6 +174,7 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "failed to fetch robot")
 		return
 	}
+	c.reapplyGroupForRobot(r.Context(), robot.ID)
 	respondJSON(w, http.StatusCreated, robot)
 }
 

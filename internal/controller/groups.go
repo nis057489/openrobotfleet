@@ -236,6 +236,27 @@ func validateGroup(existing []db.Group, g db.Group, selfID int64) error {
 	return nil
 }
 
+// reapplyGroupForRobot re-pushes the network config of whichever group
+// robotID belongs to. Called after an agent (re)install: applyGroupNetwork
+// skips devices with no agent_id yet, so a group created before its robot
+// was enrolled never reached it, leaving the robot on the golden image's
+// shared ROS_DOMAIN_ID -- where its /cmd_vel drives every other ungrouped
+// robot too.
+func (c *Controller) reapplyGroupForRobot(ctx context.Context, robotID int64) {
+	groups, err := c.DB.ListGroups(ctx)
+	if err != nil {
+		log.Printf("reapply group for robot %d: list groups: %v", robotID, err)
+		return
+	}
+	for _, g := range groups {
+		if (g.RobotID != nil && *g.RobotID == robotID) || (g.LaptopID != nil && *g.LaptopID == robotID) {
+			applied, skipped := c.applyGroupNetwork(ctx, g)
+			log.Printf("reapplied group %q after install: applied=%v skipped=%v", g.Name, applied, skipped)
+			return
+		}
+	}
+}
+
 // applyGroupNetwork pushes a configure_network MQTT command to the group's
 // robot and laptop. It's best-effort per device: a device with no agent
 // attached yet (or, when static peers are enabled, no known IP yet) is

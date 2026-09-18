@@ -322,6 +322,7 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 						batchStatus.Unlock()
 						return
 					}
+					c.reapplyGroupForRobot(ctx, id)
 
 					// Wait for reconnect
 					if req.ResetLogs || req.UpdateRepo || req.ApplyScenarios {
