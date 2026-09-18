@@ -146,8 +146,15 @@ func (c *Controller) BroadcastCommand(w http.ResponseWriter, r *http.Request) {
 	cmd.ID = fmt.Sprintf("%d", jobID)
 	payload, _ = json.Marshal(cmd)
 
-	log.Printf("broadcast command %s queued to lab/commands/all", req.Type)
-	c.MQTT.Publish("lab/commands/all", 1, true, payload)
+	// Never retained: agents deliberately don't clear lab/commands/all (it's
+	// shared by every device), so a retained broadcast would replay on every
+	// reconnect inside the staleness window -- a fleet-wide reboot turned
+	// into a fleet-wide reboot loop this way. Robots offline at send time
+	// simply miss it. The empty retained publish clears anything an older
+	// controller left retained on the topic.
+	log.Printf("broadcast command %s sent to lab/commands/all", req.Type)
+	c.MQTT.Publish("lab/commands/all", 1, true, nil)
+	c.MQTT.Publish("lab/commands/all", 1, false, payload)
 	respondJSON(w, http.StatusCreated, job)
 }
 
