@@ -286,6 +286,70 @@ func ensureShellsSourceROSEnv() error {
 	return nil
 }
 
+// turtlebot3Models are the values TURTLEBOT3_MODEL accepts; anything else
+// makes turtlebot3_bringup fail to find its URDF/params.
+var turtlebot3Models = map[string]bool{"burger": true, "waffle": true, "waffle_pi": true}
+
+const defaultTurtleBot3Model = "waffle_pi"
+
+// HandleResetBashrc restores the workspace user's ~/.bashrc from
+// /etc/skel/.bashrc (what `cp /etc/skel/.bashrc ~/` does by hand), then
+// appends the ROS setup source line and TURTLEBOT3_MODEL export students
+// need. The previous file is kept as ~/.bashrc.bak.<unix time>. The group's
+// ROS domain comes from /etc/bash.bashrc (ensureShellsSourceROSEnv), so it
+// survives the reset untouched.
+func HandleResetBashrc(cfg Config, data ResetBashrcData) error {
+	model := strings.TrimSpace(data.TurtleBot3Model)
+	if model == "" {
+		model = defaultTurtleBot3Model
+	}
+	if !turtlebot3Models[model] {
+		return fmt.Errorf("unknown TurtleBot3 model %q (want burger, waffle or waffle_pi)", model)
+	}
+
+	name := workspaceUsername(cfg)
+	if name == "" {
+		return errors.New("could not determine the workspace user whose .bashrc to reset")
+	}
+	u, err := user.Lookup(name)
+	if err != nil {
+		return fmt.Errorf("look up user %s: %w", name, err)
+	}
+
+	skel, err := os.ReadFile("/etc/skel/.bashrc")
+	if err != nil {
+		return fmt.Errorf("read default bashrc: %w", err)
+	}
+	var b strings.Builder
+	b.Write(skel)
+	b.WriteString("\n# Added by OpenRobotFleet\n")
+	if matches, _ := filepath.Glob("/opt/ros/*/setup.bash"); len(matches) > 0 {
+		fmt.Fprintf(&b, "source %s\n", matches[0])
+	} else {
+		log.Printf("[agent] no ROS install under /opt/ros; .bashrc won't source a ROS setup script")
+	}
+	fmt.Fprintf(&b, "export TURTLEBOT3_MODEL=%s\n", model)
+
+	path := filepath.Join(u.HomeDir, ".bashrc")
+	if _, err := os.Stat(path); err == nil {
+		backup := fmt.Sprintf("%s.bak.%d", path, time.Now().Unix())
+		if err := os.Rename(path, backup); err != nil {
+			return fmt.Errorf("back up %s: %w", path, err)
+		}
+		log.Printf("[agent] backed up %s to %s", path, backup)
+	}
+	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	uid, _ := strconv.Atoi(u.Uid)
+	gid, _ := strconv.Atoi(u.Gid)
+	if err := os.Chown(path, uid, gid); err != nil {
+		return fmt.Errorf("chown %s: %w", path, err)
+	}
+	log.Printf("[agent] reset %s to default (TURTLEBOT3_MODEL=%s)", path, model)
+	return nil
+}
+
 const (
 	networkWaitPath   = "/usr/local/bin/openrobotfleet-wait-network"
 	networkWaitScript = `#!/bin/bash

@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getRobot, sendCommand, updateRobotTags, getSystemConfig, deleteRobot, updateRobotName, getInstallDefaults } from "../api";
 import { Robot } from "../types";
-import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Plus, X, Lightbulb, Trash2, Edit2, Network, Copy, Check } from "lucide-react";
+import { ArrowLeft, Terminal, RefreshCw, Power, GitBranch, Save, Activity, Plus, X, Lightbulb, Trash2, Edit2, Network, Copy, Check, FileCode } from "lucide-react";
 import { Terminal as TerminalView } from "../components/Terminal";
 import { useNotification } from "../contexts/NotificationContext";
 import { useWebSocket, WSEvent } from "../contexts/WebSocketContext";
@@ -73,6 +73,8 @@ export function LaptopDetail() {
             }
         });
     }, [addListener, robot]);
+
+    const [bashrcModel, setBashrcModel] = useState("waffle_pi");
 
     const handleCommand = async (type: string, data: any = {}) => {
         if (!robot) return;
@@ -310,6 +312,28 @@ export function LaptopDetail() {
                                 </div>
                                 <p className="text-xs text-gray-500">{t("settings.restartRosDesc")}</p>
                             </button>
+                            <div className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                                <button
+                                    onClick={() => handleCommand("reset_bashrc", { turtlebot3_model: bashrcModel })}
+                                    disabled={cmdLoading}
+                                    className="w-full text-left"
+                                >
+                                    <div className="flex items-center gap-2 font-medium text-gray-700 mb-1">
+                                        <FileCode size={16} /> {t("robotDetail.resetBashrc")}
+                                    </div>
+                                    <p className="text-xs text-gray-500">{t("robotDetail.resetBashrcDesc")}</p>
+                                </button>
+                                <select
+                                    value={bashrcModel}
+                                    onChange={e => setBashrcModel(e.target.value)}
+                                    className="mt-2 w-full px-2 py-1 text-xs border border-gray-300 rounded-md bg-white"
+                                    title="TURTLEBOT3_MODEL"
+                                >
+                                    <option value="burger">burger</option>
+                                    <option value="waffle">waffle</option>
+                                    <option value="waffle_pi">waffle_pi</option>
+                                </select>
+                            </div>
                             <button
                                 onClick={() => handleCommand("reboot")}
                                 disabled={cmdLoading}

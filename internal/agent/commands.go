@@ -22,6 +22,12 @@ type ResetLogsData struct {
 	Paths []string `json:"paths"`
 }
 
+// ResetBashrcData restores the workspace user's ~/.bashrc to the distro
+// default, plus the ROS setup and TurtleBot3 model lines.
+type ResetBashrcData struct {
+	TurtleBot3Model string `json:"turtlebot3_model"`
+}
+
 // WifiProfileData describes a wifi connection profile.
 type WifiProfileData struct {
 	SSID     string `json:"ssid"`

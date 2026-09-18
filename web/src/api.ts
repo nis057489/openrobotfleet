@@ -195,6 +195,8 @@ export interface SemesterRequest {
   update_repo: boolean;
   run_self_test: boolean;
   install_camera_support?: boolean;
+  reset_bashrc?: boolean;
+  turtlebot3_model?: string;
   repo_config: {
     repo: string;
     branch: string;

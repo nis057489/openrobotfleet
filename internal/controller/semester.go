@@ -26,6 +26,8 @@ type semesterRequest struct {
 	UpdateRepo           bool                 `json:"update_repo"`
 	RunSelfTest          bool                 `json:"run_self_test"`
 	InstallCameraSupport bool                 `json:"install_camera_support"`
+	ResetBashrc          bool                 `json:"reset_bashrc"`
+	TurtleBot3Model      string               `json:"turtlebot3_model"`
 	RepoConfig           agent.UpdateRepoData `json:"repo_config"`
 	ApplyScenarios       bool                 `json:"apply_scenarios"`
 	ScenarioIDs          []int64              `json:"scenario_ids"`
@@ -364,6 +366,25 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 					log.Printf("semester: failed to queue reset_logs for %s: %v", robot.Name, err)
 					batchStatus.Lock()
 					batchStatus.Errors[id] = "failed to queue reset_logs"
+					batchStatus.Robots[id] = "error"
+					batchStatus.Completed++
+					batchStatus.Unlock()
+					return
+				}
+			}
+
+			if req.ResetBashrc {
+				log.Printf("semester: resetting .bashrc for %s", robot.Name)
+				batchStatus.Lock()
+				batchStatus.Robots[id] = "resetting_bashrc"
+				batchStatus.Unlock()
+
+				data, _ := json.Marshal(agent.ResetBashrcData{TurtleBot3Model: req.TurtleBot3Model})
+				cmd := agent.Command{Type: "reset_bashrc", Data: data}
+				if _, err := c.queueRobotCommand(ctx, robot, cmd); err != nil {
+					log.Printf("semester: failed to queue reset_bashrc for %s: %v", robot.Name, err)
+					batchStatus.Lock()
+					batchStatus.Errors[id] = "failed to queue reset_bashrc"
 					batchStatus.Robots[id] = "error"
 					batchStatus.Completed++
 					batchStatus.Unlock()

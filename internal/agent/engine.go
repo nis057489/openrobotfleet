@@ -313,6 +313,12 @@ func (e *AgentEngine) mapCommandToAction(cmd Command) func() error {
 			return func() error { return err }
 		}
 		return func() error { return HandleResetLogs(cfg, payload) }
+	case "reset_bashrc":
+		var payload ResetBashrcData
+		if err := json.Unmarshal(cmd.Data, &payload); err != nil {
+			return func() error { return err }
+		}
+		return func() error { return HandleResetBashrc(cfg, payload) }
 	case "restart_ros":
 		return func() error { return HandleRestartROS(cfg) }
 	case "wifi_profile":

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getRobots, getInstallDefaults, startSemesterBatch, getSemesterStatus, getScenarios } from "../api";
 import { Robot, InstallConfig, SemesterStatus, Scenario } from "../types";
-import { Check, RefreshCw, GitBranch, Trash2, AlertTriangle, ArrowRight, Clock, Terminal, XCircle, Activity, FileText, RotateCcw, Camera } from "lucide-react";
+import { Check, RefreshCw, GitBranch, Trash2, AlertTriangle, ArrowRight, Clock, Terminal, XCircle, Activity, FileText, RotateCcw, Camera, FileCode } from "lucide-react";
 
 export function SemesterWizard() {
     const { t } = useTranslation();
@@ -22,6 +22,8 @@ export function SemesterWizard() {
     const [doReinstall, setDoReinstall] = useState(false);
     const [doSelfTest, setDoSelfTest] = useState(false);
     const [doInstallCameraSupport, setDoInstallCameraSupport] = useState(false);
+    const [doResetBashrc, setDoResetBashrc] = useState(false);
+    const [turtlebot3Model, setTurtlebot3Model] = useState("waffle_pi");
     const [doFactoryReset, setDoFactoryReset] = useState(false);
     const [repoUrl, setRepoUrl] = useState("https://github.com/openrobot-fleet/openrobotfleet-agent.git");
 
@@ -82,7 +84,7 @@ export function SemesterWizard() {
 
     const handleExecute = async () => {
         if (selectedIds.size === 0) return;
-        if (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario && !doInstallCameraSupport && !doFactoryReset) return;
+        if (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario && !doInstallCameraSupport && !doResetBashrc && !doFactoryReset) return;
 
         setExecuting(true);
         try {
@@ -93,6 +95,8 @@ export function SemesterWizard() {
                 update_repo: doUpdateRepo,
                 run_self_test: doSelfTest,
                 install_camera_support: doInstallCameraSupport,
+                reset_bashrc: doResetBashrc,
+                turtlebot3_model: turtlebot3Model,
                 repo_config: {
                     repo: repoUrl,
                     branch: "main",
@@ -302,6 +306,45 @@ export function SemesterWizard() {
 
                             <hr className="border-gray-100" />
 
+                            {/* Reset .bashrc */}
+                            <label className={`flex items-start gap-3 ${doFactoryReset ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
+                                <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doResetBashrc ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
+                                    {doResetBashrc && <Check size={14} />}
+                                    <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={doResetBashrc}
+                                        disabled={doFactoryReset}
+                                        onChange={e => {
+                                            setDoResetBashrc(e.target.checked);
+                                            if (e.target.checked) setDoFactoryReset(false);
+                                        }}
+                                    />
+                                </div>
+                                <div className="flex-1">
+                                    <div className="font-medium text-gray-900 flex items-center gap-2">
+                                        <FileCode size={16} /> {t("semesterWizard.resetBashrc")}
+                                    </div>
+                                    <p className="text-sm text-gray-500">{t("semesterWizard.resetBashrcDesc")}</p>
+                                    {doResetBashrc && (
+                                        <div className="mt-2 flex items-center gap-2 text-sm">
+                                            <span className="text-gray-700">TURTLEBOT3_MODEL</span>
+                                            <select
+                                                value={turtlebot3Model}
+                                                onChange={e => setTurtlebot3Model(e.target.value)}
+                                                className="px-2 py-1 border border-gray-300 rounded-md bg-white"
+                                            >
+                                                <option value="burger">burger</option>
+                                                <option value="waffle">waffle</option>
+                                                <option value="waffle_pi">waffle_pi</option>
+                                            </select>
+                                        </div>
+                                    )}
+                                </div>
+                            </label>
+
+                            <hr className="border-gray-100" />
+
                             {/* Update Repo */}
                             <label className={`flex items-start gap-3 ${doFactoryReset ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
                                 <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doUpdateRepo ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
@@ -433,6 +476,7 @@ export function SemesterWizard() {
                                                 setDoUpdateRepo(false);
                                                 setDoApplyScenario(false);
                                                 setDoReinstall(false);
+                                                setDoResetBashrc(false);
                                             }
                                         }}
                                     />
@@ -449,8 +493,8 @@ export function SemesterWizard() {
 
                     <button
                         onClick={handleExecute}
-                        disabled={executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario && !doInstallCameraSupport && !doFactoryReset)}
-                        className={`w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 ${executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario && !doInstallCameraSupport && !doFactoryReset)
+                        disabled={executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario && !doInstallCameraSupport && !doResetBashrc && !doFactoryReset)}
+                        className={`w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 ${executing || selectedIds.size === 0 || (!doResetLogs && !doUpdateRepo && !doReinstall && !doSelfTest && !doApplyScenario && !doInstallCameraSupport && !doResetBashrc && !doFactoryReset)
                             ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                             : doFactoryReset
                                 ? "bg-red-600 text-white hover:bg-red-700 shadow-sm"
