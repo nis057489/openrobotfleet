@@ -75,6 +75,7 @@ type Job struct {
 	Type        string    `json:"type"`
 	TargetRobot string    `json:"target_robot"`
 	PayloadJSON string    `json:"payload_json"`
+	Error       string    `json:"error,omitempty"`
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -196,6 +197,9 @@ func migrate(db *sql.DB) error {
 			log.Printf("migration failed: %v", err)
 			return err
 		}
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE jobs ADD COLUMN error TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumnError(err) {
+		return err
 	}
 	if err := ensureRobotSchema(db); err != nil {
 		return err
@@ -661,9 +665,9 @@ func (d *DB) ListJobs(ctx context.Context, target string) ([]Job, error) {
 		err  error
 	)
 	if target != "" {
-		stmt, err = d.SQL.PrepareContext(ctx, `SELECT id, type, target_robot, payload_json, status, created_at, updated_at FROM jobs WHERE target_robot = ? ORDER BY created_at DESC`)
+		stmt, err = d.SQL.PrepareContext(ctx, `SELECT id, type, target_robot, payload_json, status, created_at, updated_at, error FROM jobs WHERE target_robot = ? ORDER BY created_at DESC`)
 	} else {
-		stmt, err = d.SQL.PrepareContext(ctx, `SELECT id, type, target_robot, payload_json, status, created_at, updated_at FROM jobs ORDER BY created_at DESC`)
+		stmt, err = d.SQL.PrepareContext(ctx, `SELECT id, type, target_robot, payload_json, status, created_at, updated_at, error FROM jobs ORDER BY created_at DESC`)
 	}
 	if err != nil {
 		return nil, err
@@ -683,7 +687,7 @@ func (d *DB) ListJobs(ctx context.Context, target string) ([]Job, error) {
 	for rows.Next() {
 		var j Job
 		var createdAt, updatedAt sql.NullTime
-		if err := rows.Scan(&j.ID, &j.Type, &j.TargetRobot, &j.PayloadJSON, &j.Status, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&j.ID, &j.Type, &j.TargetRobot, &j.PayloadJSON, &j.Status, &createdAt, &updatedAt, &j.Error); err != nil {
 			return nil, err
 		}
 		if createdAt.Valid {

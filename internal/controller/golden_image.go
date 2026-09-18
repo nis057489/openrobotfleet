@@ -74,9 +74,13 @@ func (c *Controller) DownloadGoldenImage(w http.ResponseWriter, r *http.Request)
 	tmplData := struct {
 		*db.GoldenImageConfig
 		SSHPublicKey string
+		MQTTUsername string
+		MQTTPassword string
 	}{
 		GoldenImageConfig: cfg,
 		SSHPublicKey:      pubKey,
+		MQTTUsername:      os.Getenv("AGENT_MQTT_USERNAME"),
+		MQTTPassword:      os.Getenv("AGENT_MQTT_PASSWORD"),
 	}
 
 	w.Header().Set("Content-Type", "text/yaml")
@@ -276,8 +280,11 @@ write_files:
       APT::Periodic::Unattended-Upgrade "0";
 
   - path: /etc/openrobotfleet-agent/config.yaml
+    permissions: '0600'
     content: |
-      mqtt_broker: "{{.MQTTBroker}}"
+      mqtt_broker: {{printf "%q" .MQTTBroker}}
+      mqtt_username: {{printf "%q" .MQTTUsername}}
+      mqtt_password: {{printf "%q" .MQTTPassword}}
       workspace_path: "/home/ubuntu/ros_ws/src"
 
   - path: /etc/openrobotfleet-agent/ros_env.sh
@@ -1110,9 +1117,13 @@ func (c *Controller) runBuild() {
 	tmplData := struct {
 		*db.GoldenImageConfig
 		SSHPublicKey string
+		MQTTUsername string
+		MQTTPassword string
 	}{
 		GoldenImageConfig: cfg,
 		SSHPublicKey:      pubKey,
+		MQTTUsername:      os.Getenv("AGENT_MQTT_USERNAME"),
+		MQTTPassword:      os.Getenv("AGENT_MQTT_PASSWORD"),
 	}
 
 	tmpl, err := template.New("user-data").Parse(userDataTemplate)

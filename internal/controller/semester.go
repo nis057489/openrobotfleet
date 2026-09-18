@@ -288,6 +288,8 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 					cfg := agent.Config{
 						AgentID:        agentID,
 						MQTTBroker:     broker,
+						MQTTUsername:   os.Getenv("AGENT_MQTT_USERNAME"),
+						MQTTPassword:   os.Getenv("AGENT_MQTT_PASSWORD"),
 						WorkspacePath:  workspace,
 						WorkspaceOwner: determineWorkspaceOwner(installAgentRequest{User: robot.InstallConfig.User}),
 					}
@@ -347,6 +349,7 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 						batchStatus.Unlock()
 						return
 					}
+					robot.AgentID = agentID
 					c.reapplyGroupForRobot(ctx, id)
 
 					// Wait for reconnect
@@ -385,10 +388,10 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 				batchStatus.Unlock()
 
 				cmd := agent.Command{Type: "reset_logs", Data: []byte("{}")}
-				if _, err := c.queueRobotCommand(ctx, robot, cmd); err != nil {
-					log.Printf("semester: failed to queue reset_logs for %s: %v", robot.Name, err)
+				if _, err := c.runRobotCommand(ctx, robot, cmd); err != nil {
+					log.Printf("semester: command failed: reset_logs for %s: %v", robot.Name, err)
 					batchStatus.Lock()
-					batchStatus.Errors[id] = "failed to queue reset_logs"
+					batchStatus.Errors[id] = err.Error()
 					batchStatus.Robots[id] = "error"
 					batchStatus.Completed++
 					batchStatus.Unlock()
@@ -404,10 +407,10 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 
 				data, _ := json.Marshal(agent.ResetBashrcData{TurtleBot3Model: req.TurtleBot3Model})
 				cmd := agent.Command{Type: "reset_bashrc", Data: data}
-				if _, err := c.queueRobotCommand(ctx, robot, cmd); err != nil {
-					log.Printf("semester: failed to queue reset_bashrc for %s: %v", robot.Name, err)
+				if _, err := c.runRobotCommand(ctx, robot, cmd); err != nil {
+					log.Printf("semester: command failed: reset_bashrc for %s: %v", robot.Name, err)
 					batchStatus.Lock()
-					batchStatus.Errors[id] = "failed to queue reset_bashrc"
+					batchStatus.Errors[id] = err.Error()
 					batchStatus.Robots[id] = "error"
 					batchStatus.Completed++
 					batchStatus.Unlock()
@@ -423,10 +426,10 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 
 				data, _ := json.Marshal(req.RepoConfig)
 				cmd := agent.Command{Type: "update_repo", Data: data}
-				if _, err := c.queueRobotCommand(ctx, robot, cmd); err != nil {
-					log.Printf("semester: failed to queue update_repo for %s: %v", robot.Name, err)
+				if _, err := c.runRobotCommand(ctx, robot, cmd); err != nil {
+					log.Printf("semester: command failed: update_repo for %s: %v", robot.Name, err)
 					batchStatus.Lock()
-					batchStatus.Errors[id] = "failed to queue update_repo"
+					batchStatus.Errors[id] = err.Error()
 					batchStatus.Robots[id] = "error"
 					batchStatus.Completed++
 					batchStatus.Unlock()
@@ -450,10 +453,10 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 				batchPayload, _ := json.Marshal(batchData)
 				cmd := agent.Command{Type: "batch", Data: batchPayload}
 
-				if _, err := c.queueRobotCommand(ctx, robot, cmd); err != nil {
-					log.Printf("semester: failed to queue batch scenarios for %s: %v", robot.Name, err)
+				if _, err := c.runRobotCommand(ctx, robot, cmd); err != nil {
+					log.Printf("semester: command failed: batch scenarios for %s: %v", robot.Name, err)
 					batchStatus.Lock()
-					batchStatus.Errors[id] = "failed to queue batch scenarios"
+					batchStatus.Errors[id] = err.Error()
 					batchStatus.Robots[id] = "error"
 					batchStatus.Completed++
 					batchStatus.Unlock()
@@ -478,10 +481,10 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 				// Test Drive
 				driveData, _ := json.Marshal(agent.TestDriveData{DurationSec: 2})
 				cmdDrive := agent.Command{Type: "test_drive", Data: driveData}
-				if _, err := c.queueRobotCommand(ctx, robot, cmdDrive); err != nil {
-					log.Printf("semester: failed to queue test_drive for %s: %v", robot.Name, err)
+				if _, err := c.runRobotCommand(ctx, robot, cmdDrive); err != nil {
+					log.Printf("semester: command failed: test_drive for %s: %v", robot.Name, err)
 					batchStatus.Lock()
-					batchStatus.Errors[id] = "failed to queue test_drive"
+					batchStatus.Errors[id] = err.Error()
 					batchStatus.Robots[id] = "error"
 					batchStatus.Completed++
 					batchStatus.Unlock()
@@ -492,10 +495,10 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 				uploadURL := fmt.Sprintf("%s/api/robots/%d/upload", baseURL, id)
 				captureData, _ := json.Marshal(agent.CaptureImageData{UploadURL: uploadURL})
 				cmdCapture := agent.Command{Type: "capture_image", Data: captureData}
-				if _, err := c.queueRobotCommand(ctx, robot, cmdCapture); err != nil {
-					log.Printf("semester: failed to queue capture_image for %s: %v", robot.Name, err)
+				if _, err := c.runRobotCommand(ctx, robot, cmdCapture); err != nil {
+					log.Printf("semester: command failed: capture_image for %s: %v", robot.Name, err)
 					batchStatus.Lock()
-					batchStatus.Errors[id] = "failed to queue capture_image"
+					batchStatus.Errors[id] = err.Error()
 					batchStatus.Robots[id] = "error"
 					batchStatus.Completed++
 					batchStatus.Unlock()
@@ -503,10 +506,7 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 				}
 			}
 
-			// The agent runs one job at a time and drops any command that
-			// arrives while it's busy, so a long apt run followed by a
-			// separate camera-support command would lose the latter. When
-			// both are wanted, send them as one batch that runs in order.
+			// Bundle package installation and camera setup into one acknowledged job.
 			cameraBundled := false
 			if req.SystemUpgrade || req.InstallPackages {
 				log.Printf("semester: updating system packages for %s", robot.Name)
@@ -524,10 +524,10 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 					cmd = agent.Command{Type: "batch", Data: batchPayload}
 					cameraBundled = true
 				}
-				if _, err := c.queueRobotCommand(ctx, robot, cmd); err != nil {
-					log.Printf("semester: failed to queue system_update for %s: %v", robot.Name, err)
+				if _, err := c.runRobotCommand(ctx, robot, cmd); err != nil {
+					log.Printf("semester: command failed: system_update for %s: %v", robot.Name, err)
 					batchStatus.Lock()
-					batchStatus.Errors[id] = "failed to queue system_update"
+					batchStatus.Errors[id] = err.Error()
 					batchStatus.Robots[id] = "error"
 					batchStatus.Completed++
 					batchStatus.Unlock()
@@ -542,10 +542,10 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 				batchStatus.Unlock()
 
 				cmd := agent.Command{Type: "install_camera_support", Data: []byte("{}")}
-				if _, err := c.queueRobotCommand(ctx, robot, cmd); err != nil {
-					log.Printf("semester: failed to queue install_camera_support for %s: %v", robot.Name, err)
+				if _, err := c.runRobotCommand(ctx, robot, cmd); err != nil {
+					log.Printf("semester: command failed: install_camera_support for %s: %v", robot.Name, err)
 					batchStatus.Lock()
-					batchStatus.Errors[id] = "failed to queue install_camera_support"
+					batchStatus.Errors[id] = err.Error()
 					batchStatus.Robots[id] = "error"
 					batchStatus.Completed++
 					batchStatus.Unlock()
@@ -560,10 +560,10 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 				batchStatus.Unlock()
 
 				cmd := agent.Command{Type: "factory_reset", Data: []byte("{}")}
-				if _, err := c.queueRobotCommand(ctx, robot, cmd); err != nil {
-					log.Printf("semester: failed to queue factory_reset for %s: %v", robot.Name, err)
+				if _, err := c.runRobotCommand(ctx, robot, cmd); err != nil {
+					log.Printf("semester: command failed: factory_reset for %s: %v", robot.Name, err)
 					batchStatus.Lock()
-					batchStatus.Errors[id] = "failed to queue factory_reset"
+					batchStatus.Errors[id] = err.Error()
 					batchStatus.Robots[id] = "error"
 					batchStatus.Completed++
 					batchStatus.Unlock()

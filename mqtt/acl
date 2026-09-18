@@ -1,0 +1,11 @@
+# Controller credentials never go onto robots or golden images.
+user controller
+topic write lab/commands/+
+topic write lab/acks/+
+topic read lab/status/+
+
+# Agents can receive only commands/acks addressed to their client ID and
+# publish telemetry. They cannot publish commands, even to themselves.
+pattern read lab/commands/%c
+pattern read lab/acks/%c
+pattern write lab/status/%c

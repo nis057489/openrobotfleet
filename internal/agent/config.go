@@ -13,6 +13,9 @@ type Config struct {
 	AgentID        string `yaml:"agent_id"`
 	Type           string `yaml:"type"` // "robot" or "laptop"
 	MQTTBroker     string `yaml:"mqtt_broker"`
+	MQTTUsername   string `yaml:"mqtt_username,omitempty"`
+	MQTTPassword   string `yaml:"mqtt_password,omitempty"`
+	JobStatePath   string `yaml:"job_state_path,omitempty"`
 	WorkspacePath  string `yaml:"workspace_path"`
 	WorkspaceOwner string `yaml:"workspace_owner"`
 }
@@ -39,6 +42,12 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("parse config: %w", err)
+	}
+	if cfg.MQTTUsername == "" {
+		cfg.MQTTUsername = os.Getenv("MQTT_USERNAME")
+	}
+	if cfg.MQTTPassword == "" {
+		cfg.MQTTPassword = os.Getenv("MQTT_PASSWORD")
 	}
 	return cfg, nil
 }

@@ -94,7 +94,7 @@ func InstallAgent(h HostSpec, cfg agent.Config, hostname string, agentBinary []b
 	files := []remoteFile{
 		{dst: "/usr/local/bin/openrobotfleet-agent", mode: 0o755, data: agentBinary},
 		{dst: "/usr/local/bin/openrobotfleet-agent-start", mode: 0o755, data: []byte(agentStartScript)},
-		{dst: "/etc/openrobotfleet-agent/config.yaml", mode: 0o644, data: cfgBytes},
+		{dst: "/etc/openrobotfleet-agent/config.yaml", mode: 0o600, data: cfgBytes},
 		{dst: "/etc/systemd/system/openrobotfleet-agent.service", mode: 0o644, data: []byte(systemdUnit)},
 	}
 

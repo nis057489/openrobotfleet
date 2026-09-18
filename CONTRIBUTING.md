@@ -20,15 +20,23 @@ Thank you for your interest in contributing to OpenRobotFleet! We welcome contri
 Start a broker (the repo's Mosquitto config is the easiest way):
 
 ```bash
+cp .env.example .env
+# Fill ADMIN_PASSWORD and two different random MQTT passwords in .env.
 docker compose up -d mqtt
 ```
 
 Run the Controller with `go run`. It needs `MQTT_BROKER`, `DB_PATH`, and `ADMIN_PASSWORD` at minimum:
 
 ```bash
+set -a
+. ./.env
+set +a
 export MQTT_BROKER=tcp://localhost:1883
+export MQTT_USERNAME=controller
+export MQTT_PASSWORD="$MQTT_CONTROLLER_PASSWORD"
+export AGENT_MQTT_USERNAME=agents
+export AGENT_MQTT_PASSWORD="$MQTT_AGENT_PASSWORD"
 export DB_PATH=./controller.db
-export ADMIN_PASSWORD=turtle2025
 export SCAN_SUBNETS=192.168.1.0/24
 go run ./cmd/controller
 ```
@@ -47,7 +55,15 @@ The agent binary can be run the same way for testing against a local Controller:
 
 ```bash
 go build -o agent ./cmd/agent
-AGENT_ID=dev1 AGENT_TYPE=robot MQTT_BROKER=tcp://localhost:1883 ./agent
+cat > /tmp/fleet-dev-agent.yaml <<'EOF'
+agent_id: dev1
+type: robot
+mqtt_broker: tcp://localhost:1883
+workspace_path: /tmp/fleet-dev-workspace
+job_state_path: /tmp/fleet-dev-jobs.json
+EOF
+AGENT_CONFIG_PATH=/tmp/fleet-dev-agent.yaml \
+  MQTT_USERNAME=agents MQTT_PASSWORD="$MQTT_AGENT_PASSWORD" ./agent
 ```
 
 #### Option B: build the full container image locally
@@ -67,13 +83,42 @@ docker run --rm -it \
   -p 8080:8080 \
   -e MQTT_BROKER=tcp://openrobot-mqtt:1883 \
   -e DB_PATH=/data/controller.db \
-  -e ADMIN_PASSWORD=turtle2025 \
+  -e ADMIN_PASSWORD \
+  -e MQTT_USERNAME=controller -e MQTT_PASSWORD="$MQTT_CONTROLLER_PASSWORD" \
+  -e AGENT_MQTT_USERNAME=agents -e AGENT_MQTT_PASSWORD="$MQTT_AGENT_PASSWORD" \
   -e SCAN_SUBNETS=192.168.1.0/24 \
   -v controller-dev-data:/data \
   openrobotfleet-controller:dev
 ```
 
 Pushing to `main` triggers the same build via [.github/workflows/docker.yml](.github/workflows/docker.yml) — building locally first lets you catch Dockerfile or cross-compilation issues before CI does.
+
+## Regression tests
+
+```bash
+go test -race ./...
+go vet ./...
+```
+
+The MQTT reconnect test opens only a loopback socket and includes its own small
+broker simulator. To test the actual Mosquitto authentication and ACLs without
+connecting to the fleet, run this temporary container with networking disabled:
+
+```bash
+docker run --rm --network none --entrypoint /bin/sh \
+  -e MQTT_CONTROLLER_PASSWORD=controller-test-only \
+  -e MQTT_AGENT_PASSWORD=agents-test-only \
+  -v "$PWD/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro" \
+  -v "$PWD/mqtt/acl:/mosquitto/config/acl:ro" \
+  -v "$PWD/mqtt/entrypoint.sh:/mosquitto/config/fleet-entrypoint.sh:ro" \
+  -v "$PWD/mqtt/test-acl.sh:/test-acl.sh:ro" \
+  eclipse-mosquitto:2 /test-acl.sh
+```
+
+The broker uses [Mosquitto's password and topic ACL configuration](https://mosquitto.org/man/mosquitto-conf-5.html).
+The shared agent account is intended for fleet members; client IDs identify topics,
+not independently authenticated device identities. Never put the controller password
+on a robot or in a golden image.
 
 ## Code Style
 

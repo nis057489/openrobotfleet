@@ -13,6 +13,7 @@ import (
 
 	"time"
 
+	"example.com/openrobot-fleet/internal/agent"
 	"example.com/openrobot-fleet/internal/controller"
 	"example.com/openrobot-fleet/internal/db"
 	mqttc "example.com/openrobot-fleet/internal/mqtt"
@@ -25,6 +26,7 @@ type Server struct {
 	MQTT       *mqttc.Client
 	Controller *controller.Controller
 	Hub        *Hub
+	sessions   sessionStore
 }
 
 func NewServer(dbPath string) (*Server, error) {
@@ -111,30 +113,6 @@ func (s *Server) routes() http.Handler {
 	return s.authMiddleware(mux)
 }
 
-func (s *Server) authMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Allow public endpoints. Robot image uploads are called by the agent
-		// itself (capture_image), not a logged-in browser, so it can't carry
-		// the session cookie; MQTT commands to agents are equally
-		// unauthenticated on this trusted-LAN model, so this isn't a new
-		// class of exposure.
-		isRobotUpload := strings.HasPrefix(r.URL.Path, "/api/robots/") && strings.HasSuffix(r.URL.Path, "/upload")
-		if !strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api/login" || isRobotUpload {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		// Check cookie
-		cookie, err := r.Cookie("auth_token")
-		if err != nil || cookie.Value != "secret-admin-token" {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
-
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
@@ -151,7 +129,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	expected := os.Getenv("ADMIN_PASSWORD")
 	if expected == "" {
-		expected = "mrs2025" // Default password
+		http.Error(w, "ADMIN_PASSWORD is not configured", http.StatusServiceUnavailable)
+		return
 	}
 
 	if creds.Password != expected {
@@ -159,9 +138,16 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	token, err := s.sessions.create(time.Now())
+	if err != nil {
+		http.Error(w, "failed to create session", http.StatusInternalServerError)
+		return
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     "auth_token",
-		Value:    "secret-admin-token",
+		Value:    token,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
 		Path:     "/",
 		HttpOnly: true,
 		Expires:  time.Now().Add(24 * time.Hour),
@@ -466,15 +452,16 @@ func methodNotAllowed(w http.ResponseWriter) {
 }
 
 type statusPayload struct {
-	Status    string `json:"status"`
-	TS        string `json:"ts"`
-	IP        string `json:"ip"`
-	Name      string `json:"name"`
-	Type      string `json:"type"`
-	JobID     string `json:"job_id"`
-	JobStatus string `json:"job_status"`
-	JobError  string `json:"job_error"`
-	Camera    string `json:"camera,omitempty"`
+	Status    string      `json:"status"`
+	TS        string      `json:"ts"`
+	IP        string      `json:"ip"`
+	Name      string      `json:"name"`
+	Type      string      `json:"type"`
+	JobID     string      `json:"job_id"`
+	JobStatus string      `json:"job_status"`
+	JobError  string      `json:"job_error"`
+	Camera    string      `json:"camera,omitempty"`
+	Results   []agent.Job `json:"results,omitempty"`
 }
 
 func (s *Server) subscribeStatusUpdates() {
@@ -516,10 +503,8 @@ func (s *Server) subscribeStatusUpdates() {
 			log.Printf("status: failed to upsert robot %s: %v", agentID, err)
 		}
 
-		// Update controller job state
-		if payload.JobID != "" {
-			s.Controller.UpdateRobotJobStatus(agentID, payload.JobID, payload.JobStatus, payload.JobError)
-		}
+		s.Controller.ProcessJobResults(agentID, payload.Results)
+		s.Controller.DeliverQueuedJobs(agentID)
 
 		// If new robot, fetch ID
 		if dbID == 0 {
@@ -545,7 +530,11 @@ func parseAgentIDFromTopic(topic string) string {
 	if !strings.HasPrefix(topic, prefix) {
 		return ""
 	}
-	return strings.TrimPrefix(topic, prefix)
+	id := strings.TrimPrefix(topic, prefix)
+	if strings.ContainsAny(id, "/+#") {
+		return ""
+	}
+	return id
 }
 
 func (s *Server) handleDiscoveryScan(w http.ResponseWriter, r *http.Request) {

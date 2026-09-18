@@ -23,15 +23,11 @@ import (
 	"time"
 )
 
-// defaultCmdTimeout bounds any command the JobManager waits on synchronously.
-// The agent only runs one job at a time (job_manager.go) and silently drops
-// new commands while one is "running", so a subprocess that never exits (e.g.
-// `ros2 topic pub` waiting forever for a subscriber that will never appear)
-// permanently jams the robot's entire command queue, not just that one job.
+// defaultCmdTimeout bounds short administrative subprocesses, including ROS
+// publishers that would otherwise wait indefinitely for a subscriber.
 const defaultCmdTimeout = 15 * time.Second
 
-// runCmd runs name/args with a timeout so a hung subprocess can't block the
-// agent's command queue forever; see defaultCmdTimeout.
+// runCmd bounds short subprocesses so a hung command cannot stall the queue.
 func runCmd(timeout time.Duration, name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -53,37 +49,6 @@ func HandleSetHostname(data SetHostnameData) error {
 		return fmt.Errorf("set hostname: %w", err)
 	}
 	log.Printf("[agent] set hostname to %s", data.Hostname)
-	return nil
-}
-
-// HandleUpdateRepo clones the requested git repository to the target directory.
-func HandleUpdateRepo(cfg Config, data UpdateRepoData) error {
-	if data.Repo == "" {
-		return errors.New("repo is required")
-	}
-	branch := data.Branch
-	if branch == "" {
-		branch = "main"
-	}
-	target := destinationPath(cfg.WorkspacePath, data.Path, data.Repo)
-	if target == "" || target == "/" {
-		return errors.New("invalid target path")
-	}
-	if err := os.RemoveAll(target); err != nil {
-		return fmt.Errorf("clean target %s: %w", target, err)
-	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return fmt.Errorf("prepare parent %s: %w", filepath.Dir(target), err)
-	}
-	cmd := exec.Command("git", "clone", "--branch", branch, "--single-branch", data.Repo, target)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("git clone failed: %w: %s", err, strings.TrimSpace(string(output)))
-	}
-	if err := ensureOwnership(target, cfg); err != nil {
-		return err
-	}
-	log.Printf("[agent] cloned %s (branch %s) into %s", data.Repo, branch, target)
 	return nil
 }
 
@@ -144,6 +109,12 @@ const (
 // agent's own commands), installs the RMW package if it's missing, then
 // restarts ROS where there's a ROS service to restart.
 func HandleConfigureNetwork(cfg Config, data ConfigureNetworkData) error {
+	if data.ROSDomainID < 0 || data.ROSDomainID > 232 {
+		return errors.New("invalid ROS domain ID")
+	}
+	if data.RMWImplementation != "" && !regexp.MustCompile(`^[a-zA-Z0-9_]+$`).MatchString(data.RMWImplementation) {
+		return errors.New("invalid RMW implementation")
+	}
 	if err := os.MkdirAll(filepath.Dir(rosEnvPath), 0o755); err != nil {
 		return fmt.Errorf("prepare config dir: %w", err)
 	}
@@ -169,7 +140,7 @@ func HandleConfigureNetwork(cfg Config, data ConfigureNetworkData) error {
 		return fmt.Errorf("remove stale cyclonedds config: %w", err)
 	}
 
-	if err := os.WriteFile(rosEnvPath, []byte(env.String()), 0o644); err != nil {
+	if err := writeAtomicFile(rosEnvPath, []byte(env.String()), 0o644); err != nil {
 		return fmt.Errorf("write ros env: %w", err)
 	}
 	if err := ensureShellsSourceROSEnv(); err != nil {
@@ -513,32 +484,36 @@ func HandleRestartROS(cfg Config) error {
 
 // HandleTestDrive executes a short movement pattern.
 func HandleTestDrive(cfg Config, data TestDriveData) error {
-	log.Printf("[agent] starting test drive")
+	return HandleTestDriveContext(context.Background(), cfg, data)
+}
 
-	// Twist message for forward motion. -w 0 publishes immediately instead of
-	// waiting (by default, forever) for a matching subscriber, since cmd_vel
-	// is fire-and-forget and there may be no bringup node running to receive
-	// it yet.
-	// linear.x = 0.1, angular.z = 0.0
-	if out, err := runCmd(defaultCmdTimeout, "ros2", "topic", "pub", "--once", "-w", "0", "/cmd_vel", "geometry_msgs/msg/Twist", "{linear: {x: 0.1, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"); err != nil {
-		return fmt.Errorf("forward failed: %v: %s", err, string(out))
+func HandleTestDriveContext(ctx context.Context, cfg Config, data TestDriveData) (err error) {
+	if data.DurationSec == 0 {
+		data.DurationSec = 2
 	}
-
-	time.Sleep(time.Duration(data.DurationSec) * time.Second)
-
-	// Stop
-	if out, err := runCmd(defaultCmdTimeout, "ros2", "topic", "pub", "--once", "-w", "0", "/cmd_vel", "geometry_msgs/msg/Twist", "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"); err != nil {
-		return fmt.Errorf("stop failed: %v: %s", err, string(out))
+	if data.DurationSec < 0 || data.DurationSec > 30 {
+		return errors.New("test drive duration must be between 1 and 30 seconds")
 	}
-
-	log.Printf("[agent] test drive complete")
-	return nil
+	// Always publish a final zero, including after cancellation or a partial
+	// failure of the initial publisher. Use an independent bounded context.
+	defer func() { err = errors.Join(err, HandleStop(cfg)) }()
+	if out, err := runROSCmdContext(ctx, defaultCmdTimeout, "ros2", "topic", "pub", "--once", "-w", "0", "/cmd_vel", "geometry_msgs/msg/Twist", "{linear: {x: 0.1, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"); err != nil {
+		return fmt.Errorf("forward failed: %w: %s", err, out)
+	}
+	timer := time.NewTimer(time.Duration(data.DurationSec) * time.Second)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // HandleStop publishes zero velocity.
 func HandleStop(cfg Config) error {
 	log.Printf("[agent] stopping robot")
-	if out, err := runCmd(defaultCmdTimeout, "ros2", "topic", "pub", "--once", "-w", "0", "/cmd_vel", "geometry_msgs/msg/Twist", "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"); err != nil {
+	if out, err := runROSCmd(defaultCmdTimeout, "ros2", "topic", "pub", "--once", "-w", "0", "/cmd_vel", "geometry_msgs/msg/Twist", "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"); err != nil {
 		return fmt.Errorf("stop failed: %v: %s", err, string(out))
 	}
 	return nil
@@ -558,12 +533,12 @@ func HandleIdentify(cfg Config, data IdentifyData) error {
 	// TurtleBot3's turtlebot3_node exposes a /sound service
 	// (turtlebot3_msgs/srv/Sound) once bringup (ros.service) is running.
 	// That's what our golden image actually launches, so try it first.
-	if _, err := runCmd(defaultCmdTimeout, "ros2", "service", "call", "/sound", "turtlebot3_msgs/srv/Sound", "value: 1"); err == nil {
+	if _, err := runROSCmd(defaultCmdTimeout, "ros2", "service", "call", "/sound", "turtlebot3_msgs/srv/Sound", "value: 1"); err == nil {
 		return nil
 	}
 
 	// Fall back to the iRobot Create 3 (TurtleBot4) audio/lightring topics.
-	if out, err := runCmd(defaultCmdTimeout, "ros2", "topic", "pub", "--once", "-w", "0", "/cmd_audio", "irobot_create_msgs/msg/AudioNoteVector",
+	if out, err := runROSCmd(defaultCmdTimeout, "ros2", "topic", "pub", "--once", "-w", "0", "/cmd_audio", "irobot_create_msgs/msg/AudioNoteVector",
 		`{append: false, notes: [{frequency: 880, max_runtime: {sec: 0, nanosec: 500000000}}, {frequency: 0, max_runtime: {sec: 0, nanosec: 100000000}}, {frequency: 880, max_runtime: {sec: 0, nanosec: 500000000}}]}`); err != nil {
 		log.Printf("[agent] failed to beep via ROS: %v: %s", err, string(out))
 		// Fallback to laptop identification (system beep) if ROS fails
@@ -576,7 +551,7 @@ func HandleIdentify(cfg Config, data IdentifyData) error {
 	// Flash LEDs (Create 3 lightring; TurtleBot3 has no equivalent hardware,
 	// so this only does anything on a TB4).
 	// Red
-	if out, err := runCmd(defaultCmdTimeout, "ros2", "topic", "pub", "--once", "-w", "0", "/cmd_lightring", "irobot_create_msgs/msg/LightringLeds",
+	if out, err := runROSCmd(defaultCmdTimeout, "ros2", "topic", "pub", "--once", "-w", "0", "/cmd_lightring", "irobot_create_msgs/msg/LightringLeds",
 		`{override_system: true, leds: [{red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}, {red: 255, green: 0, blue: 0}]}`); err != nil {
 		log.Printf("[agent] failed to set LEDs red: %v: %s", err, string(out))
 	}
@@ -585,7 +560,7 @@ func HandleIdentify(cfg Config, data IdentifyData) error {
 
 	// Off (or return to system control)
 	// To return to system control, we can set override_system to false.
-	if out, err := runCmd(defaultCmdTimeout, "ros2", "topic", "pub", "--once", "-w", "0", "/cmd_lightring", "irobot_create_msgs/msg/LightringLeds",
+	if out, err := runROSCmd(defaultCmdTimeout, "ros2", "topic", "pub", "--once", "-w", "0", "/cmd_lightring", "irobot_create_msgs/msg/LightringLeds",
 		`{override_system: false, leds: []}`); err != nil {
 		log.Printf("[agent] failed to reset LEDs: %v: %s", err, string(out))
 	}
@@ -1344,9 +1319,12 @@ func HandleCaptureImage(cfg Config, data CaptureImageData) error {
 	// process, which then held /dev/video0 open indefinitely and blocked
 	// every capture after it until something manually killed it.
 	if !cameraServiceActive() {
-		camCmd := exec.Command("timeout", "--kill-after=5s", "30s",
+		camCmd, err := rosCommand(context.Background(), "timeout", "--kill-after=5s", "30s",
 			"ros2", "run", "camera_ros", "camera_node", "--ros-args",
 			"-p", "format:=RGB888", "-p", "width:=640", "-p", "height:=480")
+		if err != nil {
+			return err
+		}
 		if err := camCmd.Start(); err != nil {
 			return fmt.Errorf("failed to start camera node: %w", err)
 		}
@@ -1358,7 +1336,7 @@ func HandleCaptureImage(cfg Config, data CaptureImageData) error {
 		}()
 	}
 
-	if out, err := runCmd(25*time.Second, "python3", "-c", snapshotGrabScript, tmpPath); err != nil {
+	if out, err := runROSCmd(25*time.Second, "python3", "-c", snapshotGrabScript, tmpPath); err != nil {
 		log.Printf("[agent] camera capture failed: %v: %s", err, string(out))
 		return fmt.Errorf("capture failed: %v", err)
 	}

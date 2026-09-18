@@ -110,52 +110,28 @@ func (c *Controller) RobotCommand(w http.ResponseWriter, r *http.Request) {
 
 func (c *Controller) BroadcastCommand(w http.ResponseWriter, r *http.Request) {
 	var req commandRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid command payload")
-		return
-	}
-	if req.Type == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Type == "" {
 		respondError(w, http.StatusBadRequest, "command type required")
 		return
 	}
-	cmd := agent.Command{Type: req.Type, Data: req.Data, Timestamp: time.Now().Unix()}
-	payload, err := json.Marshal(cmd)
+	robots, err := c.DB.ListRobots(r.Context())
 	if err != nil {
-		log.Printf("marshal broadcast: %v", err)
-		respondError(w, http.StatusInternalServerError, "failed to encode command")
+		respondError(w, http.StatusInternalServerError, "failed to list robots")
 		return
 	}
-	now := time.Now().UTC()
-	job := db.Job{
-		Type:        req.Type,
-		TargetRobot: "all",
-		PayloadJSON: string(payload),
-		Status:      "queued",
-		CreatedAt:   now,
-		UpdatedAt:   now,
+	jobs := []db.Job{}
+	for _, robot := range robots {
+		if robot.AgentID == "" {
+			continue
+		}
+		job, err := c.queueRobotCommand(r.Context(), robot, agent.Command{Type: req.Type, Data: req.Data})
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to queue command")
+			return
+		}
+		jobs = append(jobs, job)
 	}
-	jobID, err := c.DB.CreateJob(r.Context(), job)
-	if err != nil {
-		log.Printf("create broadcast job: %v", err)
-		respondError(w, http.StatusInternalServerError, "failed to create job")
-		return
-	}
-	job.ID = jobID
-
-	// Update command with ID and re-marshal
-	cmd.ID = fmt.Sprintf("%d", jobID)
-	payload, _ = json.Marshal(cmd)
-
-	// Never retained: agents deliberately don't clear lab/commands/all (it's
-	// shared by every device), so a retained broadcast would replay on every
-	// reconnect inside the staleness window -- a fleet-wide reboot turned
-	// into a fleet-wide reboot loop this way. Robots offline at send time
-	// simply miss it. The empty retained publish clears anything an older
-	// controller left retained on the topic.
-	log.Printf("broadcast command %s sent to lab/commands/all", req.Type)
-	c.MQTT.Publish("lab/commands/all", 1, true, nil)
-	c.MQTT.Publish("lab/commands/all", 1, false, payload)
-	respondJSON(w, http.StatusCreated, job)
+	respondJSON(w, http.StatusCreated, map[string]interface{}{"jobs": jobs})
 }
 
 func (c *Controller) UpdateInstallConfig(w http.ResponseWriter, r *http.Request) {
@@ -271,13 +247,11 @@ func (c *Controller) queueRobotCommand(ctx context.Context, robot db.Robot, cmd 
 	}
 	job.ID = jobID
 
-	// Update command with ID and re-marshal
-	cmd.ID = fmt.Sprintf("%d", jobID)
-	payload, _ = json.Marshal(cmd)
-
-	topic := fmt.Sprintf("lab/commands/%s", robot.AgentID)
-	log.Printf("command %s queued for robot %s (agent %s) topic %s", cmd.Type, robot.Name, robot.AgentID, topic)
-	c.MQTT.Publish(topic, 1, true, payload)
+	// The database is the outbox. Offline delivery is retried on heartbeat;
+	// a single retained MQTT slot cannot represent a queue of commands.
+	if err := c.publishJob(job); err != nil {
+		log.Printf("job %d waiting for delivery: %v", job.ID, err)
+	}
 	return job, nil
 }
 
@@ -297,12 +271,8 @@ func (c *Controller) IdentifyAll(w http.ResponseWriter, r *http.Request) {
 		pattern := generatePattern(i)
 		assignments[robot.ID] = pattern
 
-		// Send command directly via MQTT (ephemeral, no DB job needed)
-		cmd := agent.Command{
-			Type:      "identify",
-			ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
-			Timestamp: time.Now().Unix(),
-		}
+		// Use the same acknowledged delivery path as other commands.
+		cmd := agent.Command{Type: "identify"}
 		// Manually construct JSON to avoid struct definition here if possible,
 		// or use the struct from agent package if visible.
 		// We can use a map.
@@ -317,9 +287,10 @@ func (c *Controller) IdentifyAll(w http.ResponseWriter, r *http.Request) {
 		dataBytes, _ := json.Marshal(data)
 		cmd.Data = dataBytes
 
-		payload, _ := json.Marshal(cmd)
-		topic := fmt.Sprintf("lab/commands/%s", robot.AgentID)
-		c.MQTT.Publish(topic, 1, true, payload)
+		if _, err := c.queueRobotCommand(r.Context(), robot, cmd); err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to queue identify")
+			return
+		}
 	}
 	respondJSON(w, http.StatusOK, assignments)
 }
@@ -399,15 +370,11 @@ func (c *Controller) UpdateRobotName(w http.ResponseWriter, r *http.Request) {
 	// sync the OS hostname on the live device to match the new display name.
 	if oldRobot.AgentID != "" {
 		if hostname := agent.SanitizeHostname(req.Name); hostname != "" {
-			cmdMap := map[string]interface{}{
-				"type":      "set_hostname",
-				"id":        fmt.Sprintf("%d", time.Now().UnixNano()),
-				"data":      map[string]string{"hostname": hostname},
-				"timestamp": time.Now().Unix(),
+			data, _ := json.Marshal(agent.SetHostnameData{Hostname: hostname})
+			if _, err := c.queueRobotCommand(r.Context(), oldRobot, agent.Command{Type: "set_hostname", Data: data}); err != nil {
+				respondError(w, http.StatusInternalServerError, "failed to queue hostname update")
+				return
 			}
-			payload, _ := json.Marshal(cmdMap)
-			topic := fmt.Sprintf("lab/commands/%s", oldRobot.AgentID)
-			c.MQTT.Publish(topic, 1, true, payload)
 		}
 	}
 

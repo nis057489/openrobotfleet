@@ -1,13 +1,16 @@
 package agent
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
 
 // Command represents a controller-issued instruction handled by an agent.
 type Command struct {
-	ID        string          `json:"id"`
-	Type      string          `json:"type"`
-	Data      json.RawMessage `json:"data"`
-	Timestamp int64           `json:"timestamp,omitempty"` // unix seconds, set at publish time
+	ID         string          `json:"id"`
+	ScenarioID int64           `json:"scenario_id,omitempty"`
+	Type       string          `json:"type"`
+	Data       json.RawMessage `json:"data"`
+	Timestamp  int64           `json:"timestamp,omitempty"` // unix seconds, set at publish time
 }
 
 // UpdateRepoData describes git repo sync instructions.

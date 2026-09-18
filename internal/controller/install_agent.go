@@ -121,6 +121,8 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 	cfg := agent.Config{
 		AgentID:        agentID,
 		MQTTBroker:     broker,
+		MQTTUsername:   os.Getenv("AGENT_MQTT_USERNAME"),
+		MQTTPassword:   os.Getenv("AGENT_MQTT_PASSWORD"),
 		WorkspacePath:  workspace,
 		WorkspaceOwner: determineWorkspaceOwner(req),
 	}

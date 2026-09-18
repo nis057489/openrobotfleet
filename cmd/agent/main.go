@@ -52,6 +52,12 @@ func main() {
 
 	// Create Engine
 	engine := agent.NewAgentEngine(cfg)
+	if cfg.JobStatePath == "" {
+		cfg.JobStatePath = "/var/lib/openrobotfleet-agent/jobs.json"
+	}
+	if err := engine.JobManager.LoadState(cfg.JobStatePath); err != nil {
+		log.Fatalf("load job state: %v", err)
+	}
 
 	// Context with cancel
 	ctx, cancel := context.WithCancel(context.Background())

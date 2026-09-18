@@ -2,10 +2,17 @@ services:
   mqtt:
     image: eclipse-mosquitto:2
     container_name: openrobot-mqtt
+    entrypoint: ["/bin/sh", "/mosquitto/config/fleet-entrypoint.sh"]
+    environment:
+      MQTT_CONTROLLER_PASSWORD: ${MQTT_CONTROLLER_PASSWORD:?Set MQTT_CONTROLLER_PASSWORD in .env}
+      MQTT_AGENT_PASSWORD: ${MQTT_AGENT_PASSWORD:?Set MQTT_AGENT_PASSWORD in .env}
     ports:
       - "1883:1883"
     volumes:
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mqtt/acl:/mosquitto/config/acl:ro
+      - ./mqtt/entrypoint.sh:/mosquitto/config/fleet-entrypoint.sh:ro
+      - mqtt-data:/mosquitto/data
 
   traefik:
     image: traefik:v2.11
@@ -36,6 +43,10 @@ services:
       - mqtt
     environment:
       - MQTT_BROKER=tcp://mqtt:1883
+      - MQTT_USERNAME=controller
+      - MQTT_PASSWORD=${MQTT_CONTROLLER_PASSWORD:?Set MQTT_CONTROLLER_PASSWORD in .env}
+      - AGENT_MQTT_USERNAME=agents
+      - AGENT_MQTT_PASSWORD=${MQTT_AGENT_PASSWORD:?Set MQTT_AGENT_PASSWORD in .env}
       # No hardcoded fallback here on purpose: "localhost" would mean the
       # ROBOT's own loopback, never reachable. Leaving this empty when unset
       # lets the controller fall back to the Golden Image config's own
@@ -44,7 +55,7 @@ services:
       - AGENT_MQTT_BROKER=${AGENT_MQTT_BROKER:-}
       - DB_PATH=/data/controller.db
       - DEMO_MODE=false
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-turtle2025}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
       # Optional: Manually specify subnets to scan if Docker hides host interfaces
       - SCAN_SUBNETS=${SCAN_SUBNETS:-192.168.1.0/24}
     volumes:
@@ -155,5 +166,6 @@ services:
   #     - mqtt
 
 volumes:
+  mqtt-data:
   controller-data:
   traefik-certificates:

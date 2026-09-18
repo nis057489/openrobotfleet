@@ -159,7 +159,7 @@ func (c *Controller) ApplyScenario(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "failed to encode scenario command")
 		return
 	}
-	cmd := agent.Command{Type: "update_repo", Data: data}
+	cmd := agent.Command{Type: "update_repo", Data: data, ScenarioID: scenarioID}
 	var jobs []db.Job
 	for _, robotID := range req.RobotIDs {
 		robot, err := c.DB.GetRobotByID(r.Context(), robotID)
@@ -180,11 +180,6 @@ func (c *Controller) ApplyScenario(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Printf("apply scenario queue: %v", err)
 			respondError(w, http.StatusInternalServerError, "failed to queue command")
-			return
-		}
-		if err := c.DB.UpdateRobotScenario(r.Context(), robotID, scenarioID); err != nil {
-			log.Printf("apply scenario update robot: %v", err)
-			respondError(w, http.StatusInternalServerError, "failed to tag robot scenario")
 			return
 		}
 		jobs = append(jobs, job)

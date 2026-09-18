@@ -14,15 +14,12 @@ import (
 )
 
 const (
-	reconnectBackoffFloor = 5 * time.Second
-	reconnectBackoffCap   = 60 * time.Second
 	commandStaleThreshold = 10 * time.Minute
 )
 
 // durableCommandTypes represent desired state rather than one-shot actions
-// (mirroring configure_network's existing retained-command idiom) -- they
-// should always apply whenever a robot next connects, however long that
-// takes, so they're exempt from the staleness check in processCommands.
+// and remain in the controller outbox until applied, even after a long
+// disconnection. They are exempt from the one-shot command expiry.
 var durableCommandTypes = map[string]bool{
 	"configure_network": true,
 	"set_hostname":      true,
@@ -35,12 +32,9 @@ type AgentEngine struct {
 	Blackboard *behavior.Blackboard
 	Tree       behavior.Node
 
-	cmdChan                chan Command
-	lastIP                 string
-	lastHeartbeat          time.Time
-	lastConnectAttempt     time.Time
-	lastProcessedCommandID string
-	reconnectBackoff       time.Duration
+	cmdChan       chan Command
+	lastIP        string
+	lastHeartbeat time.Time
 }
 
 func NewAgentEngine(cfg Config) *AgentEngine {
@@ -85,61 +79,58 @@ func (e *AgentEngine) Start(ctx context.Context) {
 }
 
 func (e *AgentEngine) connectMQTT() {
-	onConnect := func(c mqttlib.Client) {
-		log.Printf("MQTT Connected")
-		// Subscribe
-		topic := "lab/commands/" + e.Config.AgentID
-		log.Printf("Subscribing to %s", topic)
-		if token := c.Subscribe(topic, 0, e.mqttHandler); token.Wait() && token.Error() != nil {
-			log.Printf("subscribe error: %v", token.Error())
-		}
-		if token := c.Subscribe("lab/commands/all", 0, e.mqttHandler); token.Wait() && token.Error() != nil {
-			log.Printf("subscribe all error: %v", token.Error())
-		}
-	}
-
-	client := mqttc.NewClientWithHandler("agent-"+e.Config.AgentID, e.Config.MQTTBroker, onConnect)
+	client := mqttc.NewClientWithCredentials(e.Config.AgentID, e.Config.MQTTBroker, e.Config.MQTTUsername, e.Config.MQTTPassword, nil)
 	e.MQTTClient = client
 	e.Blackboard.Set(behavior.KeyMQTTClient, client)
+	client.Subscribe("lab/commands/"+e.Config.AgentID, e.mqttHandler)
+	client.Subscribe("lab/acks/"+e.Config.AgentID, func(_ mqttlib.Client, msg mqttlib.Message) {
+		var ids []string
+		if json.Unmarshal(msg.Payload(), &ids) == nil {
+			e.JobManager.Acknowledge(ids)
+		}
+	})
 }
 
 func (e *AgentEngine) mqttHandler(_ mqttlib.Client, msg mqttlib.Message) {
-	// An empty payload is a retained-message clear -- usually our own, echoed
-	// back from the clear below -- not a command.
-	if len(msg.Payload()) == 0 {
+	// Commands now come from the controller's durable outbox. Never replay a
+	// retained command left by an older controller (including reboot).
+	if len(msg.Payload()) == 0 || msg.Retained() {
 		return
 	}
-
 	var cmd Command
 	if err := json.Unmarshal(msg.Payload(), &cmd); err != nil {
-		log.Printf("invalid command JSON: %v", err)
+		log.Printf("invalid command: %v", err)
 		return
 	}
-
-	// Non-durable commands (reboot, identify, etc.) are one-shot actions,
-	// not desired state -- retained on the broker only so a briefly-offline
-	// device still gets them once it reconnects. Left retained after that,
-	// a command whose *own execution* causes a reconnect (reboot being the
-	// worst case) would receive itself again every time, inside the
-	// staleness window, for as long as the reconnect happens faster than
-	// that window closes -- a real reboot loop, observed in practice. Clear
-	// it from the device's own topic the instant it's received, before
-	// dispatch even succeeds, so it can never re-fire. Never done for
-	// lab/commands/all: that retained message is shared by every device,
-	// and one agent clearing it would rob any other device that hasn't
-	// reconnected yet.
-	if !durableCommandTypes[cmd.Type] && msg.Topic() == "lab/commands/"+e.Config.AgentID {
-		if e.MQTTClient != nil {
-			e.MQTTClient.Publish(msg.Topic(), 1, true, nil)
-		}
+	if cmd.Type == "stop" {
+		e.acceptCommand(cmd)
+		return
 	}
-
-	// Non-blocking send
 	select {
 	case e.cmdChan <- cmd:
-		log.Printf("Queued command: %s", cmd.Type)
 	default:
-		log.Printf("command queue full, dropping command: %s", cmd.Type)
+		// No acknowledgement: the controller will retry the stored command.
+		log.Printf("command inbox full; awaiting retry of %s", cmd.ID)
+	}
+}
+
+func (e *AgentEngine) acceptCommand(cmd Command) {
+	if cmd.ID == "" {
+		log.Printf("rejecting command without ID")
+		return
+	}
+	err := e.JobManager.StartContextJob(cmd.ID, cmd.Type, cmd.Data, func(ctx context.Context) error {
+		if !durableCommandTypes[cmd.Type] && (cmd.Timestamp == 0 || time.Since(time.Unix(cmd.Timestamp, 0)) > commandStaleThreshold) {
+			return fmt.Errorf("command expired before execution")
+		}
+		action := e.mapCommandToAction(ctx, cmd)
+		if action == nil {
+			return fmt.Errorf("unknown command type: %s", cmd.Type)
+		}
+		return action()
+	})
+	if err != nil {
+		log.Printf("accept command %s: %v", cmd.ID, err)
 	}
 }
 
@@ -155,32 +146,7 @@ func (e *AgentEngine) buildTree() behavior.Node {
 }
 
 func (e *AgentEngine) maintainConnection(ctx context.Context, bb *behavior.Blackboard) behavior.Status {
-	if e.MQTTClient == nil || e.MQTTClient.Client == nil {
-		return behavior.StatusFailure
-	}
-	if !e.MQTTClient.Client.IsConnected() {
-		wait := e.reconnectBackoff
-		if wait <= 0 {
-			wait = reconnectBackoffFloor
-		}
-		if time.Since(e.lastConnectAttempt) > wait {
-			log.Printf("MQTT disconnected, attempting reconnect (backoff=%s)...", wait)
-			go func() {
-				token := e.MQTTClient.Client.Connect()
-				if token.Wait() && token.Error() != nil {
-					log.Printf("reconnect failed: %v", token.Error())
-				}
-			}()
-			e.lastConnectAttempt = time.Now()
-			next := wait * 2
-			if next > reconnectBackoffCap {
-				next = reconnectBackoffCap
-			}
-			e.reconnectBackoff = next
-		}
-		return behavior.StatusFailure
-	}
-	e.reconnectBackoff = 0
+	// Keep command processing and local safety actions ticking while offline.
 	return behavior.StatusSuccess
 }
 
@@ -201,26 +167,8 @@ func (e *AgentEngine) checkNetwork(ctx context.Context, bb *behavior.Blackboard)
 func (e *AgentEngine) processCommands(ctx context.Context, bb *behavior.Blackboard) behavior.Status {
 	select {
 	case cmd := <-e.cmdChan:
-		if cmd.ID != "" && cmd.ID == e.lastProcessedCommandID {
-			log.Printf("Ignoring duplicate command ID: %s", cmd.ID)
-			return behavior.StatusSuccess
-		}
-		if !durableCommandTypes[cmd.Type] {
-			age := time.Since(time.Unix(cmd.Timestamp, 0))
-			if cmd.Timestamp == 0 || age > commandStaleThreshold {
-				log.Printf("Ignoring stale command %s (type=%s, age=%s)", cmd.ID, cmd.Type, age)
-				return behavior.StatusSuccess
-			}
-		}
-		e.lastProcessedCommandID = cmd.ID
-
-		action := e.mapCommandToAction(cmd)
-		if action != nil {
-			jobID := fmt.Sprintf("%d", time.Now().UnixNano())
-			e.JobManager.StartJob(jobID, cmd.Type, cmd.Data, action)
-		}
+		e.acceptCommand(cmd)
 	default:
-		// No commands
 	}
 	return behavior.StatusSuccess
 }
@@ -233,8 +181,9 @@ func (e *AgentEngine) sendHeartbeat(ctx context.Context, bb *behavior.Blackboard
 	payload := e.buildStatusPayload()
 	if e.MQTTClient != nil && e.MQTTClient.Client != nil && e.MQTTClient.Client.IsConnected() {
 		topic := "lab/status/" + e.Config.AgentID
-		e.MQTTClient.Publish(topic, 0, false, payload)
-		e.lastHeartbeat = time.Now()
+		if err := e.MQTTClient.Publish(topic, 1, false, payload); err == nil {
+			e.lastHeartbeat = time.Now()
+		}
 	}
 
 	return behavior.StatusSuccess
@@ -251,15 +200,17 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 		JobStatus string `json:"job_status,omitempty"`
 		JobError  string `json:"job_error,omitempty"`
 		Camera    string `json:"camera,omitempty"`
+		Results   []Job  `json:"results,omitempty"`
 	}
 
 	s := status{
-		Status: "ok",
-		TS:     time.Now().Format(time.RFC3339),
-		IP:     e.lastIP,
-		Type:   e.Config.Type,
-		Name:   e.Config.AgentID,
-		Camera: CameraServiceState(),
+		Status:  "ok",
+		TS:      time.Now().Format(time.RFC3339),
+		IP:      e.lastIP,
+		Type:    e.Config.Type,
+		Name:    e.Config.AgentID,
+		Camera:  CameraServiceState(),
+		Results: e.JobManager.Results(),
 	}
 	if hn, err := os.Hostname(); err == nil && hn != "" {
 		s.Name = hn
@@ -270,6 +221,9 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 		s.JobID = job.ID
 		s.JobStatus = string(job.Status)
 		s.JobError = job.Error
+		if job.Status == JobStatusFailed {
+			s.Status = "error"
+		}
 
 		// install_camera_support can take several minutes (building
 		// libcamera/camera_ros from source) with no other feedback in the
@@ -285,7 +239,7 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 	return buf
 }
 
-func (e *AgentEngine) mapCommandToAction(cmd Command) func() error {
+func (e *AgentEngine) mapCommandToAction(ctx context.Context, cmd Command) func() error {
 	cfg := e.Config
 
 	switch cmd.Type {
@@ -338,7 +292,7 @@ func (e *AgentEngine) mapCommandToAction(cmd Command) func() error {
 		if err := json.Unmarshal(cmd.Data, &payload); err != nil {
 			return func() error { return err }
 		}
-		return func() error { return HandleTestDrive(cfg, payload) }
+		return func() error { return HandleTestDriveContext(ctx, cfg, payload) }
 	case "stop":
 		return func() error { return HandleStop(cfg) }
 	case "capture_image":
@@ -368,17 +322,20 @@ func (e *AgentEngine) mapCommandToAction(cmd Command) func() error {
 		if err := json.Unmarshal(cmd.Data, &payload); err != nil {
 			return func() error { return err }
 		}
-		return func() error { return e.HandleBatch(payload) }
+		return func() error { return e.HandleBatch(ctx, payload) }
 	default:
 		log.Printf("unknown command type: %s", cmd.Type)
 		return nil
 	}
 }
 
-func (e *AgentEngine) HandleBatch(data BatchData) error {
+func (e *AgentEngine) HandleBatch(ctx context.Context, data BatchData) error {
 	for i, cmd := range data.Commands {
 		log.Printf("batch: executing command %d/%d: %s", i+1, len(data.Commands), cmd.Type)
-		action := e.mapCommandToAction(cmd)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		action := e.mapCommandToAction(ctx, cmd)
 		if action == nil {
 			return fmt.Errorf("unknown command in batch: %s", cmd.Type)
 		}

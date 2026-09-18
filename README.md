@@ -52,6 +52,8 @@ Run the Controller using Docker.
 
 ```bash
 cp .env.example .env
+# Set ADMIN_PASSWORD, MQTT_CONTROLLER_PASSWORD, and MQTT_AGENT_PASSWORD in .env.
+# Use different random passwords for the two MQTT accounts.
 docker compose pull
 docker compose up -d
 ```
@@ -244,6 +246,7 @@ Edit:
 
 * `SCAN_SUBNETS`
 * `ADMIN_PASSWORD`
+* `MQTT_CONTROLLER_PASSWORD` and `MQTT_AGENT_PASSWORD` (different random secrets)
 
 `SCAN_SUBNETS` tells OpenRobotFleet which networks to scan for reachable robots and laptops.
 
@@ -252,6 +255,30 @@ Example:
 ```bash
 SCAN_SUBNETS=192.168.1.0/24,10.0.0.0/24
 ```
+
+MQTT rejects anonymous connections. The controller uses the `controller` account;
+provisioned robots use the separate `agents` account. Agent credentials permit
+telemetry and receiving commands for their client ID, but cannot publish commands.
+Generate each secret with `openssl rand -hex 32`. Keep `.env` private. For networks
+where traffic can be intercepted, configure a TLS listener and use `ssl://` broker
+URLs; the supplied port 1883 listener is for a protected lab network.
+
+### Upgrading an existing installation
+
+Upgrade the controller and agents together: command delivery now uses stored jobs
+and acknowledgements instead of retained commands. Set the three passwords above
+before starting Compose. Reinstall existing agents over SSH (or add
+`mqtt_username: agents` and `mqtt_password: <MQTT_AGENT_PASSWORD>` to their
+root-readable `/etc/openrobotfleet-agent/config.yaml`) and restart them. Newly
+built golden images and SSH installs receive these settings automatically. Rebuild
+older golden images before flashing more devices. Previous login cookies are
+invalidated; log in again after the controller restarts.
+
+Agents keep a job journal in `/var/lib/openrobotfleet-agent/jobs.json` (override
+with `job_state_path` in agent configuration). An interrupted job is reported as
+unconfirmed rather than automatically repeating a potentially destructive action.
+A reboot or factory reset that interrupts result delivery can require checking the
+device and retrying preparation; it is not reported as completed without evidence.
 
 ## 2. Start the Controller
 
