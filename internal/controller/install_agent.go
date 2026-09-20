@@ -119,7 +119,11 @@ func (c *Controller) InstallAgent(w http.ResponseWriter, r *http.Request) {
 
 	broker := c.agentBrokerURL(r.Context())
 	cfg := agent.Config{
-		AgentID:        agentID,
+		AgentID: agentID,
+		// Without this the agent reports an empty type forever: laptops never
+		// take the laptop branch of identify, and a self-registering device
+		// lands with no type at all, which the Robots page then shows.
+		Type:           rType,
 		MQTTBroker:     broker,
 		MQTTUsername:   os.Getenv("AGENT_MQTT_USERNAME"),
 		MQTTPassword:   os.Getenv("AGENT_MQTT_PASSWORD"),

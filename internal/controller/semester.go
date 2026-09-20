@@ -176,7 +176,7 @@ func (c *Controller) processSemesterBatch(ctx context.Context, req semesterReque
 			if req.Reinstall {
 				if robot.InstallConfig == nil || robot.InstallConfig.Address == "" {
 					// Try to use default install config if robot-specific one is missing
-					defaultCfg, err := c.DB.GetDefaultInstallConfig(ctx)
+					defaultCfg, err := c.DB.GetDefaultInstallConfigFor(ctx, robot.Type)
 					if err == nil && defaultCfg != nil {
 						if robot.InstallConfig == nil {
 							robot.InstallConfig = &db.InstallConfig{}
@@ -227,11 +227,29 @@ func (c *Controller) processSemesterBatch(ctx context.Context, req semesterReque
 						addr = net.JoinHostPort(addr, "22")
 					}
 
-					// Default sudo logic from install_agent.go
+					// Sudo password, most specific source first. The saved
+					// per-device password wins, then the defaults for this
+					// device type (laptops keep their own account and password),
+					// then the environment. "ubuntu" is only our own fleet
+					// image's convention, so a guess is tracked and reported
+					// rather than surfacing an opaque "exit status 1".
 					useSudo := strings.ToLower(robot.InstallConfig.User) != "root"
-					sudoPwd := os.Getenv("AGENT_SUDO_PASSWORD")
+					sudoPwd := robot.InstallConfig.SudoPassword
+					if sudoPwd == "" {
+						if typeCfg, err := c.DB.GetDefaultInstallConfigFor(ctx, robot.Type); err == nil && typeCfg != nil {
+							sudoPwd = typeCfg.SudoPassword
+							if sudoPwd == "" {
+								sudoPwd = typeCfg.Password
+							}
+						}
+					}
+					if sudoPwd == "" {
+						sudoPwd = os.Getenv("AGENT_SUDO_PASSWORD")
+					}
+					sudoPwdGuessed := false
 					if useSudo && sudoPwd == "" {
 						sudoPwd = "ubuntu"
+						sudoPwdGuessed = true
 					}
 
 					host := sshc.HostSpec{
@@ -258,6 +276,7 @@ func (c *Controller) processSemesterBatch(ctx context.Context, req semesterReque
 
 					cfg := agent.Config{
 						AgentID:        agentID,
+						Type:           robot.Type,
 						MQTTBroker:     broker,
 						MQTTUsername:   os.Getenv("AGENT_MQTT_USERNAME"),
 						MQTTPassword:   os.Getenv("AGENT_MQTT_PASSWORD"),
@@ -285,8 +304,11 @@ func (c *Controller) processSemesterBatch(ctx context.Context, req semesterReque
 					if err := sshc.InstallAgent(host, cfg, robot.Name, binary); err != nil {
 						log.Printf("semester: failed to install agent on %s: %v", robot.Name, err)
 						msg := fmt.Sprintf("install failed: %v", err)
-						if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "no route to host") || strings.Contains(err.Error(), "i/o timeout") {
+						switch {
+						case strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "no route to host") || strings.Contains(err.Error(), "i/o timeout"):
 							msg = "Connection failed. Check connection or restart robot."
+						case useSudo && sudoPwdGuessed && strings.Contains(err.Error(), "exited with status 1"):
+							msg = "Privileged command failed and no sudo password is saved for this device, so \"ubuntu\" was tried. Set the sudo password in Settings under this device type's install defaults."
 						}
 						batches.failRobot(run, id, msg)
 						return

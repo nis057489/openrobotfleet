@@ -77,12 +77,18 @@ export interface InstallConfig {
   address: string;
   user: string;
   ssh_key: string;
+  /** Authenticates the SSH login. */
   password?: string;
+  /** Authorises privileged commands once connected. */
+  sudo_password?: string;
   ssh_public_key?: string;
+  /** Optional laptop-specific defaults, sent alongside the robot defaults. */
+  laptop?: InstallConfig;
 }
 
 export interface InstallDefaultsResponse {
   install_config?: InstallConfig | null;
+  laptop_install_config?: InstallConfig | null;
   demo_mode?: boolean;
 }
 

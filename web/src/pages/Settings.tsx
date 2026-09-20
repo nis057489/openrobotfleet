@@ -14,8 +14,14 @@ export function Settings() {
         ssh_key: "",
         password: "",
     });
+    const [laptopConfig, setLaptopConfig] = useState<InstallConfig>({
+        address: "",
+        user: "",
+        ssh_key: "",
+        password: "",
+        sudo_password: "",
+    });
     const [demoMode, setDemoMode] = useState(false);
-    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -26,6 +32,9 @@ export function Settings() {
                 if (data.install_config) {
                     setConfig(data.install_config);
                 }
+                if (data.laptop_install_config) {
+                    setLaptopConfig(data.laptop_install_config);
+                }
                 setDemoMode(sysConfig.demo_mode);
             })
             .catch((err) => console.error(err))
@@ -35,7 +44,13 @@ export function Settings() {
     const handleSave = async () => {
         setSaving(true);
         try {
-            await updateInstallDefaults(config);
+            // Laptop defaults are optional; sending them empty would fail the
+            // server's "user required" check, so only include them once set.
+            const payload: InstallConfig = { ...config };
+            if (laptopConfig.user.trim()) {
+                payload.laptop = laptopConfig;
+            }
+            await updateInstallDefaults(payload);
             success(t("settings.saveSuccess"));
         } catch (err) {
             error(t("settings.saveError"));
@@ -94,72 +109,23 @@ export function Settings() {
                         {t("settings.installDefaultsDesc")}
                     </p>
                 </div>
-                <div className="p-6 space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                            {t("settings.sshUser")}
-                        </label>
-                        <input
-                            type="text"
-                            value={config.user}
-                            onChange={(e) => setConfig({ ...config, user: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="ubuntu"
+                <div className="p-6 space-y-8">
+                    <CredentialSection
+                        title={t("settings.robotCredentials")}
+                        description={t("settings.robotCredentialsDesc")}
+                        config={config}
+                        onChange={setConfig}
+                        userPlaceholder="ubuntu"
+                    />
+                    <div className="border-t border-gray-100 pt-8">
+                        <CredentialSection
+                            title={t("settings.laptopCredentials")}
+                            description={t("settings.laptopCredentialsDesc")}
+                            config={laptopConfig}
+                            onChange={setLaptopConfig}
+                            userPlaceholder="student"
                         />
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                            SSH Password (Optional if Key provided)
-                        </label>
-                        <div className="relative">
-                            <input
-                                type={showPassword ? "text" : "password"}
-                                value={config.password || ""}
-                                onChange={(e) => setConfig({ ...config, password: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-10"
-                                placeholder="SSH Password"
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setShowPassword(!showPassword)}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                            >
-                                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                            </button>
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                            {t("settings.sshKey")} (Optional if Password provided)
-                        </label>
-                        <textarea
-                            value={config.ssh_key}
-                            onChange={(e) => setConfig({ ...config, ssh_key: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-xs h-32"
-                            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..."
-                        />
-                        <p className="mt-1 text-xs text-gray-500">
-                            {t("settings.sshKeyDesc")}
-                        </p>
-                    </div>
-
-                    {config.ssh_public_key && (
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                {t("settings.sshPublicKey")}
-                            </label>
-                            <div className="relative">
-                                <textarea
-                                    readOnly
-                                    value={config.ssh_public_key}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 font-mono text-xs h-24 resize-none focus:outline-none"
-                                />
-                            </div>
-                            <p className="mt-1 text-xs text-gray-500">
-                                {t("settings.sshPublicKeyDesc")}
-                            </p>
-                        </div>
-                    )}
                 </div>
                 <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
                     <button
@@ -223,6 +189,112 @@ export function Settings() {
                     )}
                 </div>
             </div>
+        </div>
+    );
+}
+
+function CredentialSection({
+    title, description, config, onChange, userPlaceholder,
+}: {
+    title: string;
+    description: string;
+    config: InstallConfig;
+    onChange: (cfg: InstallConfig) => void;
+    userPlaceholder: string;
+}) {
+    const { t } = useTranslation();
+    const [showPassword, setShowPassword] = useState(false);
+    const [showSudo, setShowSudo] = useState(false);
+
+    return (
+        <div className="space-y-4">
+            <div>
+                <h3 className="font-semibold text-gray-900">{title}</h3>
+                <p className="text-sm text-gray-500 mt-1">{description}</p>
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {t("settings.sshUser")}
+                </label>
+                <input
+                    type="text"
+                    value={config.user}
+                    onChange={(e) => onChange({ ...config, user: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder={userPlaceholder}
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {t("settings.sshPassword")}
+                </label>
+                <div className="relative">
+                    <input
+                        type={showPassword ? "text" : "password"}
+                        value={config.password || ""}
+                        onChange={(e) => onChange({ ...config, password: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-10"
+                    />
+                    <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                </div>
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {t("settings.sudoPassword")}
+                </label>
+                <div className="relative">
+                    <input
+                        type={showSudo ? "text" : "password"}
+                        value={config.sudo_password || ""}
+                        onChange={(e) => onChange({ ...config, sudo_password: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-10"
+                    />
+                    <button
+                        type="button"
+                        onClick={() => setShowSudo(!showSudo)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                        {showSudo ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">{t("settings.sudoPasswordDesc")}</p>
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {t("settings.sshKey")}
+                </label>
+                <textarea
+                    value={config.ssh_key}
+                    onChange={(e) => onChange({ ...config, ssh_key: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-xs h-32"
+                    placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..."
+                />
+                <p className="mt-1 text-xs text-gray-500">{t("settings.sshKeyDesc")}</p>
+            </div>
+
+            {config.ssh_public_key && (
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                        {t("settings.sshPublicKey")}
+                    </label>
+                    <textarea
+                        readOnly
+                        value={config.ssh_public_key}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 font-mono text-xs h-24 resize-none focus:outline-none"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">{t("settings.sshPublicKeyDesc")}</p>
+                </div>
+            )}
         </div>
     );
 }

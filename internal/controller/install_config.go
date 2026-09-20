@@ -30,9 +30,13 @@ func (req installConfigRequest) validate() error {
 }
 
 type installDefaultsRequest struct {
-	User     string `json:"user"`
-	SSHKey   string `json:"ssh_key"`
-	Password string `json:"password"`
+	User         string `json:"user"`
+	SSHKey       string `json:"ssh_key"`
+	Password     string `json:"password"`
+	SudoPassword string `json:"sudo_password"`
+	// Laptops normally have a different account and sudo password than the
+	// robot fleet images, so they carry their own optional defaults.
+	Laptop *installDefaultsRequest `json:"laptop,omitempty"`
 }
 
 func (req installDefaultsRequest) validate() error {
@@ -52,9 +56,10 @@ func (req installDefaultsRequest) validate() error {
 
 func (req installDefaultsRequest) toInstallConfig() db.InstallConfig {
 	return db.InstallConfig{
-		User:     strings.TrimSpace(req.User),
-		SSHKey:   req.SSHKey,
-		Password: req.Password,
+		User:         strings.TrimSpace(req.User),
+		SSHKey:       req.SSHKey,
+		Password:     req.Password,
+		SudoPassword: req.SudoPassword,
 	}
 }
 

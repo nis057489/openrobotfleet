@@ -52,10 +52,14 @@ type GroupRef struct {
 }
 
 type InstallConfig struct {
-	Address  string `json:"address"`
-	User     string `json:"user"`
-	SSHKey   string `json:"ssh_key"`
-	Password string `json:"password,omitempty"`
+	Address string `json:"address"`
+	User    string `json:"user"`
+	SSHKey  string `json:"ssh_key"`
+	// Password authenticates the SSH login; SudoPassword authorises privileged
+	// commands once connected. They are usually the same on Ubuntu, but the
+	// installer has always treated them separately, so defaults do too.
+	Password     string `json:"password,omitempty"`
+	SudoPassword string `json:"sudo_password,omitempty"`
 }
 
 type ScenarioRef struct {
@@ -114,7 +118,10 @@ type LoginEvent struct {
 
 const (
 	defaultInstallConfigKey = "default_install_config"
-	goldenImageConfigKey    = "golden_image_config"
+	// Laptops normally have their own account and sudo password, so they get
+	// a separate defaults row. Absent, they fall back to the robot defaults.
+	defaultLaptopInstallConfigKey = "default_laptop_install_config"
+	goldenImageConfigKey          = "golden_image_config"
 )
 
 func Open(path string) (*DB, error) {
@@ -497,9 +504,35 @@ func (d *DB) UpdateRobotTags(ctx context.Context, id int64, tags []string) error
 	return err
 }
 
+// installConfigKeyFor maps a device type onto its defaults row.
+func installConfigKeyFor(deviceType string) string {
+	if strings.EqualFold(deviceType, "laptop") {
+		return defaultLaptopInstallConfigKey
+	}
+	return defaultInstallConfigKey
+}
+
+// GetDefaultInstallConfigFor returns the defaults for a device type, falling
+// back to the robot defaults when a laptop-specific row has not been saved.
+func (d *DB) GetDefaultInstallConfigFor(ctx context.Context, deviceType string) (*InstallConfig, error) {
+	key := installConfigKeyFor(deviceType)
+	cfg, err := d.installConfigByKey(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil && key != defaultInstallConfigKey {
+		return d.installConfigByKey(ctx, defaultInstallConfigKey)
+	}
+	return cfg, nil
+}
+
 func (d *DB) GetDefaultInstallConfig(ctx context.Context) (*InstallConfig, error) {
+	return d.installConfigByKey(ctx, defaultInstallConfigKey)
+}
+
+func (d *DB) installConfigByKey(ctx context.Context, key string) (*InstallConfig, error) {
 	var val sql.NullString
-	err := d.SQL.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, defaultInstallConfigKey).Scan(&val)
+	err := d.SQL.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&val)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -517,12 +550,16 @@ func (d *DB) GetDefaultInstallConfig(ctx context.Context) (*InstallConfig, error
 }
 
 func (d *DB) SaveDefaultInstallConfig(ctx context.Context, cfg InstallConfig) error {
+	return d.SaveDefaultInstallConfigFor(ctx, "robot", cfg)
+}
+
+func (d *DB) SaveDefaultInstallConfigFor(ctx context.Context, deviceType string, cfg InstallConfig) error {
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return err
 	}
 	_, err = d.SQL.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?, ?)
-ON CONFLICT(key) DO UPDATE SET value = excluded.value`, defaultInstallConfigKey, string(data))
+ON CONFLICT(key) DO UPDATE SET value = excluded.value`, installConfigKeyFor(deviceType), string(data))
 	return err
 }
 
