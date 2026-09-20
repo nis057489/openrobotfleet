@@ -210,12 +210,31 @@ export interface SemesterRequest {
   factory_reset?: boolean;
 }
 
-export function startSemesterBatch(req: SemesterRequest): Promise<void> {
-  return request<void>('/api/semester/start', {
+export interface StartBatchResponse {
+  status: string;
+  batch_id: string;
+  label: string;
+}
+
+export function startSemesterBatch(req: SemesterRequest): Promise<StartBatchResponse> {
+  return request<StartBatchResponse>('/api/semester/start', {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify(req),
   });
+}
+
+export interface BatchRun {
+  id: string;
+  label: string;
+  total: number;
+  completed: number;
+  robots: Record<string, string>;
+  errors: Record<string, string>;
+  started_at: string;
+  finished_at?: string;
+  cancelled: boolean;
+  active: boolean;
 }
 
 export interface SemesterStatus {
@@ -224,6 +243,15 @@ export interface SemesterStatus {
   completed: number;
   robots: Record<number, string>;
   errors: Record<number, string>;
+  batches?: BatchRun[];
+}
+
+export function getBatches(): Promise<{ batches: BatchRun[] }> {
+  return request<{ batches: BatchRun[] }>('/api/batches');
+}
+
+export function cancelBatch(id: string): Promise<void> {
+  return request<void>(`/api/batches/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
 }
 
 export function getSemesterStatus(): Promise<SemesterStatus> {

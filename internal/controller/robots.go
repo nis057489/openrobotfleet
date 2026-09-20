@@ -28,7 +28,24 @@ func (c *Controller) ListRobots(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "failed to list robots")
 		return
 	}
-	respondJSON(w, http.StatusOK, robots)
+
+	// Devices caught up in a running batch report what that batch is doing to
+	// them, so the fleet views can show "Updating system" rather than "ok"
+	// while work is in flight.
+	type robotWithBatch struct {
+		db.Robot
+		BatchState string `json:"batch_state,omitempty"`
+		BatchLabel string `json:"batch_label,omitempty"`
+	}
+	enriched := make([]robotWithBatch, len(robots))
+	for i, robot := range robots {
+		enriched[i] = robotWithBatch{Robot: robot}
+		if state, label, ok := batches.activityFor(robot.ID); ok {
+			enriched[i].BatchState = state
+			enriched[i].BatchLabel = label
+		}
+	}
+	respondJSON(w, http.StatusOK, enriched)
 }
 
 func (c *Controller) GetRobot(w http.ResponseWriter, r *http.Request) {

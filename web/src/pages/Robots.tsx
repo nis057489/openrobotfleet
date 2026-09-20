@@ -158,6 +158,13 @@ function RobotCard({ robot, pattern }: { robot: Robot, pattern?: string }) {
     const navigate = useNavigate();
     const { t, i18n } = useTranslation();
     const isOnline = robot.status !== "offline" && robot.status !== "unknown";
+    // A device inside a running batch reports that work instead of a stale "ok".
+    const busy = Boolean(robot.batch_state);
+    const stateKey = `batches.state.${robot.batch_state}`;
+    const translatedState = t(stateKey);
+    const busyLabel = translatedState === stateKey
+        ? (robot.batch_state || "").replace(/_/g, " ")
+        : translatedState;
     const lastSeen = robot.last_seen ? formatDistanceToNow(new Date(robot.last_seen), {
         addSuffix: true,
         locale: i18n.language.startsWith('zh') ? zhCN : undefined
@@ -178,11 +185,13 @@ function RobotCard({ robot, pattern }: { robot: Robot, pattern?: string }) {
                         </h3>
                         <div className="flex items-center gap-2 mt-1">
                             <span
-                                className={`w-2 h-2 rounded-full ${isOnline ? "bg-green-500" : "bg-gray-300"
+                                className={`w-2 h-2 rounded-full ${busy ? "bg-blue-500 animate-pulse" : isOnline ? "bg-green-500" : "bg-gray-300"
                                     }`}
                             />
-                            <span className="text-sm text-gray-500 capitalize">
-                                {t(`common.${(robot.status || '').toLowerCase()}`) || robot.status || t("common.unknown")}
+                            <span className={`text-sm capitalize ${busy ? "text-blue-600 font-medium" : "text-gray-500"}`}>
+                                {busy
+                                    ? busyLabel
+                                    : t(`common.${(robot.status || '').toLowerCase()}`) || robot.status || t("common.unknown")}
                             </span>
                             <span className="ml-2" title="Robot Mood">{getRobotMood(robot)}</span>
                         </div>

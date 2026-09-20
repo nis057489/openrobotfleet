@@ -14,6 +14,7 @@ import { InstallAgent } from "./pages/InstallAgent";
 import { ScenarioEditor } from "./pages/ScenarioEditor";
 import { Discovery } from "./pages/Discovery";
 import { SemesterWizard } from "./pages/SemesterWizard";
+import { Batches } from "./pages/Batches";
 import { GoldenImage } from "./pages/GoldenImage";
 import { Identify } from "./pages/Identify";
 import { NotificationProvider } from "./contexts/NotificationContext";
@@ -38,6 +39,7 @@ export default function App() {
                                 <Route path="laptops/:id" element={<LaptopDetail />} />
                                 <Route path="discovery" element={<Discovery />} />
                                 <Route path="semester-wizard" element={<SemesterWizard />} />
+                                <Route path="batches" element={<Batches />} />
                                 <Route path="install" element={<InstallAgent />} />
                                 <Route path="scenarios" element={<Scenarios />} />
                                 <Route path="scenarios/new" element={<ScenarioEditor />} />

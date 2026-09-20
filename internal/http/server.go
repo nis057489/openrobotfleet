@@ -81,6 +81,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/jobs", s.handleListJobs)
 	mux.HandleFunc("/api/semester/start", s.handleSemesterStart)
 	mux.HandleFunc("/api/semester/status", s.handleSemesterStatus)
+	mux.HandleFunc("/api/batches", s.handleListBatches)
+	mux.HandleFunc("/api/batches/", s.handleBatchItem)
 	mux.HandleFunc("/api/db/backup", s.handleBackupDB)
 	mux.HandleFunc("/api/db/restore", s.handleRestoreDB)
 	mux.HandleFunc("/api/discovery/scan", s.handleDiscoveryScan)
@@ -384,6 +386,27 @@ func (s *Server) handleSemesterStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Controller.GetSemesterStatus(w, r)
+}
+
+func (s *Server) handleListBatches(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	s.Controller.ListBatches(w, r)
+}
+
+// handleBatchItem serves /api/batches/<id>/cancel.
+func (s *Server) handleBatchItem(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if !strings.HasSuffix(r.URL.Path, "/cancel") {
+		http.NotFound(w, r)
+		return
+	}
+	s.Controller.CancelBatch(w, r)
 }
 
 func (s *Server) handleBackupDB(w http.ResponseWriter, r *http.Request) {

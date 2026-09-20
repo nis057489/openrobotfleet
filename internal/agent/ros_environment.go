@@ -63,6 +63,12 @@ func rosCommand(ctx context.Context, name string, args ...string) (*exec.Cmd, er
 	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = env
+	// Killing ros2 on timeout does not necessarily close its output pipe: the
+	// ROS 2 CLI spawns a background daemon that inherits it, and CombinedOutput
+	// blocks until every writer is gone. Without a WaitDelay that wait is
+	// unbounded, so a command that outlives ctx hangs the job forever -- and
+	// since the agent runs one job at a time, it wedges the whole queue.
+	cmd.WaitDelay = 5 * time.Second
 	return cmd, nil
 }
 func runROSCmd(timeout time.Duration, name string, args ...string) ([]byte, error) {

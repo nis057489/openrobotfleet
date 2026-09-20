@@ -102,15 +102,13 @@ func TestSemesterStopsAtExecutionFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	batchStatus.Lock()
-	batchStatus.Active = true
-	batchStatus.Robots = map[int64]string{}
-	batchStatus.Errors = map[int64]string{}
-	batchStatus.Completed = 0
-	batchStatus.Unlock()
+	req := semesterRequest{RobotIDs: []int64{robot.ID}, ResetLogs: true, UpdateRepo: true}
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	run := batches.add(batchLabel(req), req.RobotIDs, cancelRun)
 	done := make(chan struct{})
 	go func() {
-		c.processSemesterBatch(semesterRequest{RobotIDs: []int64{robot.ID}, ResetLogs: true, UpdateRepo: true}, "http://controller")
+		c.processSemesterBatch(runCtx, req, "http://controller", run)
 		close(done)
 	}()
 	var jobs []db.Job
@@ -140,9 +138,18 @@ func TestSemesterStopsAtExecutionFailure(t *testing.T) {
 	if len(jobs) != 1 {
 		t.Fatal("later step ran despite failure")
 	}
-	batchStatus.RLock()
-	defer batchStatus.RUnlock()
-	if batchStatus.Robots[robot.ID] != "error" || !strings.Contains(batchStatus.Errors[robot.ID], "permission denied") {
-		t.Fatalf("failure hidden: %+v", batchStatus.Errors)
+	snap := batches.snapshot()
+	var got *BatchRun
+	for i := range snap {
+		if snap[i].ID == run.ID {
+			got = &snap[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatal("batch run missing from registry")
+	}
+	if got.Robots[robot.ID] != "error" || !strings.Contains(got.Errors[robot.ID], "permission denied") {
+		t.Fatalf("failure hidden: %+v", got.Errors)
 	}
 }

@@ -40,44 +40,38 @@ type semesterRequest struct {
 	ScenarioConfigs []agent.UpdateRepoData `json:"-"`
 }
 
-type SemesterBatchStatus struct {
-	sync.RWMutex
-	Active    bool             `json:"active"`
-	Total     int              `json:"total"`
-	Completed int              `json:"completed"`
-	Robots    map[int64]string `json:"robots"`
-	Errors    map[int64]string `json:"errors"`
-}
-
-var batchStatus = &SemesterBatchStatus{
-	Robots: make(map[int64]string),
-	Errors: make(map[int64]string),
-}
-
+// GetSemesterStatus reports progress aggregated across every active run, and
+// also returns the individual runs so callers can show them separately.
 func (c *Controller) GetSemesterStatus(w http.ResponseWriter, r *http.Request) {
-	batchStatus.RLock()
-	defer batchStatus.RUnlock()
-	// Create a copy to avoid race conditions during JSON marshaling if we passed the struct directly with the mutex
-	status := struct {
-		Active    bool             `json:"active"`
-		Total     int              `json:"total"`
-		Completed int              `json:"completed"`
-		Robots    map[int64]string `json:"robots"`
-		Errors    map[int64]string `json:"errors"`
-	}{
-		Active:    batchStatus.Active,
-		Total:     batchStatus.Total,
-		Completed: batchStatus.Completed,
-		Robots:    make(map[int64]string),
-		Errors:    make(map[int64]string),
+	runs := batches.snapshot()
+
+	active := false
+	total, completed := 0, 0
+	robots := make(map[int64]string)
+	errs := make(map[int64]string)
+	for _, run := range runs {
+		if !run.Active {
+			continue
+		}
+		active = true
+		total += run.Total
+		completed += run.Completed
+		for k, v := range run.Robots {
+			robots[k] = v
+		}
+		for k, v := range run.Errors {
+			errs[k] = v
+		}
 	}
-	for k, v := range batchStatus.Robots {
-		status.Robots[k] = v
-	}
-	for k, v := range batchStatus.Errors {
-		status.Errors[k] = v
-	}
-	respondJSON(w, http.StatusOK, status)
+
+	respondJSON(w, http.StatusOK, map[string]any{
+		"active":    active,
+		"total":     total,
+		"completed": completed,
+		"robots":    robots,
+		"errors":    errs,
+		"batches":   runs,
+	})
 }
 
 func (c *Controller) HandleSemesterStart(w http.ResponseWriter, r *http.Request) {
@@ -123,23 +117,10 @@ func (c *Controller) HandleSemesterStart(w http.ResponseWriter, r *http.Request)
 		req.Packages = nil
 	}
 
-	batchStatus.Lock()
-	if batchStatus.Active {
-		total, completed := batchStatus.Total, batchStatus.Completed
-		batchStatus.Unlock()
-		log.Printf("semester: rejecting start, batch already in progress (%d of %d still running)", total-completed, total)
-		respondError(w, http.StatusConflict, "batch already in progress")
+	if len(req.RobotIDs) == 0 {
+		respondError(w, http.StatusBadRequest, "no devices selected")
 		return
 	}
-	batchStatus.Active = true
-	batchStatus.Total = len(req.RobotIDs)
-	batchStatus.Completed = 0
-	batchStatus.Robots = make(map[int64]string)
-	batchStatus.Errors = make(map[int64]string)
-	for _, id := range req.RobotIDs {
-		batchStatus.Robots[id] = "pending"
-	}
-	batchStatus.Unlock()
 
 	scheme := "http"
 	if r.TLS != nil {
@@ -147,20 +128,28 @@ func (c *Controller) HandleSemesterStart(w http.ResponseWriter, r *http.Request)
 	}
 	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
 
-	go c.processSemesterBatch(req, baseURL)
+	// Batches run concurrently. Overlapping devices are safe because the agent
+	// runs one job at a time and queues the rest, so a second batch's commands
+	// wait their turn on the device rather than interleaving with the first.
+	ctx, cancel := context.WithCancel(context.Background())
+	run := batches.add(batchLabel(req), req.RobotIDs, cancel)
+	log.Printf("semester: starting batch %s (%s) for %d devices", run.ID, run.Label, len(req.RobotIDs))
 
-	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
-}
-
-func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
-	defer func() {
-		batchStatus.Lock()
-		batchStatus.Active = false
-		batchStatus.Unlock()
+	go func() {
+		defer cancel()
+		c.processSemesterBatch(ctx, req, baseURL, run)
 	}()
 
-	ctx := context.Background()
+	respondJSON(w, http.StatusAccepted, map[string]string{
+		"status":   "accepted",
+		"batch_id": run.ID,
+		"label":    run.Label,
+	})
+}
+
+func (c *Controller) processSemesterBatch(ctx context.Context, req semesterRequest, baseURL string, run *BatchRun) {
+	defer batches.finish(run)
+
 	log.Printf("starting semester batch for %d robots", len(req.RobotIDs))
 
 	workspace := os.Getenv("AGENT_WORKSPACE_PATH")
@@ -175,18 +164,12 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 		go func(id int64) {
 			defer wg.Done()
 
-			batchStatus.Lock()
-			batchStatus.Robots[id] = "processing"
-			batchStatus.Unlock()
+			batches.setRobotState(run, id, "processing")
 
 			robot, err := c.DB.GetRobotByID(ctx, id)
 			if err != nil {
 				log.Printf("semester: failed to get robot %d: %v", id, err)
-				batchStatus.Lock()
-				batchStatus.Errors[id] = "robot not found"
-				batchStatus.Robots[id] = "error"
-				batchStatus.Completed++
-				batchStatus.Unlock()
+				batches.failRobot(run, id, "robot not found")
 				return
 			}
 
@@ -229,18 +212,12 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 								}
 								return 0
 							}())
-						batchStatus.Lock()
-						batchStatus.Errors[id] = "missing install config"
-						batchStatus.Robots[id] = "error"
-						batchStatus.Completed++
-						batchStatus.Unlock()
+						batches.failRobot(run, id, "missing install config")
 						return
 					}
 				} else {
 					log.Printf("semester: reinstalling agent on %s", robot.Name)
-					batchStatus.Lock()
-					batchStatus.Robots[id] = "installing_agent"
-					batchStatus.Unlock()
+					batches.setRobotState(run, id, "installing_agent")
 
 					addr := robot.InstallConfig.Address
 					if robot.IP != "" {
@@ -268,22 +245,14 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 					arch, err := sshc.DetectArch(host)
 					if err != nil {
 						log.Printf("semester: failed to detect arch for %s: %v", robot.Name, err)
-						batchStatus.Lock()
-						batchStatus.Errors[id] = "failed to detect arch: " + err.Error()
-						batchStatus.Robots[id] = "error"
-						batchStatus.Completed++
-						batchStatus.Unlock()
+						batches.failRobot(run, id, "failed to detect arch: "+err.Error())
 						return
 					}
 
 					agentID, err := sshc.DetectPrimaryMAC(host)
 					if err != nil {
 						log.Printf("semester: failed to detect device identity for %s: %v", robot.Name, err)
-						batchStatus.Lock()
-						batchStatus.Errors[id] = "failed to detect device identity: " + err.Error()
-						batchStatus.Robots[id] = "error"
-						batchStatus.Completed++
-						batchStatus.Unlock()
+						batches.failRobot(run, id, "failed to detect device identity: "+err.Error())
 						return
 					}
 
@@ -308,26 +277,18 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 					binary, err := os.ReadFile(binaryPath)
 					if err != nil {
 						log.Printf("semester: failed to read agent binary: %v", err)
-						batchStatus.Lock()
-						batchStatus.Errors[id] = "agent binary unavailable"
-						batchStatus.Robots[id] = "error"
-						batchStatus.Completed++
-						batchStatus.Unlock()
+						batches.failRobot(run, id, "agent binary unavailable")
 						return
 					}
 
 					installStart := time.Now()
 					if err := sshc.InstallAgent(host, cfg, robot.Name, binary); err != nil {
 						log.Printf("semester: failed to install agent on %s: %v", robot.Name, err)
-						batchStatus.Lock()
 						msg := fmt.Sprintf("install failed: %v", err)
 						if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "no route to host") || strings.Contains(err.Error(), "i/o timeout") {
 							msg = "Connection failed. Check connection or restart robot."
 						}
-						batchStatus.Errors[id] = msg
-						batchStatus.Robots[id] = "error"
-						batchStatus.Completed++
-						batchStatus.Unlock()
+						batches.failRobot(run, id, msg)
 						return
 					}
 
@@ -342,13 +303,13 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 					if host, _, err := net.SplitHostPort(addr); err == nil {
 						robotIP = host
 					}
-					if err := c.DB.UpsertRobotWithType(ctx, agentID, robot.Name, robotIP, "installed", robot.Type); err != nil {
+					// InstallAgent takes no context, so a cancelled batch cannot
+					// interrupt it -- the agent is already on the device by now.
+					// This pin must therefore still run, or the stale agent_id
+					// leaves the duplicate row described above.
+					if err := c.DB.UpsertRobotWithType(context.WithoutCancel(ctx), agentID, robot.Name, robotIP, "installed", robot.Type); err != nil {
 						log.Printf("semester: failed to pin agent_id for %s: %v", robot.Name, err)
-						batchStatus.Lock()
-						batchStatus.Errors[id] = "failed to update robot: " + err.Error()
-						batchStatus.Robots[id] = "error"
-						batchStatus.Completed++
-						batchStatus.Unlock()
+						batches.failRobot(run, id, "failed to update robot: "+err.Error())
 						return
 					}
 					robot.AgentID = agentID
@@ -357,13 +318,16 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 					// Wait for reconnect
 					if req.ResetLogs || req.UpdateRepo || req.ApplyScenarios {
 						log.Printf("semester: waiting for %s to reconnect...", robot.Name)
-						batchStatus.Lock()
-						batchStatus.Robots[id] = "waiting_for_connection"
-						batchStatus.Unlock()
+						batches.setRobotState(run, id, "waiting_for_connection")
 
 						connected := false
 						for i := 0; i < 60; i++ {
-							time.Sleep(1 * time.Second)
+							select {
+							case <-ctx.Done():
+								batches.failRobot(run, id, "cancelled while waiting for reconnect")
+								return
+							case <-time.After(1 * time.Second):
+							}
 							updated, err := c.DB.GetRobotByID(ctx, id)
 							if err == nil && updated.LastSeen.After(installStart) {
 								connected = true
@@ -372,11 +336,7 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 						}
 						if !connected {
 							log.Printf("semester: timeout waiting for %s to reconnect", robot.Name)
-							batchStatus.Lock()
-							batchStatus.Errors[id] = "reconnect timeout"
-							batchStatus.Robots[id] = "error"
-							batchStatus.Completed++
-							batchStatus.Unlock()
+							batches.failRobot(run, id, "reconnect timeout")
 							return
 						}
 					}
@@ -385,65 +345,45 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 
 			if req.ResetLogs {
 				log.Printf("semester: resetting logs for %s", robot.Name)
-				batchStatus.Lock()
-				batchStatus.Robots[id] = "resetting_logs"
-				batchStatus.Unlock()
+				batches.setRobotState(run, id, "resetting_logs")
 
 				cmd := agent.Command{Type: "reset_logs", Data: []byte("{}")}
 				if _, err := c.runRobotCommand(ctx, robot, cmd); err != nil {
 					log.Printf("semester: command failed: reset_logs for %s: %v", robot.Name, err)
-					batchStatus.Lock()
-					batchStatus.Errors[id] = err.Error()
-					batchStatus.Robots[id] = "error"
-					batchStatus.Completed++
-					batchStatus.Unlock()
+					batches.failRobot(run, id, err.Error())
 					return
 				}
 			}
 
 			if req.ResetBashrc {
 				log.Printf("semester: resetting .bashrc for %s", robot.Name)
-				batchStatus.Lock()
-				batchStatus.Robots[id] = "resetting_bashrc"
-				batchStatus.Unlock()
+				batches.setRobotState(run, id, "resetting_bashrc")
 
 				data, _ := json.Marshal(agent.ResetBashrcData{TurtleBot3Model: req.TurtleBot3Model})
 				cmd := agent.Command{Type: "reset_bashrc", Data: data}
 				if _, err := c.runRobotCommand(ctx, robot, cmd); err != nil {
 					log.Printf("semester: command failed: reset_bashrc for %s: %v", robot.Name, err)
-					batchStatus.Lock()
-					batchStatus.Errors[id] = err.Error()
-					batchStatus.Robots[id] = "error"
-					batchStatus.Completed++
-					batchStatus.Unlock()
+					batches.failRobot(run, id, err.Error())
 					return
 				}
 			}
 
 			if req.UpdateRepo {
 				log.Printf("semester: updating repo for %s", robot.Name)
-				batchStatus.Lock()
-				batchStatus.Robots[id] = "updating_repo"
-				batchStatus.Unlock()
+				batches.setRobotState(run, id, "updating_repo")
 
 				data, _ := json.Marshal(req.RepoConfig)
 				cmd := agent.Command{Type: "update_repo", Data: data}
 				if _, err := c.runRobotCommand(ctx, robot, cmd); err != nil {
 					log.Printf("semester: command failed: update_repo for %s: %v", robot.Name, err)
-					batchStatus.Lock()
-					batchStatus.Errors[id] = err.Error()
-					batchStatus.Robots[id] = "error"
-					batchStatus.Completed++
-					batchStatus.Unlock()
+					batches.failRobot(run, id, err.Error())
 					return
 				}
 			}
 
 			if req.ApplyScenarios {
 				log.Printf("semester: applying scenarios for %s", robot.Name)
-				batchStatus.Lock()
-				batchStatus.Robots[id] = "applying_scenarios"
-				batchStatus.Unlock()
+				batches.setRobotState(run, id, "applying_scenarios")
 
 				var commands []agent.Command
 				for _, config := range req.ScenarioConfigs {
@@ -457,11 +397,7 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 
 				if _, err := c.runRobotCommand(ctx, robot, cmd); err != nil {
 					log.Printf("semester: command failed: batch scenarios for %s: %v", robot.Name, err)
-					batchStatus.Lock()
-					batchStatus.Errors[id] = err.Error()
-					batchStatus.Robots[id] = "error"
-					batchStatus.Completed++
-					batchStatus.Unlock()
+					batches.failRobot(run, id, err.Error())
 					return
 				}
 
@@ -476,20 +412,14 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 
 			if req.RunSelfTest {
 				log.Printf("semester: running self test for %s", robot.Name)
-				batchStatus.Lock()
-				batchStatus.Robots[id] = "running_self_test"
-				batchStatus.Unlock()
+				batches.setRobotState(run, id, "running_self_test")
 
 				// Test Drive
 				driveData, _ := json.Marshal(agent.TestDriveData{DurationSec: 2})
 				cmdDrive := agent.Command{Type: "test_drive", Data: driveData}
 				if _, err := c.runRobotCommand(ctx, robot, cmdDrive); err != nil {
 					log.Printf("semester: command failed: test_drive for %s: %v", robot.Name, err)
-					batchStatus.Lock()
-					batchStatus.Errors[id] = err.Error()
-					batchStatus.Robots[id] = "error"
-					batchStatus.Completed++
-					batchStatus.Unlock()
+					batches.failRobot(run, id, err.Error())
 					return
 				}
 
@@ -499,11 +429,7 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 				cmdCapture := agent.Command{Type: "capture_image", Data: captureData}
 				if _, err := c.runRobotCommand(ctx, robot, cmdCapture); err != nil {
 					log.Printf("semester: command failed: capture_image for %s: %v", robot.Name, err)
-					batchStatus.Lock()
-					batchStatus.Errors[id] = err.Error()
-					batchStatus.Robots[id] = "error"
-					batchStatus.Completed++
-					batchStatus.Unlock()
+					batches.failRobot(run, id, err.Error())
 					return
 				}
 			}
@@ -512,9 +438,7 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 			cameraBundled := false
 			if req.SystemUpgrade || req.InstallPackages {
 				log.Printf("semester: updating system packages for %s", robot.Name)
-				batchStatus.Lock()
-				batchStatus.Robots[id] = "updating_system"
-				batchStatus.Unlock()
+				batches.setRobotState(run, id, "updating_system")
 
 				data, _ := json.Marshal(agent.SystemUpdateData{Upgrade: req.SystemUpgrade, Packages: req.Packages})
 				cmd := agent.Command{Type: "system_update", Data: data}
@@ -528,55 +452,36 @@ func (c *Controller) processSemesterBatch(req semesterRequest, baseURL string) {
 				}
 				if _, err := c.runRobotCommand(ctx, robot, cmd); err != nil {
 					log.Printf("semester: command failed: system_update for %s: %v", robot.Name, err)
-					batchStatus.Lock()
-					batchStatus.Errors[id] = err.Error()
-					batchStatus.Robots[id] = "error"
-					batchStatus.Completed++
-					batchStatus.Unlock()
+					batches.failRobot(run, id, err.Error())
 					return
 				}
 			}
 
 			if req.InstallCameraSupport && !cameraBundled {
 				log.Printf("semester: installing camera support for %s", robot.Name)
-				batchStatus.Lock()
-				batchStatus.Robots[id] = "installing_camera_support"
-				batchStatus.Unlock()
+				batches.setRobotState(run, id, "installing_camera_support")
 
 				cmd := agent.Command{Type: "install_camera_support", Data: []byte("{}")}
 				if _, err := c.runRobotCommand(ctx, robot, cmd); err != nil {
 					log.Printf("semester: command failed: install_camera_support for %s: %v", robot.Name, err)
-					batchStatus.Lock()
-					batchStatus.Errors[id] = err.Error()
-					batchStatus.Robots[id] = "error"
-					batchStatus.Completed++
-					batchStatus.Unlock()
+					batches.failRobot(run, id, err.Error())
 					return
 				}
 			}
 
 			if req.FactoryReset {
 				log.Printf("semester: requesting factory reset for %s", robot.Name)
-				batchStatus.Lock()
-				batchStatus.Robots[id] = "factory_reset"
-				batchStatus.Unlock()
+				batches.setRobotState(run, id, "factory_reset")
 
 				cmd := agent.Command{Type: "factory_reset", Data: []byte("{}")}
 				if _, err := c.runRobotCommand(ctx, robot, cmd); err != nil {
 					log.Printf("semester: command failed: factory_reset for %s: %v", robot.Name, err)
-					batchStatus.Lock()
-					batchStatus.Errors[id] = err.Error()
-					batchStatus.Robots[id] = "error"
-					batchStatus.Completed++
-					batchStatus.Unlock()
+					batches.failRobot(run, id, err.Error())
 					return
 				}
 			}
 
-			batchStatus.Lock()
-			batchStatus.Robots[id] = "success"
-			batchStatus.Completed++
-			batchStatus.Unlock()
+			batches.completeRobot(run, id)
 		}(id)
 	}
 	wg.Wait()

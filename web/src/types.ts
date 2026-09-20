@@ -14,6 +14,9 @@ export interface Robot {
   job_status?: string;
   job_error?: string;
   group?: GroupRef;
+  // Set while a running batch is working on this device.
+  batch_state?: string;
+  batch_label?: string;
 }
 
 export interface GroupRef {

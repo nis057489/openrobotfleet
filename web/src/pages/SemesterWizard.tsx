@@ -1,18 +1,18 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getRobots, getInstallDefaults, startSemesterBatch, getSemesterStatus, getScenarios } from "../api";
-import { Robot, InstallConfig, SemesterStatus, Scenario } from "../types";
+import { useNavigate } from "react-router-dom";
+import { getRobots, getInstallDefaults, startSemesterBatch, getScenarios } from "../api";
+import { Robot, InstallConfig, Scenario } from "../types";
 import { Check, RefreshCw, GitBranch, Trash2, AlertTriangle, ArrowRight, Clock, Terminal, XCircle, Activity, FileText, RotateCcw, Camera, FileCode, Package, ArrowUpCircle } from "lucide-react";
 
 export function SemesterWizard() {
     const { t } = useTranslation();
+    const navigate = useNavigate();
     const [robots, setRobots] = useState<Robot[]>([]);
     const [scenarios, setScenarios] = useState<Scenario[]>([]);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [loading, setLoading] = useState(true);
     const [executing, setExecuting] = useState(false);
-    const [batchStarted, setBatchStarted] = useState(false);
-    const [status, setStatus] = useState<SemesterStatus | null>(null);
 
     // Actions
     const [doResetLogs, setDoResetLogs] = useState(false);
@@ -35,18 +35,13 @@ export function SemesterWizard() {
     const [isDemoMode, setIsDemoMode] = useState(false);
 
     useEffect(() => {
-        // The batch status is part of the initial load, not just the poll: if the
-        // form paints before the first poll lands, an already-active batch is
-        // invisible and Execute is clickable, which the server rejects with 409.
-        Promise.all([getRobots(), getInstallDefaults(), getScenarios(), getSemesterStatus().catch(() => null)])
-            .then(([robotsData, defaultsData, scenariosData, statusData]) => {
+        // Progress lives on the Batches page now, so the wizard only loads the
+        // form and never blocks on an in-flight run.
+        Promise.all([getRobots(), getInstallDefaults(), getScenarios()])
+            .then(([robotsData, defaultsData, scenariosData]) => {
                 setRobots(robotsData);
                 setScenarios(scenariosData);
                 setSelectedIds(new Set(robotsData.map(r => r.id)));
-                if (statusData?.active) {
-                    setBatchStarted(true);
-                    setStatus(statusData);
-                }
                 if (defaultsData.install_config) {
                     setInstallDefaults(defaultsData.install_config);
                 }
@@ -57,25 +52,6 @@ export function SemesterWizard() {
             .finally(() => setLoading(false));
     }, []);
 
-    useEffect(() => {
-        const poll = async () => {
-            try {
-                const s = await getSemesterStatus();
-                if (s.active) {
-                    setBatchStarted(true);
-                    setStatus(s);
-                } else if (batchStarted) {
-                    setStatus(s);
-                }
-            } catch (e) {
-                console.error(e);
-            }
-        };
-
-        poll();
-        const interval = setInterval(poll, 2000);
-        return () => clearInterval(interval);
-    }, [batchStarted]);
 
     const toggleSelect = (id: number) => {
         const next = new Set(selectedIds);
@@ -129,7 +105,7 @@ export function SemesterWizard() {
                 scenario_ids: doApplyScenario ? Array.from(selectedScenarioIds) : [],
                 factory_reset: doFactoryReset
             });
-            setBatchStarted(true);
+            navigate("/batches");
         } catch (err) {
             console.error("Failed to start batch", err);
             // request() already unwraps the server's {"error": ...} body into the
@@ -144,68 +120,7 @@ export function SemesterWizard() {
 
     if (loading) return <div className="p-8">{t("common.loading")}</div>;
 
-    if (batchStarted && !status) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-[400px]">
-                <RefreshCw className="animate-spin text-blue-600 mb-4" size={48} />
-                <h2 className="text-xl font-semibold text-gray-900">{t("semesterWizard.initializing")}</h2>
-            </div>
-        );
-    }
-
-    if (batchStarted && status) {
-        return (
-            <div className="max-w-4xl mx-auto space-y-8">
-                <div className="text-center py-8">
-                    <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${status.active ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
-                        {status.active ? <RefreshCw className="animate-spin" size={32} /> : <Check size={32} />}
-                    </div>
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                        {status.active ? t("semesterWizard.inProgress") : t("semesterWizard.complete")}
-                    </h2>
-                    <p className="text-gray-500">
-                        {t("semesterWizard.processedCount", { completed: status.completed, total: status.total })}
-                    </p>
-                </div>
-
-                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                    {robots.filter(r => status.robots[r.id.toString()]).map(robot => (
-                        <div key={robot.id} className="flex items-center p-4 border-b border-gray-100 last:border-0">
-                            <div className="flex-1">
-                                <div className="font-medium text-gray-900">{robot.name}</div>
-                                <div className="text-sm text-gray-500">{robot.ip}</div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <span className="text-sm text-gray-600 capitalize">
-                                    {status.robots[robot.id.toString()]?.replace(/_/g, ' ')}
-                                </span>
-                                {status.robots[robot.id.toString()] === 'success' && <Check className="text-green-500" size={20} />}
-                                {status.robots[robot.id.toString()] === 'error' && <XCircle className="text-red-500" size={20} />}
-                                {status.robots[robot.id.toString()] === 'processing' && <RefreshCw className="text-blue-500 animate-spin" size={20} />}
-                                {status.robots[robot.id.toString()] === 'pending' && <Clock className="text-gray-400" size={20} />}
-                            </div>
-                            {status.errors[robot.id.toString()] && (
-                                <div className="ml-4 text-sm text-red-600 max-w-xs truncate" title={status.errors[robot.id.toString()]}>
-                                    {status.errors[robot.id.toString()]}
-                                </div>
-                            )}
-                        </div>
-                    ))}
-                </div>
-
-                {!status.active && (
-                    <div className="text-center">
-                        <button
-                            onClick={() => window.location.reload()}
-                            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                            {t("semesterWizard.startAnother")}
-                        </button>
-                    </div>
-                )}
-            </div>
-        );
-    } return (
+    return (
         <div className="max-w-4xl mx-auto space-y-8">
             <div>
                 <h1 className="text-2xl font-bold text-gray-900">{t("semesterWizard.title")}</h1>
