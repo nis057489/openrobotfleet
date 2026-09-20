@@ -376,7 +376,7 @@ export const zh = {
       batchProgress: "批量进度",
       batchStarted: "批量操作已启动",
       batchFailed: "启动批量操作失败",
-      startError: "启动批量操作失败",
+      startError: "启动批量操作失败：{{reason}}",
       initializing: "正在初始化批量操作...",
       inProgress: "批量操作进行中",
       complete: "批量操作完成",

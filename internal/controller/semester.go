@@ -125,7 +125,9 @@ func (c *Controller) HandleSemesterStart(w http.ResponseWriter, r *http.Request)
 
 	batchStatus.Lock()
 	if batchStatus.Active {
+		total, completed := batchStatus.Total, batchStatus.Completed
 		batchStatus.Unlock()
+		log.Printf("semester: rejecting start, batch already in progress (%d of %d still running)", total-completed, total)
 		respondError(w, http.StatusConflict, "batch already in progress")
 		return
 	}

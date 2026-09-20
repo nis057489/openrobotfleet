@@ -35,11 +35,18 @@ export function SemesterWizard() {
     const [isDemoMode, setIsDemoMode] = useState(false);
 
     useEffect(() => {
-        Promise.all([getRobots(), getInstallDefaults(), getScenarios()])
-            .then(([robotsData, defaultsData, scenariosData]) => {
+        // The batch status is part of the initial load, not just the poll: if the
+        // form paints before the first poll lands, an already-active batch is
+        // invisible and Execute is clickable, which the server rejects with 409.
+        Promise.all([getRobots(), getInstallDefaults(), getScenarios(), getSemesterStatus().catch(() => null)])
+            .then(([robotsData, defaultsData, scenariosData, statusData]) => {
                 setRobots(robotsData);
                 setScenarios(scenariosData);
                 setSelectedIds(new Set(robotsData.map(r => r.id)));
+                if (statusData?.active) {
+                    setBatchStarted(true);
+                    setStatus(statusData);
+                }
                 if (defaultsData.install_config) {
                     setInstallDefaults(defaultsData.install_config);
                 }
@@ -125,7 +132,11 @@ export function SemesterWizard() {
             setBatchStarted(true);
         } catch (err) {
             console.error("Failed to start batch", err);
-            alert(t("semesterWizard.startError"));
+            // request() already unwraps the server's {"error": ...} body into the
+            // message, so show it -- a bare "failed to start" leaves no way to tell
+            // a stuck batch apart from a rejected payload.
+            const reason = err instanceof Error ? err.message : String(err);
+            alert(t("semesterWizard.startError", { reason }));
         } finally {
             setExecuting(false);
         }

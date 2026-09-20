@@ -382,7 +382,7 @@ export const en = {
       batchProgress: "Batch Progress",
       batchStarted: "Batch operation started",
       batchFailed: "Failed to start batch operation",
-      startError: "Failed to start batch operation",
+      startError: "Failed to start batch operation: {{reason}}",
       initializing: "Initializing Batch Operation...",
       inProgress: "Batch Operation In Progress",
       complete: "Batch Operation Complete",
