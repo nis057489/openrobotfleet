@@ -318,6 +318,8 @@ export const zh = {
       startCameraDesc: "发布 /camera/image_raw",
       stopCamera: "停止摄像头",
       stopCameraDesc: "释放摄像头供自定义节点使用",
+      cameraResolution: "摄像头分辨率",
+      cameraResolutionDesc: "/camera/image_raw 的图像尺寸；将重启摄像头",
       resetBashrc: "重置 .bashrc",
       resetBashrcDesc: "恢复默认 ~/.bashrc 并加载 ROS 环境",
       identifySent: "已发送！",

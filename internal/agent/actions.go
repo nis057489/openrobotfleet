@@ -988,6 +988,9 @@ projection_matrix:
 `, name, width, height, f, cx, cy)
 }
 
+// cameraParamsFile is cameraROSParams' name in the workspace user's home.
+const cameraParamsFile = "camera_ros.yaml"
+
 // cameraROSParams is written to the workspace user's home so a manual run is
 // just `ros2 run camera_ros camera_node --ros-args --params-file
 // ~/camera_ros.yaml`. RGB888 because camera_ros's default NV21 isn't
@@ -1058,7 +1061,7 @@ func EnsureCameraSetup(cfg Config) error {
 			}
 		}
 	}
-	paramsPath := filepath.Join(u.HomeDir, "camera_ros.yaml")
+	paramsPath := filepath.Join(u.HomeDir, cameraParamsFile)
 	if err := writeOwned(paramsPath, cameraROSParams); err != nil {
 		return err
 	}
@@ -1151,6 +1154,131 @@ func HandleCameraService(start bool) error {
 		return fmt.Errorf("%s %s: %w: %s", verb, cameraServiceName, err, strings.TrimSpace(string(out)))
 	}
 	log.Printf("[agent] camera service %s", verb)
+	return nil
+}
+
+// cameraParamsPath returns ~/camera_ros.yaml for the workspace user.
+func cameraParamsPath(cfg Config) (string, error) {
+	username := workspaceUsername(cfg)
+	if username == "" {
+		return "", errors.New("could not determine the workspace user")
+	}
+	u, err := user.Lookup(username)
+	if err != nil {
+		return "", fmt.Errorf("look up user %s: %w", username, err)
+	}
+	return filepath.Join(u.HomeDir, cameraParamsFile), nil
+}
+
+// cameraParamLine matches a top-level-of-ros__parameters "width:" or
+// "height:" entry, capturing its indentation so a rewrite keeps the YAML
+// structure (and any other edits the user made to the file) intact.
+var cameraParamLine = regexp.MustCompile(`^(\s*)(width|height):\s*(\d+)\s*$`)
+
+// cameraResolution reads the stream resolution from ~/camera_ros.yaml.
+func cameraResolution(cfg Config) (int, int, error) {
+	path, err := cameraParamsPath(cfg)
+	if err != nil {
+		return 0, 0, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, 0, err
+	}
+	var w, h int
+	for _, line := range strings.Split(string(data), "\n") {
+		if m := cameraParamLine.FindStringSubmatch(line); m != nil {
+			n, _ := strconv.Atoi(m[3])
+			if m[2] == "width" {
+				w = n
+			} else {
+				h = n
+			}
+		}
+	}
+	if w == 0 || h == 0 {
+		return 0, 0, fmt.Errorf("no width/height in %s", path)
+	}
+	return w, h, nil
+}
+
+// setCameraResolutionYAML replaces the width/height in a camera_ros params
+// file, adding either under ros__parameters if it's missing.
+func setCameraResolutionYAML(content string, width, height int) (string, error) {
+	lines := strings.Split(content, "\n")
+	seen := map[string]bool{}
+	paramsIdx, paramsIndent := -1, ""
+	for i, line := range lines {
+		if trimmed := strings.TrimSpace(line); trimmed == "ros__parameters:" {
+			paramsIdx = i
+			paramsIndent = line[:len(line)-len(strings.TrimLeft(line, " "))] + "  "
+			continue
+		}
+		m := cameraParamLine.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		v := width
+		if m[2] == "height" {
+			v = height
+		}
+		lines[i] = fmt.Sprintf("%s%s: %d", m[1], m[2], v)
+		seen[m[2]] = true
+	}
+	var missing []string
+	for _, key := range []string{"width", "height"} {
+		if seen[key] {
+			continue
+		}
+		if paramsIdx < 0 {
+			return "", fmt.Errorf("no ros__parameters section to add %s to", key)
+		}
+		v := width
+		if key == "height" {
+			v = height
+		}
+		missing = append(missing, fmt.Sprintf("%s%s: %d", paramsIndent, key, v))
+	}
+	if len(missing) > 0 {
+		lines = slices.Insert(lines, paramsIdx+1, missing...)
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+// HandleCameraResolution rewrites the width/height in ~/camera_ros.yaml and
+// restarts ros-camera if it's streaming so the change takes effect. Only the
+// modes in cameraCalibrationResolutions are accepted, since those are the
+// ones EnsureCameraSetup wrote camera_info files for -- any other size would
+// stream without intrinsics and break RViz's Camera display.
+func HandleCameraResolution(cfg Config, data CameraResolutionData) error {
+	if !slices.Contains(cameraCalibrationResolutions, [2]int{data.Width, data.Height}) {
+		return fmt.Errorf("unsupported camera resolution %dx%d", data.Width, data.Height)
+	}
+	path, err := cameraParamsPath(cfg)
+	if err != nil {
+		return err
+	}
+	existing, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("camera isn't set up on this robot -- run \"Install Camera Support\" from the Semester Wizard first (%w)", err)
+	}
+
+	updated, err := setCameraResolutionYAML(string(existing), data.Width, data.Height)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	// WriteFile on an existing file keeps its owner, so the workspace user
+	// can still edit it by hand.
+	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	log.Printf("[agent] camera resolution set to %dx%d in %s", data.Width, data.Height, path)
+
+	if cameraServiceActive() {
+		if out, err := runCmd(defaultCmdTimeout, "systemctl", "restart", cameraServiceName); err != nil {
+			return fmt.Errorf("restart %s: %w: %s", cameraServiceName, err, strings.TrimSpace(string(out)))
+		}
+	}
 	return nil
 }
 
@@ -1319,9 +1447,15 @@ func HandleCaptureImage(cfg Config, data CaptureImageData) error {
 	// process, which then held /dev/video0 open indefinitely and blocked
 	// every capture after it until something manually killed it.
 	if !cameraServiceActive() {
+		// Use the configured stream resolution so the snapshot matches what
+		// ros-camera would publish.
+		w, h, err := cameraResolution(cfg)
+		if err != nil {
+			w, h = 640, 480
+		}
 		camCmd, err := rosCommand(context.Background(), "timeout", "--kill-after=5s", "30s",
 			"ros2", "run", "camera_ros", "camera_node", "--ros-args",
-			"-p", "format:=RGB888", "-p", "width:=640", "-p", "height:=480")
+			"-p", "format:=RGB888", "-p", fmt.Sprintf("width:=%d", w), "-p", fmt.Sprintf("height:=%d", h))
 		if err != nil {
 			return err
 		}

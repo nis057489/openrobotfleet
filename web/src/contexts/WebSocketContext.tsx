@@ -11,6 +11,8 @@ export interface StatusPayload {
     job_error?: string;
     // ros-camera service state: "active" | "inactive"; absent when not installed.
     camera?: string;
+    // ros-camera stream resolution, e.g. "640x480"; absent when not installed.
+    camera_resolution?: string;
 }
 
 export interface StatusUpdateEvent {

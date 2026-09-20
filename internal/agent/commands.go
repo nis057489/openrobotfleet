@@ -49,6 +49,12 @@ type CaptureImageData struct {
 	UploadURL string `json:"upload_url"`
 }
 
+// CameraResolutionData selects the ros-camera stream resolution.
+type CameraResolutionData struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
 // TestDriveData describes test drive instructions.
 type TestDriveData struct {
 	DurationSec int `json:"duration_sec"`

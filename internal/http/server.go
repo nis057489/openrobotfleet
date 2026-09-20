@@ -484,6 +484,7 @@ type statusPayload struct {
 	JobStatus string      `json:"job_status"`
 	JobError  string      `json:"job_error"`
 	Camera    string      `json:"camera,omitempty"`
+	CameraRes string      `json:"camera_resolution,omitempty"`
 	Results   []agent.Job `json:"results,omitempty"`
 }
 

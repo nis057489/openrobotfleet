@@ -200,6 +200,7 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 		JobStatus string `json:"job_status,omitempty"`
 		JobError  string `json:"job_error,omitempty"`
 		Camera    string `json:"camera,omitempty"`
+		CameraRes string `json:"camera_resolution,omitempty"`
 		Results   []Job  `json:"results,omitempty"`
 	}
 
@@ -214,6 +215,11 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 	}
 	if hn, err := os.Hostname(); err == nil && hn != "" {
 		s.Name = hn
+	}
+	if s.Camera != "" {
+		if w, h, err := cameraResolution(e.Config); err == nil {
+			s.CameraRes = fmt.Sprintf("%dx%d", w, h)
+		}
 	}
 
 	// Add Job info
@@ -305,6 +311,12 @@ func (e *AgentEngine) mapCommandToAction(ctx context.Context, cmd Command) func(
 		return func() error { return HandleCameraService(true) }
 	case "camera_stop":
 		return func() error { return HandleCameraService(false) }
+	case "camera_set_resolution":
+		var payload CameraResolutionData
+		if err := json.Unmarshal(cmd.Data, &payload); err != nil {
+			return func() error { return err }
+		}
+		return func() error { return HandleCameraResolution(cfg, payload) }
 	case "install_camera_support":
 		return func() error { return HandleInstallCameraSupport(cfg) }
 	case "identify":

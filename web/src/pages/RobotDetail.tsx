@@ -9,6 +9,10 @@ import { LogsView } from "../components/LogsView";
 import { useNotification } from "../contexts/NotificationContext";
 import { useWebSocket, WSEvent } from "../contexts/WebSocketContext";
 
+// Must match cameraCalibrationResolutions in internal/agent/actions.go: the
+// agent only has camera_info files for these modes.
+const CAMERA_RESOLUTIONS = ["320x240", "640x480", "800x600", "1024x768", "1280x960", "1640x1232"];
+
 export function RobotDetail() {
     const { t } = useTranslation();
     const { id } = useParams();
@@ -32,6 +36,7 @@ export function RobotDetail() {
     const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
     // Only known once the first heartbeat arrives after the page loads.
     const [cameraState, setCameraState] = useState<string | undefined>(undefined);
+    const [cameraResolution, setCameraResolution] = useState<string | undefined>(undefined);
 
     // Tag state
     const [newTag, setNewTag] = useState("");
@@ -80,6 +85,7 @@ export function RobotDetail() {
                     last_seen: event.data.ts,
                 }) : null);
                 setCameraState(event.data.camera);
+                setCameraResolution(event.data.camera_resolution);
             }
         });
     }, [addListener, robot]);
@@ -422,6 +428,29 @@ export function RobotDetail() {
                                     </div>
                                     <p className="text-xs text-gray-500">{t(cameraState === "active" ? "robotDetail.stopCameraDesc" : "robotDetail.startCameraDesc")}</p>
                                 </button>
+                            )}
+                            {cameraState && (
+                                <div className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                                    <div className="flex items-center gap-2 font-medium text-gray-700 mb-1">
+                                        <Camera size={16} /> {t("robotDetail.cameraResolution")}
+                                    </div>
+                                    <p className="text-xs text-gray-500">{t("robotDetail.cameraResolutionDesc")}</p>
+                                    <select
+                                        value={cameraResolution ?? ""}
+                                        onChange={async e => {
+                                            const [width, height] = e.target.value.split("x").map(Number);
+                                            await handleCommand("camera_set_resolution", { width, height });
+                                            setCameraResolution(e.target.value);
+                                        }}
+                                        disabled={cmdLoading}
+                                        className="mt-2 w-full px-2 py-1 text-xs border border-gray-300 rounded-md bg-white"
+                                    >
+                                        {!cameraResolution && <option value="" disabled>—</option>}
+                                        {CAMERA_RESOLUTIONS.map(res => (
+                                            <option key={res} value={res}>{res.replace("x", " × ")}</option>
+                                        ))}
+                                    </select>
+                                </div>
                             )}
                             <button
                                 onClick={() => handleCommand("reboot")}

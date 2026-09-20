@@ -319,6 +319,8 @@ export const en = {
       startCameraDesc: "Stream /camera/image_raw",
       stopCamera: "Stop Camera",
       stopCameraDesc: "Free the camera for your own node",
+      cameraResolution: "Camera Resolution",
+      cameraResolutionDesc: "Stream size for /camera/image_raw; restarts the camera",
       resetBashrc: "Reset .bashrc",
       resetBashrcDesc: "Restore ~/.bashrc to default with ROS setup",
       identifySent: "Sent!",
