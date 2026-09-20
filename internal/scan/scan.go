@@ -215,10 +215,12 @@ func ScanSubnet(onFound func(Candidate)) ([]Candidate, error) {
 						}
 					}
 
-					// Fallback manufacturer check
+					// Fallback manufacturer check. Only banner strings unique to Pi OS
+					// count here -- "ubuntu" matches every Ubuntu laptop's OpenSSH
+					// banner (e.g. "SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.5").
 					if c.Manufacturer == "" && c.Banner != "" {
 						lowerBanner := strings.ToLower(c.Banner)
-						if strings.Contains(lowerBanner, "raspbian") || strings.Contains(lowerBanner, "ubuntu") {
+						if strings.Contains(lowerBanner, "raspbian") || strings.Contains(lowerBanner, "raspberry") {
 							c.Manufacturer = "Raspberry Pi"
 						}
 					}
