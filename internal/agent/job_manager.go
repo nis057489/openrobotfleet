@@ -124,6 +124,7 @@ func (jm *JobManager) StartContextJob(id, jobType string, data []byte, action fu
 	jm.mu.Lock()
 	defer jm.mu.Unlock()
 	if existing := jm.jobs[id]; existing != nil {
+		log.Printf("[agent] duplicate delivery of job %s (%s): returning %s without executing again", id, existing.Type, existing.Status)
 		existing.Acknowledged = false // Re-send the result if the controller retries.
 		return nil
 	}
@@ -184,15 +185,24 @@ func (jm *JobManager) startNextLocked() {
 }
 
 func (jm *JobManager) runLocked(job *Job, emergency bool) {
+	if durableCommandTypes[job.Type] {
+		if id, err := strconv.ParseInt(job.ID, 10, 64); err == nil && id < jm.latestSequenceLocked(job.Type) {
+			job.action = func(context.Context) error { return errors.New("superseded by a newer " + job.Type + " command") }
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	job.cancel = cancel
 	job.Status = JobStatusRunning
 	job.UpdatedAt = time.Now()
 	go func() {
+		log.Printf("[agent] executing job %s (%s)", job.ID, job.Type)
 		err := job.action(ctx)
-		cancel()
 		jm.mu.Lock()
 		defer jm.mu.Unlock()
+		if err == nil {
+			err = ctx.Err()
+		}
+		cancel()
 		job.UpdatedAt = time.Now()
 		job.Status = JobStatusSuccess
 		if err != nil {
@@ -213,6 +223,18 @@ func (jm *JobManager) runLocked(job *Job, emergency bool) {
 		}
 		jm.startNextLocked()
 	}()
+}
+
+func (jm *JobManager) latestSequenceLocked(jobType string) int64 {
+	var latest int64
+	for _, job := range jm.jobs {
+		if job.Type == jobType {
+			if id, err := strconv.ParseInt(job.ID, 10, 64); err == nil && id > latest {
+				latest = id
+			}
+		}
+	}
+	return latest
 }
 
 func copyJob(job *Job) *Job {
@@ -262,7 +284,18 @@ func (jm *JobManager) Acknowledge(ids []string) {
 	}
 	// Retain acknowledged IDs through the command expiry window to suppress
 	// delayed deliveries, without letting the journal grow forever.
+	keep := map[string]int64{"stop": jm.latestSequenceLocked("stop")}
+	for kind := range durableCommandTypes {
+		keep[kind] = jm.latestSequenceLocked(kind)
+	}
 	for id, job := range jm.jobs {
+		sequence, _ := strconv.ParseInt(id, 10, 64)
+		// Durable commands never expire. Keep their newest ID (and the stop
+		// barrier) across pruning/restarts so late delivery cannot undo them.
+		barrier, protected := keep[job.Type]
+		if protected && sequence == barrier {
+			continue
+		}
 		if job.Acknowledged && time.Since(job.UpdatedAt) > 24*time.Hour {
 			delete(jm.jobs, id)
 		}

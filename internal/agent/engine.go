@@ -355,5 +355,5 @@ func (e *AgentEngine) HandleBatch(ctx context.Context, data BatchData) error {
 			return fmt.Errorf("batch failed at %s: %w", cmd.Type, err)
 		}
 	}
-	return nil
+	return ctx.Err()
 }

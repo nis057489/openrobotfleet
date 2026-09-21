@@ -71,3 +71,11 @@ func (d *DB) QueuedJobs(ctx context.Context, agentID string) ([]Job, error) {
 	}
 	return jobs, rows.Err()
 }
+
+// LatestJobID includes acknowledged and running jobs: an older queued desired
+// state must not overwrite a newer command merely because it already finished.
+func (d *DB) LatestJobID(ctx context.Context, agentID, jobType string) (int64, error) {
+	var id int64
+	err := d.SQL.QueryRowContext(ctx, `SELECT COALESCE(MAX(id),0) FROM jobs WHERE target_robot=? AND type=?`, agentID, jobType).Scan(&id)
+	return id, err
+}

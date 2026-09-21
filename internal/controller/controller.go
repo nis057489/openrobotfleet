@@ -30,8 +30,10 @@ type Controller struct {
 	MQTT          *mqttc.Client
 	OnBuildUpdate func(status string, progress int, step string, logs []string, errorMsg string, imageName string)
 
-	jobStates   map[string]RobotJobState
-	jobStatesMu sync.RWMutex
+	jobStates      map[string]RobotJobState
+	jobStatesMu    sync.RWMutex
+	batchDevicesMu sync.Mutex
+	batchDevices   map[int64]chan struct{}
 }
 
 func New(dbConn *db.DB, mqttClient *mqttc.Client) *Controller {

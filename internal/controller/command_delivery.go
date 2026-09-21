@@ -67,10 +67,18 @@ func (c *Controller) DeliverQueuedJobs(agentID string) {
 	// settings and, for configure_network, restart ROS once per queued job.
 	latest := map[string]int64{}
 	for _, job := range jobs {
-		if durableCommandTypes[job.Type] {
-			latest[job.Type] = job.ID
+		kind := job.Type
+		if _, found := latest[kind]; found || !durableCommandTypes[kind] {
+			continue
 		}
+		id, err := c.DB.LatestJobID(context.Background(), agentID, kind)
+		if err != nil {
+			log.Printf("read latest %s: %v", kind, err)
+			return
+		}
+		latest[kind] = id
 	}
+	var deliver []db.Job
 	for _, job := range jobs {
 		if durableCommandTypes[job.Type] && job.ID != latest[job.Type] {
 			_ = c.DB.RecordJobResult(context.Background(), agentID, job.ID, "failed", "superseded by a newer "+job.Type+" command")
@@ -80,6 +88,11 @@ func (c *Controller) DeliverQueuedJobs(agentID string) {
 			_ = c.DB.RecordJobResult(context.Background(), agentID, job.ID, "failed", "command expired before delivery")
 			continue
 		}
+		deliver = append(deliver, job)
+	}
+	// Clean the entire outbox even if the broker is offline. A failed publish
+	// must not leave expired/superseded jobs behind it indefinitely.
+	for _, job := range deliver {
 		if err := c.publishJob(job); err != nil {
 			log.Printf("deliver job %d: %v", job.ID, err)
 			return

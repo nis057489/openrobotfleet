@@ -122,15 +122,25 @@ func (c *Controller) HandleSemesterStart(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// A repeated selection must not execute maintenance or self-test twice.
+	seen := make(map[int64]bool)
+	unique := make([]int64, 0, len(req.RobotIDs))
+	for _, id := range req.RobotIDs {
+		if !seen[id] {
+			seen[id] = true
+			unique = append(unique, id)
+		}
+	}
+	req.RobotIDs = unique
+
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
 	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
 
-	// Batches run concurrently. Overlapping devices are safe because the agent
-	// runs one job at a time and queues the rest, so a second batch's commands
-	// wait their turn on the device rather than interleaving with the first.
+	// Batches run concurrently across devices. Each device is held for its
+	// entire workflow so overlapping batches cannot interleave their steps.
 	ctx, cancel := context.WithCancel(context.Background())
 	run := batches.add(batchLabel(req), req.RobotIDs, cancel)
 	log.Printf("semester: starting batch %s (%s) for %d devices", run.ID, run.Label, len(req.RobotIDs))
@@ -163,6 +173,14 @@ func (c *Controller) processSemesterBatch(ctx context.Context, req semesterReque
 		wg.Add(1)
 		go func(id int64) {
 			defer wg.Done()
+
+			batches.setRobotState(run, id, "waiting_for_device")
+			release, err := c.acquireBatchDevice(ctx, id)
+			if err != nil {
+				batches.failRobot(run, id, err.Error())
+				return
+			}
+			defer release()
 
 			batches.setRobotState(run, id, "processing")
 

@@ -292,3 +292,29 @@ func parseBatchIDFromPath(path string) (string, error) {
 	}
 	return tail, nil
 }
+
+// acquireBatchDevice holds a device for the whole semester workflow, including
+// SSH installation and the gaps between acknowledged commands. Agent job
+// serialization alone cannot prevent two workflows from interleaving steps.
+func (c *Controller) acquireBatchDevice(ctx context.Context, id int64) (func(), error) {
+	c.batchDevicesMu.Lock()
+	if c.batchDevices == nil {
+		c.batchDevices = make(map[int64]chan struct{})
+	}
+	gate := c.batchDevices[id]
+	if gate == nil {
+		gate = make(chan struct{}, 1)
+		c.batchDevices[id] = gate
+	}
+	c.batchDevicesMu.Unlock()
+	select {
+	case gate <- struct{}{}:
+		if err := ctx.Err(); err != nil {
+			<-gate
+			return nil, err
+		}
+		return func() { <-gate }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}

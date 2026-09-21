@@ -179,3 +179,157 @@ func TestOnlyNewestDurableCommandDelivered(t *testing.T) {
 		}
 	}
 }
+
+func TestCompletedDurableCommandSupersedesOlderOutboxEntry(t *testing.T) {
+	c := testController(t)
+	ctx := context.Background()
+	robot := db.Robot{AgentID: "robot-a"}
+	old, err := c.queueRobotCommand(ctx, robot, agent.Command{Type: "configure_network", Data: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	latest, err := c.queueRobotCommand(ctx, robot, agent.Command{Type: "configure_network", Data: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.ProcessJobResults(robot.AgentID, []agent.Job{{ID: strconv.FormatInt(latest.ID, 10), Status: agent.JobStatusSuccess}})
+	c.DeliverQueuedJobs(robot.AgentID)
+	stored, err := c.DB.GetJob(ctx, old.ID)
+	if err != nil || stored.Status != "failed" || !strings.Contains(stored.Error, "superseded") {
+		t.Fatalf("old state remains deliverable: %+v %v", stored, err)
+	}
+}
+
+func TestOfflineDeliveryStillExpiresJobsBehindFirstPublish(t *testing.T) {
+	c := testController(t)
+	ctx := context.Background()
+	robot := db.Robot{AgentID: "robot-a"}
+	if _, err := c.queueRobotCommand(ctx, robot, agent.Command{Type: "identify"}); err != nil {
+		t.Fatal(err)
+	}
+	expired, err := c.queueRobotCommand(ctx, robot, agent.Command{Type: "test_drive"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.DB.SQL.Exec(`UPDATE jobs SET created_at=? WHERE id=?`, time.Now().UTC().Add(-time.Hour), expired.ID); err != nil {
+		t.Fatal(err)
+	}
+	c.DeliverQueuedJobs(robot.AgentID)
+	stored, err := c.DB.GetJob(ctx, expired.ID)
+	if err != nil || stored.Status != "failed" || !strings.Contains(stored.Error, "expired") {
+		t.Fatalf("expired movement remains queued: %+v %v", stored, err)
+	}
+}
+
+func TestBatchDeviceReservationWaitsAndHonoursCancellation(t *testing.T) {
+	c := testController(t)
+	release, err := c.acquireBatchDevice(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := c.acquireBatchDevice(context.Background(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other()
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	if unlock, err := c.acquireBatchDevice(ctx, 1); err == nil {
+		unlock()
+		t.Fatal("overlapping workflow acquired busy device")
+	}
+	release()
+	unlock, err := c.acquireBatchDevice(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+	if unlock, err := c.acquireBatchDevice(ctx, 1); err == nil {
+		unlock()
+		t.Fatal("cancelled workflow acquired free device")
+	}
+}
+
+func TestOverlappingSemesterBatchesDoNotInterleave(t *testing.T) {
+	c := testController(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := c.DB.UpsertRobotStatus(ctx, "batch-robot", "batch-robot", "127.0.0.1", "ok", "robot"); err != nil {
+		t.Fatal(err)
+	}
+	robot, err := c.DB.GetRobotByAgentID(ctx, "batch-robot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := semesterRequest{RobotIDs: []int64{robot.ID}, ResetLogs: true, ResetBashrc: true}
+	first := batches.add("first", req.RobotIDs, cancel)
+	firstDone := make(chan struct{})
+	go func() { c.processSemesterBatch(ctx, req, "http://controller", first); close(firstDone) }()
+	waitJobs := func(count int) []db.Job {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			jobs, err := c.DB.ListJobs(ctx, robot.AgentID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(jobs) >= count {
+				return jobs
+			}
+			time.Sleep(time.Millisecond)
+		}
+		t.Fatalf("wanted %d jobs", count)
+		return nil
+	}
+	firstJobs := waitJobs(1)
+	secondCtx, secondCancel := context.WithCancel(ctx)
+	defer secondCancel()
+	second := batches.add("second", req.RobotIDs, secondCancel)
+	secondDone := make(chan struct{})
+	go func() { c.processSemesterBatch(secondCtx, req, "http://controller", second); close(secondDone) }()
+	// Confirm the second worker reached the reservation before advancing first.
+	deadline := time.Now().Add(time.Second)
+	waiting := false
+	for time.Now().Before(deadline) && !waiting {
+		for _, run := range batches.snapshot() {
+			if run.ID == second.ID && run.Robots[robot.ID] == "waiting_for_device" {
+				waiting = true
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !waiting {
+		t.Fatal("second workflow did not wait for the first")
+	}
+	c.ProcessJobResults(robot.AgentID, []agent.Job{{ID: strconv.FormatInt(firstJobs[0].ID, 10), Status: agent.JobStatusSuccess}})
+	jobs := waitJobs(2)
+	if len(jobs) != 2 {
+		t.Fatalf("workflows interleaved: %+v", jobs)
+	}
+	var next db.Job
+	for _, job := range jobs {
+		if job.ID != firstJobs[0].ID {
+			next = job
+		}
+	}
+	if next.Type != "reset_bashrc" {
+		t.Fatalf("second workflow overtook first: %+v", next)
+	}
+	// Cancelling a workflow waiting for the device must enqueue no commands.
+	batches.cancelRun(second.ID)
+	select {
+	case <-secondDone:
+	case <-time.After(time.Second):
+		t.Fatal("waiting workflow did not cancel")
+	}
+	c.ProcessJobResults(robot.AgentID, []agent.Job{{ID: strconv.FormatInt(next.ID, 10), Status: agent.JobStatusSuccess}})
+	select {
+	case <-firstDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first workflow did not finish")
+	}
+	jobs, err = c.DB.ListJobs(ctx, robot.AgentID)
+	if err != nil || len(jobs) != 2 {
+		t.Fatalf("cancelled workflow queued work: %+v %v", jobs, err)
+	}
+}

@@ -368,6 +368,7 @@ export const zh = {
         processing: "正在开始",
         queued: "排队中",
         installing_agent: "正在安装代理",
+        waiting_for_device: "等待其他批次完成",
         waiting_for_connection: "等待重新连接",
         resetting_logs: "正在重置日志",
         resetting_bashrc: "正在重置 .bashrc",

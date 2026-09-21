@@ -371,6 +371,7 @@ export const en = {
         processing: "Starting",
         queued: "Queued",
         installing_agent: "Installing agent",
+        waiting_for_device: "Waiting for another batch",
         waiting_for_connection: "Waiting for reconnect",
         resetting_logs: "Resetting logs",
         resetting_bashrc: "Resetting .bashrc",

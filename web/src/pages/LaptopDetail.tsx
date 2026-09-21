@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { getRobot, sendCommand, updateRobotTags, getSystemConfig, deleteRobot, updateRobotName, getInstallDefaults } from "../api";
@@ -28,6 +28,7 @@ export function LaptopDetail() {
     const [branch, setBranch] = useState("main");
     const [path, setPath] = useState("");
     const [cmdLoading, setCmdLoading] = useState(false);
+    const identifyPending = useRef(false);
 
     // Tag state
     const [newTag, setNewTag] = useState("");
@@ -78,6 +79,12 @@ export function LaptopDetail() {
 
     const handleCommand = async (type: string, data: any = {}) => {
         if (!robot) return;
+        // Set synchronously: React state alone cannot guard two submissions
+        // before the disabled button has rendered.
+        if (type === "identify") {
+            if (identifyPending.current) return;
+            identifyPending.current = true;
+        }
         setCmdLoading(true);
         try {
             await sendCommand(robot.id, { type, data });
@@ -85,6 +92,7 @@ export function LaptopDetail() {
         } catch (err) {
             error(err instanceof Error ? err.message : t("robotDetail.commandFailed"));
         } finally {
+            if (type === "identify") identifyPending.current = false;
             setCmdLoading(false);
         }
     };
@@ -201,6 +209,7 @@ export function LaptopDetail() {
                         <div className="flex items-center gap-2 flex-wrap">
                             <button
                                 onClick={() => handleCommand("identify")}
+                                disabled={cmdLoading}
                                 className="p-2 text-gray-500 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
                                 title="Identify (Sound)"
                             >

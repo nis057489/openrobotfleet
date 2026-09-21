@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -177,5 +178,98 @@ func TestStopDoesNotDependOnWritableJournal(t *testing.T) {
 	awaitJob(t, jm, "stop")
 	if err := jm.StartJob("ordinary", "update_repo", nil, func() error { t.Error("ordinary job ran without journal"); return nil }); err == nil {
 		t.Fatal("ordinary job accepted without durable journal")
+	}
+}
+
+func TestDurableCommandsSupersedePendingAndLateDelivery(t *testing.T) {
+	jm := NewJobManager()
+	release := make(chan struct{})
+	jm.StartJob("1", "update_repo", nil, func() error { <-release; return nil })
+	var oldCalls, newCalls atomic.Int32
+	jm.StartJob("2", "configure_network", nil, func() error { oldCalls.Add(1); return nil })
+	jm.StartJob("3", "configure_network", nil, func() error { newCalls.Add(1); return nil })
+	close(release)
+	if awaitJob(t, jm, "2").Status != JobStatusFailed {
+		t.Fatal("obsolete pending configuration executed")
+	}
+	awaitJob(t, jm, "3")
+	jm.StartJob("0", "configure_network", nil, func() error { oldCalls.Add(1); return nil })
+	if awaitJob(t, jm, "0").Status != JobStatusFailed || oldCalls.Load() != 0 || newCalls.Load() != 1 {
+		t.Fatal("late configuration overwrote newer state")
+	}
+}
+
+func TestPruningPreservesDurableAndStopBarriersAcrossRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "jobs.json")
+	jm := NewJobManager()
+	if err := jm.LoadState(path); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range []struct{ id, kind string }{{"10", "configure_network"}, {"11", "stop"}} {
+		jm.StartJob(entry.id, entry.kind, nil, func() error { return nil })
+		awaitJob(t, jm, entry.id)
+	}
+	jm.mu.Lock()
+	for _, job := range jm.jobs {
+		job.UpdatedAt = time.Now().Add(-48 * time.Hour)
+	}
+	jm.mu.Unlock()
+	jm.Acknowledge([]string{"10", "11"})
+	reloaded := NewJobManager()
+	if err := reloaded.LoadState(path); err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	action := func() error { calls.Add(1); return nil }
+	reloaded.StartJob("10", "configure_network", nil, action)
+	reloaded.StartJob("9", "configure_network", nil, action)
+	reloaded.StartJob("8", "test_drive", nil, action)
+	awaitJob(t, reloaded, "9")
+	awaitJob(t, reloaded, "8")
+	if calls.Load() != 0 {
+		t.Fatal("pruning allowed stale configuration or movement to execute")
+	}
+}
+
+func TestCancelledBatchCannotReportSuccess(t *testing.T) {
+	jm := NewJobManager()
+	started := make(chan struct{})
+	jm.StartContextJob("1", "batch", nil, func(ctx context.Context) error {
+		close(started)
+		<-ctx.Done()
+		return nil // A non-context-aware final step may finish normally after stop.
+	})
+	<-started
+	jm.StartJob("2", "stop", nil, func() error { return nil })
+	if job := awaitJob(t, jm, "1"); job.Status != JobStatusFailed || job.Error != context.Canceled.Error() {
+		t.Fatalf("cancelled batch reported success: %+v", job)
+	}
+	awaitJob(t, jm, "2")
+}
+
+func TestConcurrentIdentifyRetriesExecuteOnce(t *testing.T) {
+	jm := NewJobManager()
+	var calls atomic.Int32
+	var deliveries sync.WaitGroup
+	release := make(chan struct{})
+	action := func() error { calls.Add(1); <-release; return nil }
+	for i := 0; i < 32; i++ {
+		deliveries.Add(1)
+		go func() {
+			defer deliveries.Done()
+			if err := jm.StartJob("42", "identify", nil, action); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	deliveries.Wait()
+	close(release)
+	awaitJob(t, jm, "42")
+	jm.Acknowledge([]string{"42"})
+	if err := jm.StartJob("42", "identify", nil, action); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("identify executed %d times", calls.Load())
 	}
 }
