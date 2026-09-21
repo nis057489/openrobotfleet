@@ -418,8 +418,22 @@ func (s *Server) handleBackupDB(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusForbidden, "backup disabled in demo mode")
 		return
 	}
+	// The live file alone misses anything still in the WAL, so serve a
+	// consistent snapshot instead.
+	dir, err := os.MkdirTemp("", "controller-backup-")
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to create backup")
+		return
+	}
+	defer os.RemoveAll(dir)
+	snapshot := filepath.Join(dir, "controller.db")
+	if err := s.DB.Snapshot(r.Context(), snapshot); err != nil {
+		log.Printf("backup db: %v", err)
+		respondError(w, http.StatusInternalServerError, "failed to create backup")
+		return
+	}
 	w.Header().Set("Content-Disposition", "attachment; filename=controller.db")
-	http.ServeFile(w, r, s.DB.Path)
+	http.ServeFile(w, r, snapshot)
 }
 
 func (s *Server) handleRestoreDB(w http.ResponseWriter, r *http.Request) {

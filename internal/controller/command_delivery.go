@@ -12,6 +12,13 @@ import (
 	"example.com/openrobot-fleet/internal/db"
 )
 
+// durableCommandTypes mirror the agent's: they stay queued until applied,
+// exempt from the one-shot command expiry.
+var durableCommandTypes = map[string]bool{
+	"configure_network": true,
+	"set_hostname":      true,
+}
+
 func (c *Controller) publishJob(job db.Job) error {
 	var cmd agent.Command
 	if err := json.Unmarshal([]byte(job.PayloadJSON), &cmd); err != nil {
@@ -55,8 +62,21 @@ func (c *Controller) DeliverQueuedJobs(agentID string) {
 		log.Printf("read outbox: %v", err)
 		return
 	}
+	// Durable commands describe desired state, so only the newest of each
+	// type matters. Replaying older ones on reconnect would apply stale
+	// settings and, for configure_network, restart ROS once per queued job.
+	latest := map[string]int64{}
 	for _, job := range jobs {
-		if job.Type != "configure_network" && job.Type != "set_hostname" && time.Since(job.CreatedAt) > 10*time.Minute {
+		if durableCommandTypes[job.Type] {
+			latest[job.Type] = job.ID
+		}
+	}
+	for _, job := range jobs {
+		if durableCommandTypes[job.Type] && job.ID != latest[job.Type] {
+			_ = c.DB.RecordJobResult(context.Background(), agentID, job.ID, "failed", "superseded by a newer "+job.Type+" command")
+			continue
+		}
+		if !durableCommandTypes[job.Type] && time.Since(job.CreatedAt) > 10*time.Minute {
 			_ = c.DB.RecordJobResult(context.Background(), agentID, job.ID, "failed", "command expired before delivery")
 			continue
 		}

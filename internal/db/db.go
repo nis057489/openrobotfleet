@@ -124,6 +124,13 @@ const (
 	goldenImageConfigKey          = "golden_image_config"
 )
 
+// Snapshot writes a consistent copy of the database, including anything not
+// yet checkpointed out of the WAL, to path, which must not already exist.
+func (d *DB) Snapshot(ctx context.Context, path string) error {
+	_, err := d.SQL.ExecContext(ctx, "VACUUM INTO ?", path)
+	return err
+}
+
 func Open(path string) (*DB, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {

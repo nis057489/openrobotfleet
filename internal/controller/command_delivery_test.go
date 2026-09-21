@@ -153,3 +153,29 @@ func TestSemesterStopsAtExecutionFailure(t *testing.T) {
 		t.Fatalf("failure hidden: %+v", got.Errors)
 	}
 }
+
+func TestOnlyNewestDurableCommandDelivered(t *testing.T) {
+	c := testController(t)
+	ctx := context.Background()
+	robot := db.Robot{AgentID: "robot-a"}
+	var ids []int64
+	for _, cmd := range []agent.Command{
+		{Type: "configure_network", Data: json.RawMessage(`{"ros_domain_id":1}`)},
+		{Type: "set_hostname", Data: json.RawMessage(`{"hostname":"a"}`)},
+		{Type: "configure_network", Data: json.RawMessage(`{"ros_domain_id":2}`)},
+	} {
+		job, err := c.queueRobotCommand(ctx, robot, cmd)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, job.ID)
+	}
+	c.DeliverQueuedJobs("robot-a")
+	want := []string{"failed", "queued", "queued"}
+	for i, id := range ids {
+		job, err := c.DB.GetJob(ctx, id)
+		if err != nil || job.Status != want[i] {
+			t.Fatalf("job %d: got %q (%v), want %q", i, job.Status, err, want[i])
+		}
+	}
+}
