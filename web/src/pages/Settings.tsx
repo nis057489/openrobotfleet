@@ -60,7 +60,7 @@ export function Settings() {
     };
 
     const handleBackup = () => {
-        window.location.href = '/api/settings/backup';
+        window.location.href = '/api/db/backup';
     };
 
     const handleRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -77,7 +77,7 @@ export function Settings() {
 
         setSaving(true);
         try {
-            const res = await fetch('/api/settings/restore', {
+            const res = await fetch('/api/db/restore', {
                 method: 'POST',
                 body: formData,
             });
