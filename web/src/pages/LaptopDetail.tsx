@@ -76,6 +76,7 @@ export function LaptopDetail() {
     }, [addListener, robot]);
 
     const [bashrcModel, setBashrcModel] = useState("waffle_pi");
+    const [bashrcQpa, setBashrcQpa] = useState("xcb");
 
     const handleCommand = async (type: string, data: any = {}) => {
         if (!robot) return;
@@ -323,7 +324,7 @@ export function LaptopDetail() {
                             </button>
                             <div className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                                 <button
-                                    onClick={() => handleCommand("reset_bashrc", { turtlebot3_model: bashrcModel })}
+                                    onClick={() => handleCommand("reset_bashrc", { turtlebot3_model: bashrcModel, qt_qpa_platform: bashrcQpa })}
                                     disabled={cmdLoading}
                                     className="w-full text-left"
                                 >
@@ -341,6 +342,16 @@ export function LaptopDetail() {
                                     <option value="burger">burger</option>
                                     <option value="waffle">waffle</option>
                                     <option value="waffle_pi">waffle_pi</option>
+                                </select>
+                                <select
+                                    value={bashrcQpa}
+                                    onChange={e => setBashrcQpa(e.target.value)}
+                                    className="mt-2 w-full px-2 py-1 text-xs border border-gray-300 rounded-md bg-white"
+                                    title="QT_QPA_PLATFORM"
+                                >
+                                    <option value="">QT_QPA_PLATFORM: {t("robotDetail.qtQpaUnset")}</option>
+                                    <option value="xcb">QT_QPA_PLATFORM=xcb</option>
+                                    <option value="wayland">QT_QPA_PLATFORM=wayland</option>
                                 </select>
                             </div>
                             <button

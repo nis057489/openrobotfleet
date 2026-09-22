@@ -28,6 +28,7 @@ type semesterRequest struct {
 	InstallCameraSupport bool                 `json:"install_camera_support"`
 	ResetBashrc          bool                 `json:"reset_bashrc"`
 	TurtleBot3Model      string               `json:"turtlebot3_model"`
+	QtQPAPlatform        string               `json:"qt_qpa_platform"`
 	SystemUpgrade        bool                 `json:"system_upgrade"`
 	InstallPackages      bool                 `json:"install_packages"`
 	Packages             []string             `json:"packages"`
@@ -399,7 +400,7 @@ func (c *Controller) processSemesterBatch(ctx context.Context, req semesterReque
 				log.Printf("semester: resetting .bashrc for %s", robot.Name)
 				batches.setRobotState(run, id, "resetting_bashrc")
 
-				data, _ := json.Marshal(agent.ResetBashrcData{TurtleBot3Model: req.TurtleBot3Model})
+				data, _ := json.Marshal(agent.ResetBashrcData{TurtleBot3Model: req.TurtleBot3Model, QtQPAPlatform: req.QtQPAPlatform})
 				cmd := agent.Command{Type: "reset_bashrc", Data: data}
 				if _, err := c.runRobotCommand(ctx, robot, cmd); err != nil {
 					log.Printf("semester: command failed: reset_bashrc for %s: %v", robot.Name, err)

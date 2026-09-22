@@ -264,6 +264,10 @@ var turtlebot3Models = map[string]bool{"burger": true, "waffle": true, "waffle_p
 
 const defaultTurtleBot3Model = "waffle_pi"
 
+// qtQPAPlatforms are the QT_QPA_PLATFORM values reset_bashrc will export; ""
+// leaves it unset so Qt picks its own platform plugin.
+var qtQPAPlatforms = map[string]bool{"": true, "xcb": true, "wayland": true}
+
 // HandleResetBashrc restores the workspace user's ~/.bashrc from
 // /etc/skel/.bashrc (what `cp /etc/skel/.bashrc ~/` does by hand), then
 // appends the ROS setup source line and TURTLEBOT3_MODEL export students
@@ -277,6 +281,10 @@ func HandleResetBashrc(cfg Config, data ResetBashrcData) error {
 	}
 	if !turtlebot3Models[model] {
 		return fmt.Errorf("unknown TurtleBot3 model %q (want burger, waffle or waffle_pi)", model)
+	}
+	qpa := strings.TrimSpace(data.QtQPAPlatform)
+	if !qtQPAPlatforms[qpa] {
+		return fmt.Errorf("unknown QT_QPA_PLATFORM %q (want xcb, wayland or empty)", qpa)
 	}
 
 	name := workspaceUsername(cfg)
@@ -301,6 +309,9 @@ func HandleResetBashrc(cfg Config, data ResetBashrcData) error {
 		log.Printf("[agent] no ROS install under /opt/ros; .bashrc won't source a ROS setup script")
 	}
 	fmt.Fprintf(&b, "export TURTLEBOT3_MODEL=%s\n", model)
+	if qpa != "" {
+		fmt.Fprintf(&b, "export QT_QPA_PLATFORM=%s\n", qpa)
+	}
 
 	path := filepath.Join(u.HomeDir, ".bashrc")
 	if _, err := os.Stat(path); err == nil {
@@ -318,7 +329,7 @@ func HandleResetBashrc(cfg Config, data ResetBashrcData) error {
 	if err := os.Chown(path, uid, gid); err != nil {
 		return fmt.Errorf("chown %s: %w", path, err)
 	}
-	log.Printf("[agent] reset %s to default (TURTLEBOT3_MODEL=%s)", path, model)
+	log.Printf("[agent] reset %s to default (TURTLEBOT3_MODEL=%s QT_QPA_PLATFORM=%s)", path, model, qpa)
 	return nil
 }
 

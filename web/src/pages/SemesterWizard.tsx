@@ -24,6 +24,7 @@ export function SemesterWizard() {
     const [doInstallCameraSupport, setDoInstallCameraSupport] = useState(false);
     const [doResetBashrc, setDoResetBashrc] = useState(false);
     const [turtlebot3Model, setTurtlebot3Model] = useState("waffle_pi");
+    const [qtQpaPlatform, setQtQpaPlatform] = useState("");
     const [doSystemUpgrade, setDoSystemUpgrade] = useState(false);
     const [doInstallPackages, setDoInstallPackages] = useState(false);
     const [packagesText, setPackagesText] = useState("");
@@ -93,6 +94,7 @@ export function SemesterWizard() {
                 install_camera_support: doInstallCameraSupport,
                 reset_bashrc: doResetBashrc,
                 turtlebot3_model: turtlebot3Model,
+                qt_qpa_platform: qtQpaPlatform,
                 system_upgrade: doSystemUpgrade,
                 install_packages: doInstallPackages,
                 packages: doInstallPackages ? packages : [],
@@ -345,6 +347,20 @@ export function SemesterWizard() {
                                                 <option value="burger">burger</option>
                                                 <option value="waffle">waffle</option>
                                                 <option value="waffle_pi">waffle_pi</option>
+                                            </select>
+                                        </div>
+                                    )}
+                                    {doResetBashrc && (
+                                        <div className="mt-2 flex items-center gap-2 text-sm">
+                                            <span className="text-gray-700">QT_QPA_PLATFORM</span>
+                                            <select
+                                                value={qtQpaPlatform}
+                                                onChange={e => setQtQpaPlatform(e.target.value)}
+                                                className="px-2 py-1 border border-gray-300 rounded-md bg-white"
+                                            >
+                                                <option value="">{t("robotDetail.qtQpaUnset")}</option>
+                                                <option value="xcb">xcb</option>
+                                                <option value="wayland">wayland</option>
                                             </select>
                                         </div>
                                     )}

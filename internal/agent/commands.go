@@ -26,9 +26,12 @@ type ResetLogsData struct {
 }
 
 // ResetBashrcData restores the workspace user's ~/.bashrc to the distro
-// default, plus the ROS setup and TurtleBot3 model lines.
+// default, plus the ROS setup and TurtleBot3 model lines. QtQPAPlatform, when
+// set, is exported as QT_QPA_PLATFORM (e.g. "xcb" so rviz2/Gazebo run under
+// XWayland on a Wayland desktop).
 type ResetBashrcData struct {
 	TurtleBot3Model string `json:"turtlebot3_model"`
+	QtQPAPlatform   string `json:"qt_qpa_platform,omitempty"`
 }
 
 // SystemUpdateData refreshes the package lists (`apt update`), then
