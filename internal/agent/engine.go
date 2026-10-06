@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"example.com/openrobot-fleet/internal/agent/behavior"
@@ -15,6 +16,7 @@ import (
 
 const (
 	commandStaleThreshold = 10 * time.Minute
+	heartbeatInterval     = 10 * time.Second
 )
 
 // durableCommandTypes represent desired state rather than one-shot actions
@@ -35,6 +37,9 @@ type AgentEngine struct {
 	cmdChan       chan Command
 	lastIP        string
 	lastHeartbeat time.Time
+	// lastStatusKey is the statusKey of the last status that reached the
+	// broker; a different key means the controller is out of date.
+	lastStatusKey string
 }
 
 func NewAgentEngine(cfg Config) *AgentEngine {
@@ -174,7 +179,11 @@ func (e *AgentEngine) processCommands(ctx context.Context, bb *behavior.Blackboa
 }
 
 func (e *AgentEngine) sendHeartbeat(ctx context.Context, bb *behavior.Blackboard) behavior.Status {
-	if time.Since(e.lastHeartbeat) < 10*time.Second {
+	// Publish as soon as the status changes rather than on the next
+	// heartbeat, so job progress reaches the UI within one tick. The
+	// heartbeat still fires on schedule as the liveness signal.
+	key := e.statusKey()
+	if key == e.lastStatusKey && time.Since(e.lastHeartbeat) < heartbeatInterval {
 		return behavior.StatusSuccess
 	}
 
@@ -183,10 +192,27 @@ func (e *AgentEngine) sendHeartbeat(ctx context.Context, bb *behavior.Blackboard
 		topic := "lab/status/" + e.Config.AgentID
 		if err := e.MQTTClient.Publish(topic, 1, false, payload); err == nil {
 			e.lastHeartbeat = time.Now()
+			e.lastStatusKey = key
 		}
 	}
 
 	return behavior.StatusSuccess
+}
+
+// statusKey summarises the parts of the status payload that change on their
+// own. It runs every tick, so it must stay cheap: camera state is left out
+// because it shells out to systemctl, and it only changes through camera
+// jobs, whose status changes already trigger a publish.
+func (e *AgentEngine) statusKey() string {
+	var b strings.Builder
+	b.WriteString(e.lastIP)
+	if job := e.JobManager.GetCurrentJob(); job != nil {
+		fmt.Fprintf(&b, "|%s:%s:%s:%s", job.ID, job.Type, job.Status, job.Error)
+	}
+	for _, result := range e.JobManager.Results() {
+		fmt.Fprintf(&b, "|%s:%s", result.ID, result.Status)
+	}
+	return b.String()
 }
 
 func (e *AgentEngine) buildStatusPayload() []byte {

@@ -273,3 +273,26 @@ func TestConcurrentIdentifyRetriesExecuteOnce(t *testing.T) {
 		t.Fatalf("identify executed %d times", calls.Load())
 	}
 }
+func TestStatusKeyTracksJobProgress(t *testing.T) {
+	e := NewAgentEngine(Config{})
+	idle := e.statusKey()
+	if e.statusKey() != idle {
+		t.Fatal("status key unstable while idle")
+	}
+	release := make(chan struct{})
+	e.JobManager.StartJob("21", "update_repo", nil, func() error { <-release; return nil })
+	running := e.statusKey()
+	if running == idle {
+		t.Fatal("starting a job did not change the status key")
+	}
+	close(release)
+	awaitJob(t, e.JobManager, "21")
+	done := e.statusKey()
+	if done == running {
+		t.Fatal("finishing a job did not change the status key")
+	}
+	e.JobManager.Acknowledge([]string{"21"})
+	if e.statusKey() == done {
+		t.Fatal("acknowledging a result did not change the status key")
+	}
+}
