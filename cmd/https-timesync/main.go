@@ -32,7 +32,7 @@ const sockMagic = 0x534f434b
 
 // sockSample mirrors chrony's struct sock_sample on 64-bit Linux.
 type sockSample struct {
-	Sec    int64   // local time of the measurement
+	Sec    int64 // local time of the measurement
 	Usec   int64
 	Offset float64 // reference time minus local time, in seconds
 	Pulse  int32

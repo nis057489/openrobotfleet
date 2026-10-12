@@ -376,16 +376,29 @@ const systemUpdateTimeout = 60 * time.Minute
 // aptGet runs apt-get non-interactively. It waits up to 5 minutes for the
 // dpkg lock (unattended-upgrades often holds it just after boot) and keeps
 // existing config files rather than prompting when a package ships a new one.
-func aptGet(args ...string) error {
-	full := append([]string{
+func aptGet(args ...string) ([]byte, error) {
+	return runPackageTool("apt-get", append([]string{
 		"-o", "DPkg::Lock::Timeout=300",
 		"-o", "Dpkg::Options::=--force-confdef",
 		"-o", "Dpkg::Options::=--force-confold",
-	}, args...)
+	}, args...)...)
+}
+
+// runPackageTool runs apt-get or dpkg so that an agent restart cannot cut it
+// off mid-install. Ubuntu's needrestart restarts services after an upgrade,
+// this agent included, and systemd kills a service's children with it,
+// leaving dpkg interrupted ("you must manually run 'dpkg --configure -a'").
+// NEEDRESTART_SUSPEND stops needrestart restarting anything, and a separate
+// scope keeps the process alive if the agent restarts for another reason.
+func runPackageTool(name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), systemUpdateTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "apt-get", full...)
-	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	cmdName, cmdArgs := name, args
+	if _, err := exec.LookPath("systemd-run"); err == nil {
+		cmdName, cmdArgs = "systemd-run", append([]string{"--scope", "--quiet", "--collect", name}, args...)
+	}
+	cmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
+	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive", "NEEDRESTART_SUSPEND=1", "NEEDRESTART_MODE=l")
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		err = fmt.Errorf("timed out after %s", systemUpdateTimeout)
@@ -396,9 +409,32 @@ func aptGet(args ...string) error {
 		if len(msg) > 2000 {
 			msg = "..." + msg[len(msg)-2000:]
 		}
-		return fmt.Errorf("apt-get %s: %w: %s", args[0], err, msg)
+		return out, fmt.Errorf("%s %s: %w: %s", name, firstNonOption(args), err, msg)
 	}
-	return nil
+	return out, nil
+}
+
+// firstNonOption names the apt-get/dpkg action for error messages.
+func firstNonOption(args []string) string {
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "-o":
+			i++
+		case !strings.HasPrefix(args[i], "-"):
+			return args[i]
+		}
+	}
+	return strings.Join(args, " ")
+}
+
+// aptSummaryPattern matches apt's closing summary, e.g. "3 upgraded, 1 newly
+// installed, 0 to remove and 2 not upgraded."
+var aptSummaryPattern = regexp.MustCompile(`(?m)^\d+ upgraded, .*$`)
+
+func logAptSummary(step string, out []byte) {
+	if summary := aptSummaryPattern.Find(out); summary != nil {
+		log.Printf("[agent] system update: %s: %s", step, summary)
+	}
 }
 
 // HandleSystemUpdate is `apt update`, followed by `apt upgrade -y` and/or
@@ -407,21 +443,33 @@ func HandleSystemUpdate(data SystemUpdateData) error {
 	if err := ValidatePackageNames(data.Packages); err != nil {
 		return err
 	}
+	// Finish any install an earlier interruption left half-done; apt
+	// refuses to do anything until it is.
+	if _, err := runPackageTool("dpkg", "--configure", "-a", "--force-confdef", "--force-confold"); err != nil {
+		return err
+	}
 	log.Printf("[agent] system update: refreshing package lists")
-	if err := aptGet("update"); err != nil {
+	if _, err := aptGet("update"); err != nil {
 		return err
 	}
 	if data.Upgrade {
 		log.Printf("[agent] system update: upgrading installed packages")
-		if err := aptGet("upgrade", "-y"); err != nil {
+		// --with-new-pkgs is what `apt upgrade` does: without it apt-get
+		// keeps back every upgrade that needs a new dependency, which a ROS
+		// sync release does for hundreds of packages at once.
+		out, err := aptGet("upgrade", "-y", "--with-new-pkgs")
+		if err != nil {
 			return err
 		}
+		logAptSummary("upgrade", out)
 	}
 	if len(data.Packages) > 0 {
 		log.Printf("[agent] system update: installing %s", strings.Join(data.Packages, " "))
-		if err := aptGet(append([]string{"install", "-y"}, data.Packages...)...); err != nil {
+		out, err := aptGet(append([]string{"install", "-y"}, data.Packages...)...)
+		if err != nil {
 			return err
 		}
+		logAptSummary("install", out)
 	}
 	log.Printf("[agent] system update complete")
 	return nil

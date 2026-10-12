@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Network, Plus, Trash2, Edit2, RefreshCw, Download, X, Save } from "lucide-react";
-import { getGroups, getRobots, createGroup, updateGroup, deleteGroup, applyGroup, downloadRvizLauncher, GroupPayload } from "../api";
-import { Group, Robot } from "../types";
+import { getGroups, getRobots, createGroup, updateGroup, deleteGroup, applyGroup, downloadRvizLauncher, getGroupPackageSync, GroupPayload } from "../api";
+import { Group, GroupPackageSync, Robot } from "../types";
 import { useNotification } from "../contexts/NotificationContext";
 
 const emptyForm: GroupPayload = {
@@ -25,6 +25,8 @@ export function Groups() {
     const [form, setForm] = useState<GroupPayload>(emptyForm);
     const [saving, setSaving] = useState(false);
     const [applyingId, setApplyingId] = useState<number | null>(null);
+    const [packageSync, setPackageSync] = useState<Record<number, GroupPackageSync>>({});
+    const [expandedSync, setExpandedSync] = useState<number | null>(null);
 
     const load = () => {
         setLoading(true);
@@ -35,6 +37,10 @@ export function Groups() {
             })
             .catch((err) => error(err instanceof Error ? err.message : String(err)))
             .finally(() => setLoading(false));
+        // Informational only; the page works without it.
+        getGroupPackageSync()
+            .then(list => setPackageSync(Object.fromEntries(list.map(s => [s.group_id, s]))))
+            .catch(console.error);
     };
 
     useEffect(() => {
@@ -159,17 +165,25 @@ export function Groups() {
                                 <th className="text-left px-4 py-3">{t("groups.domainId")}</th>
                                 <th className="text-left px-4 py-3">{t("groups.robot")}</th>
                                 <th className="text-left px-4 py-3">{t("groups.laptop")}</th>
+                                <th className="text-left px-4 py-3">{t("groups.updates")}</th>
                                 <th className="text-left px-4 py-3">{t("groups.staticPeers")}</th>
                                 <th className="text-right px-4 py-3"></th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {groups.map(g => (
-                                <tr key={g.id} className="hover:bg-gray-50">
+                                <Fragment key={g.id}>
+                                <tr className="hover:bg-gray-50">
                                     <td className="px-4 py-3 font-medium text-gray-900">{g.name}</td>
                                     <td className="px-4 py-3 font-mono text-gray-700">{g.ros_domain_id}</td>
                                     <td className="px-4 py-3 text-gray-600">{nameFor(g.robot_id)}</td>
                                     <td className="px-4 py-3 text-gray-600">{nameFor(g.laptop_id)}</td>
+                                    <td className="px-4 py-3">
+                                        <PackageSyncBadge
+                                            sync={packageSync[g.id]}
+                                            onToggle={() => setExpandedSync(expandedSync === g.id ? null : g.id)}
+                                        />
+                                    </td>
                                     <td className="px-4 py-3 text-gray-600">{g.static_peers ? "✓" : "—"}</td>
                                     <td className="px-4 py-3">
                                         <div className="flex items-center justify-end gap-1">
@@ -196,6 +210,36 @@ export function Groups() {
                                         </div>
                                     </td>
                                 </tr>
+                                {expandedSync === g.id && packageSync[g.id]?.differing && (
+                                    <tr>
+                                        <td colSpan={7} className="px-4 pb-4 bg-amber-50/40">
+                                            <div className="text-xs text-gray-600 mb-2">
+                                                {t("groups.packagesDifferHint", { robot: nameFor(g.robot_id), laptop: nameFor(g.laptop_id) })}
+                                            </div>
+                                            <div className="overflow-x-auto">
+                                                <table className="text-xs font-mono">
+                                                    <thead className="text-gray-500">
+                                                        <tr>
+                                                            <th className="text-left pr-4 py-1">{t("groups.package")}</th>
+                                                            <th className="text-left pr-4 py-1">{nameFor(g.robot_id)}</th>
+                                                            <th className="text-left py-1">{nameFor(g.laptop_id)}</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {packageSync[g.id].differing!.map(d => (
+                                                            <tr key={d.package}>
+                                                                <td className="pr-4 py-0.5 text-gray-900">{d.package}</td>
+                                                                <td className="pr-4 py-0.5 text-gray-600">{d.robot}</td>
+                                                                <td className="py-0.5 text-gray-600">{d.laptop}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                                </Fragment>
                             ))}
                         </tbody>
                     </table>
@@ -297,5 +341,28 @@ export function Groups() {
                 </div>
             )}
         </div>
+    );
+}
+
+// PackageSyncBadge shows whether a group's robot and laptop run the same
+// releases of the ROS packages they share.
+function PackageSyncBadge({ sync, onToggle }: { sync?: GroupPackageSync; onToggle: () => void }) {
+    const { t } = useTranslation();
+    if (!sync || sync.state === "incomplete") {
+        return <span className="text-gray-400">—</span>;
+    }
+    if (sync.state === "unknown") {
+        return <span className="text-xs text-gray-400">{t("groups.syncUnknown")}</span>;
+    }
+    if (sync.state === "in_sync") {
+        return <span className="px-2 py-0.5 rounded-full border text-xs bg-green-50 text-green-700 border-green-200">{t("groups.inSync")}</span>;
+    }
+    return (
+        <button
+            onClick={onToggle}
+            className="px-2 py-0.5 rounded-full border text-xs bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
+        >
+            {t("groups.packagesDiffer", { count: sync.differing?.length ?? 0 })}
+        </button>
     );
 }

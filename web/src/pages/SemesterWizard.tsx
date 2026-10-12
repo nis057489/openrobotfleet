@@ -24,6 +24,7 @@ export function SemesterWizard() {
     const [doInstallCameraSupport, setDoInstallCameraSupport] = useState(false);
     const [doResetBashrc, setDoResetBashrc] = useState(false);
     const [doSyncTime, setDoSyncTime] = useState(false);
+    const [doRebootIfRequired, setDoRebootIfRequired] = useState(false);
     const [turtlebot3Model, setTurtlebot3Model] = useState("waffle_pi");
     const [qtQpaPlatform, setQtQpaPlatform] = useState("");
     const [doSystemUpgrade, setDoSystemUpgrade] = useState(false);
@@ -71,14 +72,18 @@ export function SemesterWizard() {
     };
 
     // Space-, comma- or newline-separated, as typed after `apt install -y`.
-    const packages = packagesText.split(/[\s,]+/).filter(Boolean);
+    // Tolerate a pasted "sudo apt install -y ..." command: keep only the names.
+    const packages = packagesText
+        .replace(/^\s*(sudo\s+)?(apt|apt-get)\s+install\s+((-y|--yes)\s+)?/, "")
+        .split(/[\s,]+/)
+        .filter(Boolean);
     const aptCommand = [
         "sudo apt update",
         doSystemUpgrade && "sudo apt upgrade -y",
         doInstallPackages && packages.length > 0 && `sudo apt install -y ${packages.join(" ")}`,
     ].filter(Boolean).join(" && ");
 
-    const anyAction = doResetLogs || doUpdateRepo || doReinstall || doSelfTest || doApplyScenario || doInstallCameraSupport || doResetBashrc || doSyncTime || doSystemUpgrade || doInstallPackages || doFactoryReset;
+    const anyAction = doResetLogs || doUpdateRepo || doReinstall || doSelfTest || doApplyScenario || doInstallCameraSupport || doResetBashrc || doSyncTime || doRebootIfRequired || doSystemUpgrade || doInstallPackages || doFactoryReset;
     const canExecute = !executing && selectedIds.size > 0 && anyAction && !(doInstallPackages && packages.length === 0);
 
     const handleExecute = async () => {
@@ -95,6 +100,7 @@ export function SemesterWizard() {
                 install_camera_support: doInstallCameraSupport,
                 reset_bashrc: doResetBashrc,
                 sync_time: doSyncTime,
+                reboot_if_required: doRebootIfRequired,
                 turtlebot3_model: turtlebot3Model,
                 qt_qpa_platform: qtQpaPlatform,
                 system_upgrade: doSystemUpgrade,
@@ -316,6 +322,29 @@ export function SemesterWizard() {
                                 </div>
                             )}
 
+                            {/* Reboot if required */}
+                            <label className={`flex items-start gap-3 ${doFactoryReset ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
+                                <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doRebootIfRequired ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
+                                    {doRebootIfRequired && <Check size={14} />}
+                                    <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={doRebootIfRequired}
+                                        disabled={doFactoryReset}
+                                        onChange={e => {
+                                            setDoRebootIfRequired(e.target.checked);
+                                            if (e.target.checked) setDoFactoryReset(false);
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <div className="font-medium text-gray-900 flex items-center gap-2">
+                                        <RotateCcw size={16} /> {t("semesterWizard.rebootIfRequired")}
+                                    </div>
+                                    <p className="text-sm text-gray-500">{t("semesterWizard.rebootIfRequiredDesc")}</p>
+                                </div>
+                            </label>
+
                             <hr className="border-gray-100" />
 
                             {/* Install Camera Support */}
@@ -529,6 +558,7 @@ export function SemesterWizard() {
                                                 setDoReinstall(false);
                                                 setDoResetBashrc(false);
                                                 setDoSyncTime(false);
+                                                setDoRebootIfRequired(false);
                                                 setDoSystemUpgrade(false);
                                                 setDoInstallPackages(false);
                                             }

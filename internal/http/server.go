@@ -78,6 +78,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/scenarios/", s.handleScenarioItem)
 	mux.HandleFunc("/api/groups", s.handleGroupsCollection)
 	mux.HandleFunc("/api/groups/rviz-launcher", s.handleGroupsRvizLauncher)
+	mux.HandleFunc("/api/groups/package-sync", s.handleGroupsPackageSync)
 	mux.HandleFunc("/api/groups/", s.handleGroupItem)
 	mux.HandleFunc("/api/jobs", s.handleListJobs)
 	mux.HandleFunc("/api/semester/start", s.handleSemesterStart)
@@ -365,6 +366,14 @@ func (s *Server) handleInstallDefaults(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleGroupsPackageSync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	s.Controller.GetPackageSync(w, r)
+}
+
 func (s *Server) handleTimeConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -516,6 +525,10 @@ type statusPayload struct {
 	NTPServer   *string `json:"ntp_server,omitempty"`
 	ClockSynced bool    `json:"clock_synced,omitempty"`
 	AgentSHA256 string  `json:"agent_sha256,omitempty"`
+	// Nil from agents that predate it.
+	RebootRequired *bool             `json:"reboot_required,omitempty"`
+	BootID         string            `json:"boot_id,omitempty"`
+	ROSPackages    map[string]string `json:"ros_packages,omitempty"`
 }
 
 func (s *Server) subscribeStatusUpdates() {
@@ -557,6 +570,8 @@ func (s *Server) subscribeStatusUpdates() {
 			log.Printf("status: failed to upsert robot %s: %v", agentID, err)
 		}
 
+		s.Controller.RecordDeviceReport(agentID, payload.RebootRequired, payload.BootID)
+		s.Controller.RecordPackages(agentID, payload.ROSPackages)
 		s.Controller.ProcessJobResults(agentID, payload.Results)
 		s.Controller.DeliverQueuedJobs(agentID)
 		s.Controller.EnsureTimeConformance(agentID, payload.NTPServer, payload.ClockSynced)

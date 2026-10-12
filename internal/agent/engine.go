@@ -36,6 +36,7 @@ type AgentEngine struct {
 	Tree       behavior.Node
 
 	cmdChan       chan Command
+	packages      *rosPackages
 	lastIP        string
 	lastHeartbeat time.Time
 	// lastStatusKey is the statusKey of the last status that reached the
@@ -52,6 +53,7 @@ func NewAgentEngine(cfg Config) *AgentEngine {
 		JobManager: jm,
 		Blackboard: bb,
 		cmdChan:    make(chan Command, 10),
+		packages:   newROSPackages(),
 	}
 
 	// Initialize Blackboard
@@ -69,6 +71,7 @@ func (e *AgentEngine) Start(ctx context.Context) {
 	e.Tree = e.buildTree()
 
 	go watchClock(ctx)
+	go e.packages.watch(ctx)
 
 	// 3. Loop
 	ticker := time.NewTicker(100 * time.Millisecond) // 10Hz Tick
@@ -237,6 +240,11 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 		NTPServer   string `json:"ntp_server"`
 		ClockSynced bool   `json:"clock_synced"`
 		AgentSHA256 string `json:"agent_sha256,omitempty"`
+		// Always sent, so the controller can tell new agents from old.
+		RebootRequired bool   `json:"reboot_required"`
+		BootID         string `json:"boot_id,omitempty"`
+		// Installed ros-* packages, only when changed or due a resend.
+		ROSPackages map[string]string `json:"ros_packages,omitempty"`
 	}
 
 	s := status{
@@ -251,6 +259,10 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 		NTPServer:   ConfiguredNTPServer(),
 		ClockSynced: ClockSynchronized(),
 		AgentSHA256: BinarySHA256(),
+
+		RebootRequired: RebootRequired(),
+		BootID:         BootID(),
+		ROSPackages:    e.packages.toSend(),
 	}
 	if hn, err := os.Hostname(); err == nil && hn != "" {
 		s.Name = hn
@@ -335,7 +347,10 @@ func (e *AgentEngine) mapCommandToAction(ctx context.Context, cmd Command) func(
 		if err := json.Unmarshal(cmd.Data, &payload); err != nil {
 			return func() error { return err }
 		}
-		return func() error { return HandleSystemUpdate(payload) }
+		return func() error {
+			defer e.packages.requestRefresh()
+			return HandleSystemUpdate(payload)
+		}
 	case "restart_ros":
 		return func() error { return HandleRestartROS(cfg) }
 	case "wifi_profile":
@@ -378,6 +393,8 @@ func (e *AgentEngine) mapCommandToAction(ctx context.Context, cmd Command) func(
 		return func() error { return HandleIdentify(cfg, payload) }
 	case "reboot":
 		return func() error { return HandleReboot(cfg) }
+	case "delayed_reboot":
+		return HandleDelayedReboot
 	case "factory_reset":
 		return func() error { return HandleFactoryReset(cfg) }
 	case "batch":

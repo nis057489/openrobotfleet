@@ -92,6 +92,18 @@ export interface InstallDefaultsResponse {
   demo_mode?: boolean;
 }
 
+export interface PackageDiff {
+  package: string;
+  robot: string;
+  laptop: string;
+}
+
+export interface GroupPackageSync {
+  group_id: number;
+  state: 'in_sync' | 'differ' | 'unknown' | 'incomplete';
+  differing?: PackageDiff[];
+}
+
 export type TimeConformanceState = 'conformant' | 'pending' | 'drifting' | 'unsupported' | 'unknown';
 
 export interface TimeConformance {

@@ -34,6 +34,7 @@ type semesterRequest struct {
 	ApplyScenarios       bool                 `json:"apply_scenarios"`
 	ScenarioIDs          []int64              `json:"scenario_ids"`
 	FactoryReset         bool                 `json:"factory_reset"`
+	RebootIfRequired     bool                 `json:"reboot_if_required"`
 
 	// Internal
 	ScenarioConfigs []agent.UpdateRepoData `json:"-"`
@@ -105,6 +106,11 @@ func (c *Controller) HandleSemesterStart(w http.ResponseWriter, r *http.Request)
 		}
 		if len(pkgs) == 0 {
 			respondError(w, http.StatusBadRequest, "no packages to install")
+			return
+		}
+		switch pkgs[0] {
+		case "sudo", "apt", "apt-get":
+			respondError(w, http.StatusBadRequest, "list package names only, not an apt command (e.g. \"vim htop\", not \"sudo apt install vim htop\")")
 			return
 		}
 		if err := agent.ValidatePackageNames(pkgs); err != nil {
@@ -369,6 +375,17 @@ func (c *Controller) processSemesterBatch(ctx context.Context, req semesterReque
 				cmd := agent.Command{Type: "factory_reset", Data: []byte("{}")}
 				if _, err := c.runRobotCommand(ctx, robot, cmd); err != nil {
 					log.Printf("semester: command failed: factory_reset for %s: %v", robot.Name, err)
+					batches.failRobot(run, id, err.Error())
+					return
+				}
+			}
+
+			// Last, so no later step runs into the reboot. A factory reset
+			// reboots by itself.
+			if req.RebootIfRequired && !req.FactoryReset {
+				setState := func(state string) { batches.setRobotState(run, id, state) }
+				if err := c.rebootIfRequired(ctx, robot, setState); err != nil {
+					log.Printf("semester: reboot failed for %s: %v", robot.Name, err)
 					batches.failRobot(run, id, err.Error())
 					return
 				}

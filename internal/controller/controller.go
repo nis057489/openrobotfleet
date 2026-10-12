@@ -39,6 +39,12 @@ type Controller struct {
 	agentUpdatesMu  sync.Mutex
 	agentUpdates    map[int64]agentUpdate // by robot ID
 	agentUpdateSlot chan struct{}         // one automatic update at a time
+	deviceReportsMu sync.RWMutex
+	deviceReports   map[string]deviceReport // by agent ID
+
+	packageReportsMu sync.RWMutex
+	packageReports   map[string]map[string]string // agent ID -> package -> version
+
 	// reinstall replaces reinstallAgent in tests.
 	reinstall func(context.Context, *db.Robot) (time.Time, error)
 }

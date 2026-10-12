@@ -7,6 +7,7 @@ import {
   InstallConfig,
   InstallDefaultsResponse,
   TimeConfigResponse,
+  GroupPackageSync,
   DiscoveryCandidate,
   GoldenImageConfig,
   Group,
@@ -210,6 +211,7 @@ export interface SemesterRequest {
   install_camera_support?: boolean;
   reset_bashrc?: boolean;
   sync_time?: boolean;
+  reboot_if_required?: boolean;
   turtlebot3_model?: string;
   qt_qpa_platform?: string;
   system_upgrade?: boolean;
@@ -356,6 +358,10 @@ export interface ApplyGroupResult {
 
 export function getGroups(): Promise<Group[]> {
   return request<Group[]>('/api/groups');
+}
+
+export function getGroupPackageSync(): Promise<GroupPackageSync[]> {
+  return request<GroupPackageSync[]>('/api/groups/package-sync');
 }
 
 export function getGroup(id: number | string): Promise<Group> {
