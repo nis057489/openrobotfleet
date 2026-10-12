@@ -68,6 +68,8 @@ func (e *AgentEngine) Start(ctx context.Context) {
 	// 2. Build Tree
 	e.Tree = e.buildTree()
 
+	go watchClock(ctx)
+
 	// 3. Loop
 	ticker := time.NewTicker(100 * time.Millisecond) // 10Hz Tick
 	defer ticker.Stop()

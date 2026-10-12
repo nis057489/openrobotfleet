@@ -444,6 +444,22 @@ done
 echo "openrobotfleet: $dev still has no IPv4 address after 60s, starting anyway" >&2
 exit 0
 `
+	timeWaitPath   = "/usr/local/bin/openrobotfleet-wait-time-sync"
+	timeWaitScript = `#!/bin/bash
+# Installed by openrobotfleet-agent. At boot, holds ROS startup until the
+# clock is NTP-synchronised: Raspberry Pis have no RTC and boot with a stale
+# clock, and nodes that start before NTP steps it keep TF data stamped in the
+# wrong time ("transform data too old"). Bounded, so ROS still starts with no
+# reachable NTP server; the agent restarts it once the clock is corrected.
+# Only waits shortly after boot, so service restarts later are not delayed.
+[ "$(cut -d. -f1 /proc/uptime)" -lt 300 ] || exit 0
+for _ in $(seq 60); do
+  [ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" = yes ] && exit 0
+  sleep 1
+done
+echo "openrobotfleet: clock still not synchronised after 60s, starting anyway" >&2
+exit 0
+`
 	rosOverrideDir = "/etc/systemd/system/"
 	rosOverride    = `# Installed by openrobotfleet-agent.
 [Unit]
@@ -452,6 +468,9 @@ After=network-online.target
 
 [Service]
 ExecStartPre=` + networkWaitPath + `
+ExecStartPre=` + timeWaitPath + `
+# Room for both waits above (up to 60s each) before systemd gives up.
+TimeoutStartSec=180
 # ros2 launch exits 0 even when every node crashed, so on-failure never
 # retries; restart whenever it exits (a manual systemctl stop still sticks).
 Restart=always
@@ -460,8 +479,8 @@ RestartSec=10
 )
 
 // EnsureROSServiceOverride installs a systemd drop-in for the ROS bringup
-// service so it waits for the pinned network interface and restarts whenever
-// it exits. A drop-in rather than editing the unit, so it applies to robots
+// service so it waits for the pinned network interface and, at boot, for the
+// clock to synchronise, and restarts whenever it exits. A drop-in rather than editing the unit, so it applies to robots
 // imaged before this existed. No-op where there's no ROS service (laptops).
 func EnsureROSServiceOverride() error {
 	unit := rosServiceName() + ".service"
@@ -470,6 +489,9 @@ func EnsureROSServiceOverride() error {
 	}
 	if err := os.WriteFile(networkWaitPath, []byte(networkWaitScript), 0o755); err != nil {
 		return fmt.Errorf("write %s: %w", networkWaitPath, err)
+	}
+	if err := os.WriteFile(timeWaitPath, []byte(timeWaitScript), 0o755); err != nil {
+		return fmt.Errorf("write %s: %w", timeWaitPath, err)
 	}
 
 	dropInDir := filepath.Join(rosOverrideDir, unit+".d")
