@@ -122,7 +122,37 @@ const (
 	// a separate defaults row. Absent, they fall back to the robot defaults.
 	defaultLaptopInstallConfigKey = "default_laptop_install_config"
 	goldenImageConfigKey          = "golden_image_config"
+	timeConfigKey                 = "time_config"
 )
+
+// TimeConfig is the fleet-wide clock setting. Every agent is kept pointed at
+// NTPServer; empty leaves devices on their distro defaults.
+type TimeConfig struct {
+	NTPServer string `json:"ntp_server"`
+}
+
+func (d *DB) GetTimeConfig(ctx context.Context) (TimeConfig, error) {
+	var cfg TimeConfig
+	var val string
+	err := d.SQL.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, timeConfigKey).Scan(&val)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && val == "") {
+		return cfg, nil
+	}
+	if err != nil {
+		return cfg, err
+	}
+	return cfg, json.Unmarshal([]byte(val), &cfg)
+}
+
+func (d *DB) SaveTimeConfig(ctx context.Context, cfg TimeConfig) error {
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	_, err = d.SQL.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?, ?)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value`, timeConfigKey, string(data))
+	return err
+}
 
 // Snapshot writes a consistent copy of the database, including anything not
 // yet checkpointed out of the WAL, to path, which must not already exist.

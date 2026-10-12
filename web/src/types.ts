@@ -92,6 +92,23 @@ export interface InstallDefaultsResponse {
   demo_mode?: boolean;
 }
 
+export type TimeConformanceState = 'conformant' | 'pending' | 'drifting' | 'unsupported' | 'unknown';
+
+export interface TimeConformance {
+  id: number;
+  name: string;
+  type: string;
+  status: string;
+  ntp_server: string;
+  clock_synced: boolean;
+  state: TimeConformanceState;
+}
+
+export interface TimeConfigResponse {
+  ntp_server: string;
+  devices: TimeConformance[];
+}
+
 export interface DiscoveryCandidate {
   ip: string;
   port: number;

@@ -70,6 +70,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/install-agent", s.handleInstallAgent)
 	mux.HandleFunc("/api/settings/install-defaults", s.handleInstallDefaults)
 	mux.HandleFunc("/api/settings/system", s.handleSystemConfig)
+	mux.HandleFunc("/api/settings/time", s.handleTimeConfig)
 	mux.HandleFunc("/api/robots", s.handleListRobots)
 	mux.HandleFunc("/api/robots/", s.handleRobotSubroutes)
 	mux.HandleFunc("/api/robots/command/broadcast", s.handleRobotCommandBroadcast)
@@ -364,6 +365,17 @@ func (s *Server) handleInstallDefaults(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleTimeConfig(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.Controller.GetTimeConfig(w, r)
+	case http.MethodPut:
+		s.Controller.UpdateTimeConfig(w, r)
+	default:
+		methodNotAllowed(w)
+	}
+}
+
 func (s *Server) handleInstallAgent(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
@@ -500,6 +512,9 @@ type statusPayload struct {
 	Camera    string      `json:"camera,omitempty"`
 	CameraRes string      `json:"camera_resolution,omitempty"`
 	Results   []agent.Job `json:"results,omitempty"`
+	// Nil from agents that predate configure_time.
+	NTPServer   *string `json:"ntp_server,omitempty"`
+	ClockSynced bool    `json:"clock_synced,omitempty"`
 }
 
 func (s *Server) subscribeStatusUpdates() {
@@ -543,6 +558,7 @@ func (s *Server) subscribeStatusUpdates() {
 
 		s.Controller.ProcessJobResults(agentID, payload.Results)
 		s.Controller.DeliverQueuedJobs(agentID)
+		s.Controller.EnsureTimeConformance(agentID, payload.NTPServer, payload.ClockSynced)
 
 		// If new robot, fetch ID
 		if dbID == 0 {

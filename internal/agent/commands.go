@@ -80,6 +80,13 @@ type IdentifyData struct {
 	URL  string `json:"url,omitempty"`
 }
 
+// ConfigureTimeData sets the NTP server the device syncs to. It is desired
+// state: the controller re-sends it to any device reporting another server.
+// An empty NTPServer removes the override, restoring the distro's servers.
+type ConfigureTimeData struct {
+	NTPServer string `json:"ntp_server"`
+}
+
 // SyncTimeData carries the controller's wall clock. The controller stamps it
 // as the command is published, not when it is queued, so time spent waiting
 // in the outbox does not skew it.

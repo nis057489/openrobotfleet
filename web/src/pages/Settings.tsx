@@ -1,7 +1,7 @@
-import { Save, Loader2, Download, Upload, Database, Eye, EyeOff } from "lucide-react";
+import { Save, Loader2, Download, Upload, Database, Eye, EyeOff, Clock } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
-import { getInstallDefaults, updateInstallDefaults, getSystemConfig } from "../api";
-import { InstallConfig } from "../types";
+import { getInstallDefaults, updateInstallDefaults, getSystemConfig, getTimeConfig, updateTimeConfig } from "../api";
+import { InstallConfig, TimeConformance, TimeConformanceState } from "../types";
 import { useTranslation } from "react-i18next";
 import { useNotification } from "../contexts/NotificationContext";
 
@@ -139,6 +139,8 @@ export function Settings() {
                 </div>
             </div>
 
+            <TimeSyncSection />
+
             {/* Database Management */}
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <div className="p-6 border-b border-gray-100">
@@ -188,6 +190,114 @@ export function Settings() {
                         </>
                     )}
                 </div>
+            </div>
+        </div>
+    );
+}
+
+const timeStateStyles: Record<TimeConformanceState, string> = {
+    conformant: "bg-green-50 text-green-700 border-green-200",
+    pending: "bg-amber-50 text-amber-700 border-amber-200",
+    drifting: "bg-amber-50 text-amber-700 border-amber-200",
+    unsupported: "bg-red-50 text-red-700 border-red-200",
+    unknown: "bg-gray-50 text-gray-500 border-gray-200",
+};
+
+// TimeSyncSection sets the NTP server every device is kept pointed at, and
+// shows which devices currently conform.
+function TimeSyncSection() {
+    const { t } = useTranslation();
+    const { success, error } = useNotification();
+    const [ntpServer, setNtpServer] = useState("");
+    const [devices, setDevices] = useState<TimeConformance[]>([]);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        const load = () => getTimeConfig()
+            .then(data => setDevices(data.devices))
+            .catch(err => console.error(err));
+        getTimeConfig()
+            .then(data => {
+                setNtpServer(data.ntp_server);
+                setDevices(data.devices);
+            })
+            .catch(err => console.error(err));
+        // Conformance comes from heartbeats, so keep it current.
+        const timer = setInterval(load, 10000);
+        return () => clearInterval(timer);
+    }, []);
+
+    const handleSave = async () => {
+        setSaving(true);
+        try {
+            const res = await updateTimeConfig(ntpServer.trim());
+            success(t("settings.timeSyncSaved", { count: res.queued }));
+            const data = await getTimeConfig();
+            setDevices(data.devices);
+        } catch (err) {
+            error(err instanceof Error ? err.message : t("settings.saveError"));
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const conformant = devices.filter(d => d.state === "conformant").length;
+
+    return (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="p-6 border-b border-gray-100">
+                <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                    <Clock size={20} className="text-blue-500" />
+                    {t("settings.timeSync")}
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">{t("settings.timeSyncDesc")}</p>
+            </div>
+            <div className="p-6 space-y-6">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t("settings.ntpServer")}</label>
+                    <div className="flex gap-2">
+                        <input
+                            type="text"
+                            value={ntpServer}
+                            onChange={e => setNtpServer(e.target.value)}
+                            placeholder="192.168.100.1"
+                            className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm"
+                        />
+                        <button
+                            onClick={handleSave}
+                            disabled={saving}
+                            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                        >
+                            {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                            {t("settings.applyToFleet")}
+                        </button>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">{t("settings.ntpServerHint")}</p>
+                </div>
+
+                {devices.length > 0 && (
+                    <div>
+                        <div className="text-sm font-medium text-gray-700 mb-2">
+                            {t("settings.timeConformance", { conformant, total: devices.length })}
+                        </div>
+                        <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 overflow-x-auto">
+                            {devices.map(d => (
+                                <div key={d.id} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+                                    <div className="min-w-0">
+                                        <span className="font-medium text-gray-900">{d.name}</span>
+                                        <span className="ml-2 text-xs text-gray-400">{d.type}</span>
+                                    </div>
+                                    <div className="flex items-center gap-3 flex-shrink-0">
+                                        <span className="font-mono text-xs text-gray-500">{d.ntp_server || "—"}</span>
+                                        <span className={`px-2 py-0.5 rounded-full border text-xs ${timeStateStyles[d.state]}`}>
+                                            {t(`settings.timeState.${d.state}`)}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

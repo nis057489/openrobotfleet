@@ -17,6 +17,7 @@ import (
 var durableCommandTypes = map[string]bool{
 	"configure_network": true,
 	"set_hostname":      true,
+	"configure_time":    true,
 }
 
 func (c *Controller) publishJob(job db.Job) error {

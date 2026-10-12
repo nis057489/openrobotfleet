@@ -6,6 +6,7 @@ import {
   Job,
   InstallConfig,
   InstallDefaultsResponse,
+  TimeConfigResponse,
   DiscoveryCandidate,
   GoldenImageConfig,
   Group,
@@ -154,6 +155,18 @@ export function saveInstallConfig(
     method: 'PUT',
     headers: JSON_HEADERS,
     body: JSON.stringify(payload),
+  });
+}
+
+export function getTimeConfig(): Promise<TimeConfigResponse> {
+  return request<TimeConfigResponse>('/api/settings/time');
+}
+
+export function updateTimeConfig(ntpServer: string): Promise<{ ntp_server: string; queued: number }> {
+  return request<{ ntp_server: string; queued: number }>('/api/settings/time', {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ ntp_server: ntpServer }),
   });
 }
 

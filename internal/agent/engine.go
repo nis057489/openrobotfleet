@@ -25,6 +25,7 @@ const (
 var durableCommandTypes = map[string]bool{
 	"configure_network": true,
 	"set_hostname":      true,
+	"configure_time":    true,
 }
 
 type AgentEngine struct {
@@ -229,6 +230,10 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 		Camera    string `json:"camera,omitempty"`
 		CameraRes string `json:"camera_resolution,omitempty"`
 		Results   []Job  `json:"results,omitempty"`
+		// Always sent, even when empty: the controller tells agents that
+		// support configure_time apart by the field being present.
+		NTPServer   string `json:"ntp_server"`
+		ClockSynced bool   `json:"clock_synced"`
 	}
 
 	s := status{
@@ -239,6 +244,9 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 		Name:    e.Config.AgentID,
 		Camera:  CameraServiceState(),
 		Results: e.JobManager.Results(),
+
+		NTPServer:   ConfiguredNTPServer(),
+		ClockSynced: ClockSynchronized(),
 	}
 	if hn, err := os.Hostname(); err == nil && hn != "" {
 		s.Name = hn
@@ -294,6 +302,12 @@ func (e *AgentEngine) mapCommandToAction(ctx context.Context, cmd Command) func(
 			return func() error { return err }
 		}
 		return func() error { return HandleUpdateRepo(cfg, payload) }
+	case "configure_time":
+		var payload ConfigureTimeData
+		if err := json.Unmarshal(cmd.Data, &payload); err != nil {
+			return func() error { return err }
+		}
+		return func() error { return HandleConfigureTime(payload) }
 	case "sync_time":
 		var payload SyncTimeData
 		if err := json.Unmarshal(cmd.Data, &payload); err != nil {
