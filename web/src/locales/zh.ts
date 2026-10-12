@@ -155,6 +155,11 @@ export const zh = {
         unsupported: "代理版本过旧",
         unknown: "未报告",
       },
+      agentUpdate: {
+        updating: "正在更新过旧的代理…",
+        updated: "代理已更新",
+        failed: "代理更新失败（每小时重试）",
+      },
       dbManagement: "数据库管理",
       dbManagementDesc: "备份和恢复控制器数据库。",
       backup: "备份数据库",

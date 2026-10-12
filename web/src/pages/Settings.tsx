@@ -286,6 +286,12 @@ function TimeSyncSection() {
                                     <div className="min-w-0">
                                         <span className="font-medium text-gray-900">{d.name}</span>
                                         <span className="ml-2 text-xs text-gray-400">{d.type}</span>
+                                        {d.agent_update && (
+                                            <div className={`text-xs ${d.agent_update === "failed" ? "text-red-600" : "text-gray-500"}`}>
+                                                {t(`settings.agentUpdate.${d.agent_update}`)}
+                                                {d.agent_update_error && `: ${d.agent_update_error}`}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="flex items-center gap-3 flex-shrink-0">
                                         <span className="font-mono text-xs text-gray-500">{d.ntp_server || "—"}</span>

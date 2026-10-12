@@ -156,6 +156,11 @@ export const en = {
         unsupported: "Agent too old",
         unknown: "Not reporting",
       },
+      agentUpdate: {
+        updating: "Updating outdated agent…",
+        updated: "Agent updated",
+        failed: "Agent update failed (retrying hourly)",
+      },
       dbManagement: "Database Management",
       dbManagementDesc: "Backup and restore the controller database.",
       backup: "Backup Database",

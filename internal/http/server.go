@@ -515,6 +515,7 @@ type statusPayload struct {
 	// Nil from agents that predate configure_time.
 	NTPServer   *string `json:"ntp_server,omitempty"`
 	ClockSynced bool    `json:"clock_synced,omitempty"`
+	AgentSHA256 string  `json:"agent_sha256,omitempty"`
 }
 
 func (s *Server) subscribeStatusUpdates() {
@@ -559,6 +560,7 @@ func (s *Server) subscribeStatusUpdates() {
 		s.Controller.ProcessJobResults(agentID, payload.Results)
 		s.Controller.DeliverQueuedJobs(agentID)
 		s.Controller.EnsureTimeConformance(agentID, payload.NTPServer, payload.ClockSynced)
+		s.Controller.EnsureAgentCurrent(agentID, payload.AgentSHA256)
 
 		// If new robot, fetch ID
 		if dbID == 0 {

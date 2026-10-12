@@ -236,6 +236,7 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 		// support configure_time apart by the field being present.
 		NTPServer   string `json:"ntp_server"`
 		ClockSynced bool   `json:"clock_synced"`
+		AgentSHA256 string `json:"agent_sha256,omitempty"`
 	}
 
 	s := status{
@@ -249,6 +250,7 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 
 		NTPServer:   ConfiguredNTPServer(),
 		ClockSynced: ClockSynchronized(),
+		AgentSHA256: BinarySHA256(),
 	}
 	if hn, err := os.Hostname(); err == nil && hn != "" {
 		s.Name = hn

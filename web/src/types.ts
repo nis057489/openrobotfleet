@@ -102,6 +102,9 @@ export interface TimeConformance {
   ntp_server: string;
   clock_synced: boolean;
   state: TimeConformanceState;
+  /** Latest automatic agent update, when the device ran an outdated agent. */
+  agent_update?: 'updating' | 'updated' | 'failed';
+  agent_update_error?: string;
 }
 
 export interface TimeConfigResponse {

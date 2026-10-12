@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,6 +35,12 @@ type Controller struct {
 	jobStatesMu    sync.RWMutex
 	batchDevicesMu sync.Mutex
 	batchDevices   map[int64]chan struct{}
+
+	agentUpdatesMu  sync.Mutex
+	agentUpdates    map[int64]agentUpdate // by robot ID
+	agentUpdateSlot chan struct{}         // one automatic update at a time
+	// reinstall replaces reinstallAgent in tests.
+	reinstall func(context.Context, *db.Robot) (time.Time, error)
 }
 
 func New(dbConn *db.DB, mqttClient *mqttc.Client) *Controller {

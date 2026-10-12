@@ -44,6 +44,9 @@ type timeConformance struct {
 	// unsupported (agent too old to report), or unknown (not heard from
 	// since the controller started).
 	State string `json:"state"`
+	// Latest automatic agent update: "", updating, updated or failed.
+	AgentUpdate      string `json:"agent_update,omitempty"`
+	AgentUpdateError string `json:"agent_update_error,omitempty"`
 }
 
 // GetTimeConfig returns the fleet NTP setting and each device's conformance.
@@ -82,6 +85,9 @@ func (c *Controller) GetTimeConfig(w http.ResponseWriter, r *http.Request) {
 			d.State = "conformant"
 		}
 		d.NTPServer, d.ClockSynced = rep.NTPServer, rep.ClockSynced
+		if u, ok := c.agentUpdateFor(robot.ID); ok {
+			d.AgentUpdate, d.AgentUpdateError = u.State, u.Error
+		}
 		devices = append(devices, d)
 	}
 	reportedTime.mu.RUnlock()
