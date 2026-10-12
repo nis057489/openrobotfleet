@@ -50,11 +50,14 @@ export function LaptopDetail() {
                 .then(([robotData, sysConfig, installDefaults]) => {
                     setRobot(robotData);
                     setDemoMode(sysConfig.demo_mode);
-                    if (installDefaults.install_config?.user) {
-                        setDefaultSshUser(installDefaults.install_config.user);
+                    const defaults = installDefaults.laptop_install_config?.user
+                        ? installDefaults.laptop_install_config
+                        : installDefaults.install_config;
+                    if (defaults?.user) {
+                        setDefaultSshUser(defaults.user);
                     }
-                    if (installDefaults.install_config?.ssh_public_key) {
-                        setDefaultSshPublicKey(installDefaults.install_config.ssh_public_key);
+                    if (defaults?.ssh_public_key) {
+                        setDefaultSshPublicKey(defaults.ssh_public_key);
                     }
                 })
                 .catch(console.error)

@@ -39,12 +39,19 @@ export function InstallAgent() {
         const type = query.get("type") || "robot";
 
         getInstallDefaults().then((data) => {
-            if (data.install_config) {
+            // Laptops have their own credentials in Settings; fall back to the
+            // robot defaults only when none are configured.
+            const defaults = type === "laptop"
+                ? (data.laptop_install_config?.user ? data.laptop_install_config : data.install_config)
+                : data.install_config;
+            if (defaults) {
                 setFormData(prev => ({
                     ...prev,
                     type,
-                    user: data.install_config?.user || prev.user,
-                    ssh_key: data.install_config?.ssh_key || prev.ssh_key,
+                    user: defaults.user || prev.user,
+                    ssh_key: defaults.ssh_key || prev.ssh_key,
+                    password: defaults.password || prev.password,
+                    sudo_password: defaults.sudo_password || prev.sudo_password,
                 }));
             } else {
                 setFormData(prev => ({ ...prev, type }));
