@@ -6,7 +6,7 @@
 
 OpenRobotFleet is a fleet management platform for ROS 2 teaching laboratories and research groups. It removes the repetitive work involved in maintaining multiple robots so instructors, researchers and teaching assistants can spend more time teaching and experimenting.
 
-Whether you're running 6 TurtleBots for a lab class or dozens of robots across multiple projects, OpenRobotFleet helps keep every machine in a known, consistent state.
+Whether you're running 6 TurtleBots for a lab class or dozens of robots across multiple projects, OpenRobotFleet helps keep every machine in a known, consistent state. 
 
 ---
 

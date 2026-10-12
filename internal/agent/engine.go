@@ -349,7 +349,14 @@ func (e *AgentEngine) mapCommandToAction(ctx context.Context, cmd Command) func(
 		}
 		return func() error {
 			defer e.packages.requestRefresh()
-			return HandleSystemUpdate(payload)
+			if err := HandleSystemUpdate(payload); err != nil {
+				return err
+			}
+			// An upgrade may have brought a new stock params file.
+			if err := EnsureNav2Config(); err != nil {
+				log.Printf("[agent] %v", err)
+			}
+			return nil
 		}
 	case "restart_ros":
 		return func() error { return HandleRestartROS(cfg) }

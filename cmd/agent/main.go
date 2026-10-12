@@ -44,6 +44,10 @@ func main() {
 		log.Printf("failed to install ROS service override: %v", err)
 	}
 
+	if err := agent.EnsureNav2Config(); err != nil {
+		log.Printf("failed to apply nav2 config: %v", err)
+	}
+
 	if err := agent.EnsureCameraSetup(cfg); err != nil {
 		log.Printf("failed to set up camera: %v", err)
 	}
