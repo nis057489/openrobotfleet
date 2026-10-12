@@ -23,6 +23,7 @@ export function SemesterWizard() {
     const [doSelfTest, setDoSelfTest] = useState(false);
     const [doInstallCameraSupport, setDoInstallCameraSupport] = useState(false);
     const [doResetBashrc, setDoResetBashrc] = useState(false);
+    const [doSyncTime, setDoSyncTime] = useState(false);
     const [turtlebot3Model, setTurtlebot3Model] = useState("waffle_pi");
     const [qtQpaPlatform, setQtQpaPlatform] = useState("");
     const [doSystemUpgrade, setDoSystemUpgrade] = useState(false);
@@ -77,7 +78,7 @@ export function SemesterWizard() {
         doInstallPackages && packages.length > 0 && `sudo apt install -y ${packages.join(" ")}`,
     ].filter(Boolean).join(" && ");
 
-    const anyAction = doResetLogs || doUpdateRepo || doReinstall || doSelfTest || doApplyScenario || doInstallCameraSupport || doResetBashrc || doSystemUpgrade || doInstallPackages || doFactoryReset;
+    const anyAction = doResetLogs || doUpdateRepo || doReinstall || doSelfTest || doApplyScenario || doInstallCameraSupport || doResetBashrc || doSyncTime || doSystemUpgrade || doInstallPackages || doFactoryReset;
     const canExecute = !executing && selectedIds.size > 0 && anyAction && !(doInstallPackages && packages.length === 0);
 
     const handleExecute = async () => {
@@ -93,6 +94,7 @@ export function SemesterWizard() {
                 run_self_test: doSelfTest,
                 install_camera_support: doInstallCameraSupport,
                 reset_bashrc: doResetBashrc,
+                sync_time: doSyncTime,
                 turtlebot3_model: turtlebot3Model,
                 qt_qpa_platform: qtQpaPlatform,
                 system_upgrade: doSystemUpgrade,
@@ -174,6 +176,31 @@ export function SemesterWizard() {
                     <div>
                         <h2 className="text-lg font-semibold mb-4">{t("semesterWizard.configureActions")}</h2>
                         <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+
+                            {/* Sync Time */}
+                            <label className={`flex items-start gap-3 ${doFactoryReset ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
+                                <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doSyncTime ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
+                                    {doSyncTime && <Check size={14} />}
+                                    <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={doSyncTime}
+                                        disabled={doFactoryReset}
+                                        onChange={e => {
+                                            setDoSyncTime(e.target.checked);
+                                            if (e.target.checked) setDoFactoryReset(false);
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <div className="font-medium text-gray-900 flex items-center gap-2">
+                                        <Clock size={16} /> {t("semesterWizard.syncTime")}
+                                    </div>
+                                    <p className="text-sm text-gray-500">{t("semesterWizard.syncTimeDesc")}</p>
+                                </div>
+                            </label>
+
+                            <hr className="border-gray-100" />
 
                             {/* Reset Logs */}
                             <label className={`flex items-start gap-3 ${doFactoryReset ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
@@ -501,6 +528,7 @@ export function SemesterWizard() {
                                                 setDoApplyScenario(false);
                                                 setDoReinstall(false);
                                                 setDoResetBashrc(false);
+                                                setDoSyncTime(false);
                                                 setDoSystemUpgrade(false);
                                                 setDoInstallPackages(false);
                                             }

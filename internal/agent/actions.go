@@ -52,6 +52,25 @@ func HandleSetHostname(data SetHostnameData) error {
 	return nil
 }
 
+// HandleSyncTime sets the device's clock to the controller's. receivedAt is
+// when the command arrived; the time it then waited in the job queue is
+// added on, measured with the monotonic clock so a wrong wall clock does not
+// affect it. Any NTP client on the device may later move the clock again.
+func HandleSyncTime(data SyncTimeData, receivedAt time.Time) error {
+	if data.UnixMilli <= 0 {
+		return errors.New("controller time required")
+	}
+	target := time.UnixMilli(data.UnixMilli).Add(time.Since(receivedAt))
+	stamp := fmt.Sprintf("@%d.%03d", target.Unix(), target.Nanosecond()/int(time.Millisecond))
+	if out, err := runCmd(defaultCmdTimeout, "date", "-u", "-s", stamp); err != nil {
+		return fmt.Errorf("set date: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	// Best-effort: Raspberry Pis have no RTC to write.
+	_, _ = runCmd(defaultCmdTimeout, "hwclock", "--systohc", "--utc")
+	log.Printf("[agent] set clock to %s", target.UTC().Format(time.RFC3339))
+	return nil
+}
+
 // HandleResetLogs truncates or clears the provided log files.
 func HandleResetLogs(cfg Config, data ResetLogsData) error {
 	paths := data.Paths

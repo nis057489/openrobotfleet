@@ -25,6 +25,16 @@ func (c *Controller) publishJob(job db.Job) error {
 		return err
 	}
 	cmd.ID = strconv.FormatInt(job.ID, 10)
+	if cmd.Type == "sync_time" {
+		// Stamp on every publish, not at queue time: a job held in the
+		// outbox while the device was offline must still carry the
+		// current time.
+		data, err := json.Marshal(agent.SyncTimeData{UnixMilli: time.Now().UnixMilli()})
+		if err != nil {
+			return err
+		}
+		cmd.Data = data
+	}
 	payload, err := json.Marshal(cmd)
 	if err != nil {
 		return err

@@ -107,6 +107,7 @@ func (e *AgentEngine) mqttHandler(_ mqttlib.Client, msg mqttlib.Message) {
 		log.Printf("invalid command: %v", err)
 		return
 	}
+	cmd.receivedAt = time.Now()
 	if cmd.Type == "stop" {
 		e.acceptCommand(cmd)
 		return
@@ -125,7 +126,7 @@ func (e *AgentEngine) acceptCommand(cmd Command) {
 		return
 	}
 	err := e.JobManager.StartContextJob(cmd.ID, cmd.Type, cmd.Data, func(ctx context.Context) error {
-		if !durableCommandTypes[cmd.Type] && (cmd.Timestamp == 0 || time.Since(time.Unix(cmd.Timestamp, 0)) > commandStaleThreshold) {
+		if !durableCommandTypes[cmd.Type] && (cmd.Timestamp == 0 || time.Since(cmd.receivedAt) > commandStaleThreshold) {
 			return fmt.Errorf("command expired before execution")
 		}
 		action := e.mapCommandToAction(ctx, cmd)
@@ -293,6 +294,12 @@ func (e *AgentEngine) mapCommandToAction(ctx context.Context, cmd Command) func(
 			return func() error { return err }
 		}
 		return func() error { return HandleUpdateRepo(cfg, payload) }
+	case "sync_time":
+		var payload SyncTimeData
+		if err := json.Unmarshal(cmd.Data, &payload); err != nil {
+			return func() error { return err }
+		}
+		return func() error { return HandleSyncTime(payload, cmd.receivedAt) }
 	case "reset_logs":
 		var payload ResetLogsData
 		if err := json.Unmarshal(cmd.Data, &payload); err != nil {

@@ -196,6 +196,7 @@ export interface SemesterRequest {
   run_self_test: boolean;
   install_camera_support?: boolean;
   reset_bashrc?: boolean;
+  sync_time?: boolean;
   turtlebot3_model?: string;
   qt_qpa_platform?: string;
   system_upgrade?: boolean;

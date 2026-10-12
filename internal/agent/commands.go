@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"time"
 )
 
 // Command represents a controller-issued instruction handled by an agent.
@@ -11,6 +12,11 @@ type Command struct {
 	Type       string          `json:"type"`
 	Data       json.RawMessage `json:"data"`
 	Timestamp  int64           `json:"timestamp,omitempty"` // unix seconds, set at publish time
+
+	// receivedAt is when this agent took the command off MQTT, by its own
+	// clock. Staleness is measured from here: Timestamp comes from the
+	// controller's clock, which can drift minutes away from the device's.
+	receivedAt time.Time
 }
 
 // UpdateRepoData describes git repo sync instructions.
@@ -72,6 +78,13 @@ type IdentifyData struct {
 	Name string `json:"name,omitempty"`
 	IP   string `json:"ip,omitempty"`
 	URL  string `json:"url,omitempty"`
+}
+
+// SyncTimeData carries the controller's wall clock. The controller stamps it
+// as the command is published, not when it is queued, so time spent waiting
+// in the outbox does not skew it.
+type SyncTimeData struct {
+	UnixMilli int64 `json:"unix_ms"`
 }
 
 // SetHostnameData describes an OS hostname update, independent of the

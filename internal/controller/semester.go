@@ -27,6 +27,7 @@ type semesterRequest struct {
 	RunSelfTest          bool                 `json:"run_self_test"`
 	InstallCameraSupport bool                 `json:"install_camera_support"`
 	ResetBashrc          bool                 `json:"reset_bashrc"`
+	SyncTime             bool                 `json:"sync_time"`
 	TurtleBot3Model      string               `json:"turtlebot3_model"`
 	QtQPAPlatform        string               `json:"qt_qpa_platform"`
 	SystemUpgrade        bool                 `json:"system_upgrade"`
@@ -357,7 +358,7 @@ func (c *Controller) processSemesterBatch(ctx context.Context, req semesterReque
 					c.reapplyGroupForRobot(ctx, id)
 
 					// Wait for reconnect
-					if req.ResetLogs || req.UpdateRepo || req.ApplyScenarios {
+					if req.SyncTime || req.ResetLogs || req.UpdateRepo || req.ApplyScenarios {
 						log.Printf("semester: waiting for %s to reconnect...", robot.Name)
 						batches.setRobotState(run, id, "waiting_for_connection")
 
@@ -381,6 +382,20 @@ func (c *Controller) processSemesterBatch(ctx context.Context, req semesterReque
 							return
 						}
 					}
+				}
+			}
+
+			// Before any other command, so later steps run with the
+			// device's clock matching the controller's.
+			if req.SyncTime {
+				log.Printf("semester: syncing time for %s", robot.Name)
+				batches.setRobotState(run, id, "syncing_time")
+
+				cmd := agent.Command{Type: "sync_time", Data: []byte("{}")}
+				if _, err := c.runRobotCommand(ctx, robot, cmd); err != nil {
+					log.Printf("semester: command failed: sync_time for %s: %v", robot.Name, err)
+					batches.failRobot(run, id, err.Error())
+					return
 				}
 			}
 
