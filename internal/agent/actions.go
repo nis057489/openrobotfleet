@@ -427,6 +427,47 @@ func firstNonOption(args []string) string {
 	return strings.Join(args, " ")
 }
 
+// dpkgLockWait matches the DPkg::Lock::Timeout aptGet gives apt-get.
+const dpkgLockWait = 5 * time.Minute
+
+// repairInterruptedDpkg finishes installs an earlier interruption (a power
+// cut mid-upgrade) left half-done; apt refuses to do anything until it is.
+// Unlike apt-get, dpkg does not wait for its lock, and right after boot
+// unattended-upgrades often holds it, so retry until it is free.
+func repairInterruptedDpkg() error {
+	if !dpkgNeedsRepair() {
+		return nil
+	}
+	deadline := time.Now().Add(dpkgLockWait)
+	for {
+		out, err := runPackageTool("dpkg", "--configure", "-a", "--force-confdef", "--force-confold")
+		if err == nil {
+			return nil
+		}
+		if !isDpkgLockError(out) || time.Now().After(deadline) {
+			return err
+		}
+		log.Printf("[agent] system update: waiting for the dpkg lock to finish an interrupted install")
+		time.Sleep(5 * time.Second)
+	}
+}
+
+// dpkgNeedsRepair reports half-installed packages, or a journal of pending
+// status updates, which is what apt calls "dpkg was interrupted". Reading
+// these needs no lock.
+func dpkgNeedsRepair() bool {
+	if entries, err := os.ReadDir("/var/lib/dpkg/updates"); err == nil && len(entries) > 0 {
+		return true
+	}
+	out, err := runCmd(defaultCmdTimeout, "dpkg", "--audit")
+	return err != nil || len(strings.TrimSpace(string(out))) > 0
+}
+
+func isDpkgLockError(out []byte) bool {
+	s := string(out)
+	return strings.Contains(s, "lock was locked by another process") || strings.Contains(s, "database is locked by another process")
+}
+
 // aptSummaryPattern matches apt's closing summary, e.g. "3 upgraded, 1 newly
 // installed, 0 to remove and 2 not upgraded."
 var aptSummaryPattern = regexp.MustCompile(`(?m)^\d+ upgraded, .*$`)
@@ -443,9 +484,7 @@ func HandleSystemUpdate(data SystemUpdateData) error {
 	if err := ValidatePackageNames(data.Packages); err != nil {
 		return err
 	}
-	// Finish any install an earlier interruption left half-done; apt
-	// refuses to do anything until it is.
-	if _, err := runPackageTool("dpkg", "--configure", "-a", "--force-confdef", "--force-confold"); err != nil {
+	if err := repairInterruptedDpkg(); err != nil {
 		return err
 	}
 	log.Printf("[agent] system update: refreshing package lists")

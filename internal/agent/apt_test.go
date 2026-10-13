@@ -22,3 +22,15 @@ func TestParseInstalledPackagesKeepsOnlyInstalled(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+func TestIsDpkgLockError(t *testing.T) {
+	for out, want := range map[string]bool{
+		"dpkg: error: dpkg frontend lock was locked by another process with pid 5275\nNote: removing the lock file is always wrong":   true,
+		"dpkg: error: dpkg status database is locked by another process":                                                              true,
+		"dpkg: error processing package ros-humble-foo (--configure):\n installed post-installation script subprocess returned error": false,
+	} {
+		if got := isDpkgLockError([]byte(out)); got != want {
+			t.Errorf("isDpkgLockError(%q) = %v", out[:40], got)
+		}
+	}
+}
