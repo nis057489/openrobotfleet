@@ -25,6 +25,7 @@ export function SemesterWizard() {
     const [doResetBashrc, setDoResetBashrc] = useState(false);
     const [doSyncTime, setDoSyncTime] = useState(false);
     const [doRebootIfRequired, setDoRebootIfRequired] = useState(false);
+    const [doInstallNav2, setDoInstallNav2] = useState(false);
     const [turtlebot3Model, setTurtlebot3Model] = useState("waffle_pi");
     const [qtQpaPlatform, setQtQpaPlatform] = useState("");
     const [doSystemUpgrade, setDoSystemUpgrade] = useState(false);
@@ -72,18 +73,28 @@ export function SemesterWizard() {
     };
 
     // Space-, comma- or newline-separated, as typed after `apt install -y`.
-    // Tolerate a pasted "sudo apt install -y ..." command: keep only the names.
+    // Tolerate a pasted "sudo apt install -y ..." command, including
+    // backslash line continuations and shell-escaped globs (tb\*): keep
+    // only the names. $ROS_DISTRO is filled in on each device.
     const packages = packagesText
+        .replace(/\\\s*\n/g, " ")
+        .replace(/\\\*/g, "*")
         .replace(/^\s*(sudo\s+)?(apt|apt-get)\s+install\s+((-y|--yes)\s+)?/, "")
         .split(/[\s,]+/)
         .filter(Boolean);
+    // Mirrors agent.Nav2LaptopPackages.
+    const nav2Packages = [
+        "ros-$ROS_DISTRO-navigation2", "ros-$ROS_DISTRO-nav2-bringup", "ros-$ROS_DISTRO-nav2-minimal-tb*",
+        "ros-$ROS_DISTRO-turtlebot3", "ros-$ROS_DISTRO-turtlebot3-msgs", "ros-$ROS_DISTRO-turtlebot3-simulations",
+    ];
     const aptCommand = [
         "sudo apt update",
         doSystemUpgrade && "sudo apt upgrade -y",
         doInstallPackages && packages.length > 0 && `sudo apt install -y ${packages.join(" ")}`,
+        doInstallNav2 && `sudo apt install -y ${nav2Packages.join(" ")}  # ${t("semesterWizard.laptopsOnly")}`,
     ].filter(Boolean).join(" && ");
 
-    const anyAction = doResetLogs || doUpdateRepo || doReinstall || doSelfTest || doApplyScenario || doInstallCameraSupport || doResetBashrc || doSyncTime || doRebootIfRequired || doSystemUpgrade || doInstallPackages || doFactoryReset;
+    const anyAction = doResetLogs || doUpdateRepo || doReinstall || doSelfTest || doApplyScenario || doInstallCameraSupport || doResetBashrc || doSyncTime || doRebootIfRequired || doSystemUpgrade || doInstallPackages || doInstallNav2 || doFactoryReset;
     const canExecute = !executing && selectedIds.size > 0 && anyAction && !(doInstallPackages && packages.length === 0);
 
     const handleExecute = async () => {
@@ -105,6 +116,7 @@ export function SemesterWizard() {
                 qt_qpa_platform: qtQpaPlatform,
                 system_upgrade: doSystemUpgrade,
                 install_packages: doInstallPackages,
+                install_nav2: doInstallNav2,
                 packages: doInstallPackages ? packages : [],
                 repo_config: {
                     repo: repoUrl,
@@ -283,6 +295,32 @@ export function SemesterWizard() {
 
                             <hr className="border-gray-100" />
 
+                            {/* Install Nav2 (laptops) */}
+                            <label className={`flex items-start gap-3 ${doFactoryReset ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
+                                <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doInstallNav2 ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
+                                    {doInstallNav2 && <Check size={14} />}
+                                    <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={doInstallNav2}
+                                        disabled={doFactoryReset}
+                                        onChange={e => {
+                                            setDoInstallNav2(e.target.checked);
+                                            if (e.target.checked) setDoFactoryReset(false);
+                                        }}
+                                    />
+                                </div>
+                                <div className="min-w-0">
+                                    <div className="font-medium text-gray-900 flex items-center gap-2">
+                                        <Package size={16} /> {t("semesterWizard.installNav2")}
+                                    </div>
+                                    <p className="text-sm text-gray-500">{t("semesterWizard.installNav2Desc")}</p>
+                                    <code className="block mt-1 text-xs text-gray-500 font-mono break-all">{nav2Packages.join(" ")}</code>
+                                </div>
+                            </label>
+
+                            <hr className="border-gray-100" />
+
                             {/* Install Packages */}
                             <label className={`flex items-start gap-3 ${doFactoryReset ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
                                 <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${doInstallPackages ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>
@@ -315,7 +353,7 @@ export function SemesterWizard() {
                                 </div>
                             </label>
 
-                            {(doSystemUpgrade || doInstallPackages) && (
+                            {(doSystemUpgrade || doInstallPackages || doInstallNav2) && (
                                 <div className="text-xs text-gray-500">
                                     {t("semesterWizard.aptCommandPreview")}
                                     <code className="block mt-1 px-2 py-1 bg-gray-50 border border-gray-200 rounded font-mono text-gray-700 break-all">{aptCommand}</code>
@@ -561,6 +599,7 @@ export function SemesterWizard() {
                                                 setDoRebootIfRequired(false);
                                                 setDoSystemUpgrade(false);
                                                 setDoInstallPackages(false);
+                                                setDoInstallNav2(false);
                                             }
                                         }}
                                     />

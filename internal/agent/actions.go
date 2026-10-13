@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -354,18 +355,99 @@ func HandleResetBashrc(cfg Config, data ResetBashrcData) error {
 
 // aptPackagePattern matches a Debian package name, optionally with an
 // :arch qualifier and/or =version pin (e.g. ros-humble-image-transport,
-// libfoo:arm64, vim=2:8.2.3995-1ubuntu2). It never matches a leading '-', so
-// a "package" can't smuggle an option into apt-get.
-var aptPackagePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]+(:[a-z0-9-]+)?(=[A-Za-z0-9.+~:-]+)?$`)
+// libfoo:arm64, vim=2:8.2.3995-1ubuntu2). '*' and '?' are allowed as apt-get
+// globs (ros-humble-nav2-minimal-tb*); apt-get expands them itself, as no
+// shell is involved. It never matches a leading '-', so a "package" can't
+// smuggle an option into apt-get.
+var aptPackagePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9+.*?-]+(:[a-z0-9-]+)?(=[A-Za-z0-9.+~:-]+)?$`)
 
-// ValidatePackageNames rejects anything that isn't a plain apt package name.
+// minGlobPrefix is how much literal name a glob needs before its first
+// wildcard, so "a*" can't select a large part of the archive.
+const minGlobPrefix = 8
+
+// Nav2LaptopPackages is what the course's laptops need: nav2 and the
+// TurtleBot3 stack for SLAM, navigation and simulation. $ROS_DISTRO is
+// filled in on each device; the nav2-minimal-tb* simulations only exist
+// from Jazzy on and are skipped elsewhere (see expandPackageGlobs).
+var Nav2LaptopPackages = []string{
+	"ros-$ROS_DISTRO-navigation2",
+	"ros-$ROS_DISTRO-nav2-bringup",
+	"ros-$ROS_DISTRO-nav2-minimal-tb*",
+	"ros-$ROS_DISTRO-turtlebot3",
+	"ros-$ROS_DISTRO-turtlebot3-msgs",
+	"ros-$ROS_DISTRO-turtlebot3-simulations",
+}
+
+// ExpandROSDistro fills in $ROS_DISTRO / ${ROS_DISTRO} in package names, as
+// a shell would in a pasted apt command.
+func ExpandROSDistro(pkgs []string, distro string) []string {
+	r := strings.NewReplacer("${ROS_DISTRO}", distro, "$ROS_DISTRO", distro)
+	out := make([]string, len(pkgs))
+	for i, p := range pkgs {
+		out[i] = r.Replace(p)
+	}
+	return out
+}
+
+// ValidatePackageNames rejects anything that isn't a plain apt package name
+// or glob, allowing $ROS_DISTRO, which the agent fills in.
 func ValidatePackageNames(pkgs []string) error {
-	for _, p := range pkgs {
+	for i, p := range ExpandROSDistro(pkgs, "distro") {
 		if !aptPackagePattern.MatchString(p) {
-			return fmt.Errorf("invalid package name %q", p)
+			return fmt.Errorf("invalid package name %q", pkgs[i])
+		}
+		if w := strings.IndexAny(p, "*?"); w >= 0 && w < minGlobPrefix {
+			return fmt.Errorf("%q: a wildcard needs at least %d characters of package name before it", pkgs[i], minGlobPrefix)
 		}
 	}
 	return nil
+}
+
+// expandPackageGlobs replaces each glob with the packages it matches. A glob
+// matching nothing is dropped, as a shell glob would be: package sets differ
+// between distros (the nav2-minimal-tb* simulations exist from Jazzy on).
+// Exact names are kept as they are, so a missing one still fails the install.
+func expandPackageGlobs(pkgs []string, names func(prefix string) []string) []string {
+	var out []string
+	for _, p := range pkgs {
+		w := strings.IndexAny(p, "*?")
+		if w < 0 {
+			out = append(out, p)
+			continue
+		}
+		var matched []string
+		for _, name := range names(p[:w]) {
+			if ok, _ := path.Match(p, name); ok {
+				matched = append(matched, name)
+			}
+		}
+		if len(matched) == 0 {
+			log.Printf("[agent] system update: no package matches %s on this system; skipping it", p)
+		}
+		out = append(out, matched...)
+	}
+	return out
+}
+
+// aptPackageNames lists available packages whose names start with prefix.
+func aptPackageNames(prefix string) []string {
+	out, err := runCmd(defaultCmdTimeout, "apt-cache", "pkgnames", prefix)
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(string(out))
+}
+
+// installedROSDistro is the device's ROS distro: the agent's environment
+// (its start script sources the ROS setup) or the install under /opt/ros.
+func installedROSDistro() string {
+	if d := os.Getenv("ROS_DISTRO"); d != "" {
+		return d
+	}
+	if matches, _ := filepath.Glob("/opt/ros/*/setup.bash"); len(matches) > 0 {
+		return filepath.Base(filepath.Dir(matches[0]))
+	}
+	return ""
 }
 
 // systemUpdateTimeout bounds each apt-get step. A full upgrade on a Pi over
@@ -484,6 +566,14 @@ func HandleSystemUpdate(data SystemUpdateData) error {
 	if err := ValidatePackageNames(data.Packages); err != nil {
 		return err
 	}
+	if distro := installedROSDistro(); distro != "" {
+		data.Packages = ExpandROSDistro(data.Packages, distro)
+	}
+	for _, p := range data.Packages {
+		if strings.Contains(p, "$") {
+			return fmt.Errorf("%s: no ROS install found under /opt/ros to fill in $ROS_DISTRO", p)
+		}
+	}
 	if err := repairInterruptedDpkg(); err != nil {
 		return err
 	}
@@ -502,6 +592,8 @@ func HandleSystemUpdate(data SystemUpdateData) error {
 		}
 		logAptSummary("upgrade", out)
 	}
+	// After apt-get update, so globs are matched against current lists.
+	data.Packages = expandPackageGlobs(data.Packages, aptPackageNames)
 	if len(data.Packages) > 0 {
 		log.Printf("[agent] system update: installing %s", strings.Join(data.Packages, " "))
 		out, err := aptGet(append([]string{"install", "-y"}, data.Packages...)...)

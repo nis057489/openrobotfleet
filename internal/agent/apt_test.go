@@ -1,6 +1,9 @@
 package agent
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestAptHelpers(t *testing.T) {
 	if got := firstNonOption([]string{"-o", "DPkg::Lock::Timeout=300", "-o", "x=y", "upgrade", "-y"}); got != "upgrade" {
@@ -32,5 +35,40 @@ func TestIsDpkgLockError(t *testing.T) {
 		if got := isDpkgLockError([]byte(out)); got != want {
 			t.Errorf("isDpkgLockError(%q) = %v", out[:40], got)
 		}
+	}
+}
+
+func TestPackageNamesWithDistroAndGlobs(t *testing.T) {
+	if err := ValidatePackageNames(Nav2LaptopPackages); err != nil {
+		t.Fatal(err)
+	}
+	got := ExpandROSDistro([]string{"ros-$ROS_DISTRO-navigation2", "ros-$ROS_DISTRO-nav2-minimal-tb*", "ros-${ROS_DISTRO}-rviz2"}, "humble")
+	want := []string{"ros-humble-navigation2", "ros-humble-nav2-minimal-tb*", "ros-humble-rviz2"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v", got)
+		}
+	}
+	for _, bad := range []string{"-y", "*-o", "*", "ros*", "a*b*c", "foo;rm", "$HOME", "ros-$(id)-x", "\\*"} {
+		if ValidatePackageNames([]string{bad}) == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}
+
+func TestExpandPackageGlobs(t *testing.T) {
+	available := map[string][]string{
+		"ros-humble-nav2-minimal-tb": nil, // Humble has none
+		"ros-jazzy-nav2-minimal-tb":  {"ros-jazzy-nav2-minimal-tb3-sim", "ros-jazzy-nav2-minimal-tb4-sim", "ros-jazzy-nav2-minimal-tb4-description"},
+	}
+	names := func(prefix string) []string { return available[prefix] }
+
+	got := expandPackageGlobs([]string{"ros-humble-navigation2", "ros-humble-nav2-minimal-tb*", "ros-humble-turtlebot3"}, names)
+	if strings.Join(got, " ") != "ros-humble-navigation2 ros-humble-turtlebot3" {
+		t.Errorf("humble: %v", got)
+	}
+	got = expandPackageGlobs([]string{"ros-jazzy-nav2-minimal-tb*"}, names)
+	if len(got) != 3 {
+		t.Errorf("jazzy: %v", got)
 	}
 }

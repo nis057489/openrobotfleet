@@ -212,6 +212,7 @@ export interface SemesterRequest {
   reset_bashrc?: boolean;
   sync_time?: boolean;
   reboot_if_required?: boolean;
+  install_nav2?: boolean;
   turtlebot3_model?: string;
   qt_qpa_platform?: string;
   system_upgrade?: boolean;

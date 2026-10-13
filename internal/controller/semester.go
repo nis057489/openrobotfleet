@@ -29,6 +29,7 @@ type semesterRequest struct {
 	QtQPAPlatform        string               `json:"qt_qpa_platform"`
 	SystemUpgrade        bool                 `json:"system_upgrade"`
 	InstallPackages      bool                 `json:"install_packages"`
+	InstallNav2          bool                 `json:"install_nav2"` // laptops only
 	Packages             []string             `json:"packages"`
 	RepoConfig           agent.UpdateRepoData `json:"repo_config"`
 	ApplyScenarios       bool                 `json:"apply_scenarios"`
@@ -335,11 +336,15 @@ func (c *Controller) processSemesterBatch(ctx context.Context, req semesterReque
 
 			// Bundle package installation and camera setup into one acknowledged job.
 			cameraBundled := false
-			if req.SystemUpgrade || req.InstallPackages {
+			packages := req.Packages
+			if req.InstallNav2 && robot.Type == "laptop" {
+				packages = append(append([]string{}, packages...), agent.Nav2LaptopPackages...)
+			}
+			if req.SystemUpgrade || len(packages) > 0 {
 				log.Printf("semester: updating system packages for %s", robot.Name)
 				batches.setRobotState(run, id, "updating_system")
 
-				data, _ := json.Marshal(agent.SystemUpdateData{Upgrade: req.SystemUpgrade, Packages: req.Packages})
+				data, _ := json.Marshal(agent.SystemUpdateData{Upgrade: req.SystemUpgrade, Packages: packages})
 				cmd := agent.Command{Type: "system_update", Data: data}
 				if req.InstallCameraSupport {
 					batchPayload, _ := json.Marshal(agent.BatchData{Commands: []agent.Command{
