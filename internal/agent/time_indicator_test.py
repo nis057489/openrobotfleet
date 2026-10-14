@@ -57,8 +57,20 @@ class FixRobotTest(unittest.TestCase):
     def make(self):
         ind = ti.Indicator.__new__(ti.Indicator)  # skip GTK setup
         ind.tracker, ind.note = FakeTracker(), ""
-        ind.fix = {"phase": "stopping", "since": 0.0, "requested": 0.0}
+        ind.fix = {"phase": "stopping", "since": 0.0, "requested": 0.0, "laptop": ""}
         return ind
+
+    def test_laptop_is_synced_first_and_its_failure_reported(self):
+        ind = self.make()
+        ind.fix.update(phase="syncing-laptop")
+        self.assertIn("this laptop", ind.advance_fix(0.5, last_scan=0.4))
+        ind.fix.update(phase="stopping", laptop="This laptop's clock didn't sync: no server")
+        ind.advance_fix(5.0, last_scan=1.0)
+        ind.advance_fix(6.0, last_scan=5.9)
+        ind.advance_fix(15.0, last_scan=14.9)
+        self.assertIsNone(ind.fix)
+        self.assertIn("didn't sync", ind.note)  # reported alongside the robot outcome
+        self.assertIn("relaunch", ind.note)
 
     def test_follows_restart_until_settled(self):
         ind = self.make()

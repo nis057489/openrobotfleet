@@ -110,7 +110,7 @@ def fmt(seconds):
 def evaluate(o):
     """The single most truthful state, checked in priority order:
 
-    1. a button action in progress (busy)        -- explains everything else
+    1. the fix in progress (busy)                -- explains everything else
     2. ROS unusable on this laptop (red)
     3. not paired with a robot (grey)
     4. no scan yet, just started (grey)
@@ -198,8 +198,7 @@ class Indicator:
         self.started = time.time()
         self.paired = bool(os.environ.get("ROS_DOMAIN_ID"))
         self.ntp = (False, "")
-        self.fix = None  # fix-robot progress: {"phase", "since", "requested"}
-        self.syncing = False
+        self.fix = None  # fix progress: {"phase", "since", "requested", "laptop"}
         self.note = ""  # outcome of the last action, shown in the menu
 
         self.ind = AppIndicator.Indicator.new_with_path(
@@ -212,9 +211,6 @@ class Indicator:
         self.laptop_item = self.info(menu)
         self.scan_item = self.info(menu)
         menu.append(Gtk.SeparatorMenuItem())
-        self.sync_laptop = Gtk.MenuItem(label="")
-        self.sync_laptop.connect("activate", lambda _: self.start_sync())
-        menu.append(self.sync_laptop)
         self.fix_robot = Gtk.MenuItem(label="")
         self.fix_robot.connect("activate", lambda _: self.start_fix())
         menu.append(self.fix_robot)
@@ -237,23 +233,21 @@ class Indicator:
         threading.Thread(target=lambda: setattr(self, "ntp", laptop_ntp()), daemon=True).start()
         return True
 
-    def start_sync(self):
-        self.syncing, self.note = True, ""
-
-        def run():
-            reply = ask_agent("resync-time")
-            # The laptop clock may have just jumped, so earlier delays are wrong.
-            self.tracker.reset()
-            self.ntp = laptop_ntp()
-            self.note = "Laptop clock synced" if reply == "ok" else reply.removeprefix("error: ")
-            self.syncing = False
-
-        threading.Thread(target=run, daemon=True).start()
-
     def start_fix(self):
-        self.fix, self.note = {"phase": "requesting", "since": time.time(), "requested": time.time()}, ""
+        """The only action: resyncs this laptop's clock and the robot's, then
+        restarts the robot's ROS, so both end up on the lab time server's
+        time. There is deliberately no laptop-only resync: jumping the laptop's
+        clock alone breaks a running nav2 session without fixing the robot."""
+        self.fix, self.note = {"phase": "syncing-laptop", "since": time.time(), "requested": time.time(),
+                               "laptop": ""}, ""
 
         def run():
+            laptop = ask_agent("resync-time")
+            self.tracker.reset()  # the laptop clock may have just jumped
+            self.ntp = laptop_ntp()
+            if laptop != "ok":
+                self.fix["laptop"] = "This laptop's clock didn't sync: " + laptop.removeprefix("error: ")
+            self.fix.update(phase="requesting")
             reply = ask_agent("fix-robot")
             if reply == "ok":
                 self.fix.update(phase="stopping", since=time.time())
@@ -263,12 +257,15 @@ class Indicator:
         threading.Thread(target=run, daemon=True).start()
 
     def end_fix(self, note):
-        self.fix, self.note = None, note
+        laptop = self.fix.get("laptop", "") if self.fix else ""
+        self.fix, self.note = None, "\n".join(n for n in (laptop, note) if n)
 
     def advance_fix(self, now, last_scan):
         """Follows the robot through its restart; returns the busy message."""
         f = self.fix
         elapsed = now - f["requested"]
+        if f["phase"] == "syncing-laptop":
+            return "Syncing this laptop's clock…"
         if f["phase"] == "requesting":
             return "Asking the robot to restart…"
         if f["phase"] == "stopping":
@@ -300,9 +297,7 @@ class Indicator:
     def update(self):
         now = time.time()
         offset, latency, last = self.tracker.snapshot(now)
-        action = "Syncing this laptop's clock…" if self.syncing else ""
-        if self.fix:
-            action = self.advance_fix(now, last) or action
+        action = self.advance_fix(now, last) if self.fix else ""
         synced, server = self.ntp
         s = evaluate(Observed(now, self.started, self.tracker.error or "", self.paired, offset, latency,
                               last, synced, server, action))
@@ -319,15 +314,12 @@ class Indicator:
             self.scan_item.set_label("No robot scan received yet")
 
         busy = bool(action)
-        self.sync_laptop.set_sensitive(not busy)
         self.fix_robot.set_sensitive(not busy)
         if s.ok or busy:
-            self.sync_laptop.set_label("Resync this laptop's clock")
-            self.fix_robot.set_label("Resync robot's clock and restart its ROS")
+            self.fix_robot.set_label("Resync both clocks and restart the robot's ROS")
         else:
-            self.sync_laptop.set_label("Sync this laptop's clock now")
-            self.fix_robot.set_label("Fix robot: resync its clock and restart its ROS")
-        note = self.note or ("" if s.ok or busy else "Not ready: try the buttons above, then relaunch nav2/SLAM")
+            self.fix_robot.set_label("Fix: resync both clocks and restart the robot's ROS")
+        note = self.note or ("" if s.ok or busy else "Not ready: try the fix above, then relaunch nav2/SLAM")
         self.note_item.set_label(note)
         self.note_item.set_visible(bool(note))
         return True
