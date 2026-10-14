@@ -328,6 +328,11 @@ func HandleResetBashrc(cfg Config, data ResetBashrcData) error {
 	} else {
 		log.Printf("[agent] no ROS install under /opt/ros; .bashrc won't source a ROS setup script")
 	}
+	// Laptops also run Gazebo and build the course's TurtleBot3 workspace.
+	if cfg.Type == "laptop" {
+		b.WriteString("source /usr/share/gazebo/setup.bash\n")
+		b.WriteString("source ~/turtlebot3_ws/install/setup.bash\n")
+	}
 	fmt.Fprintf(&b, "export TURTLEBOT3_MODEL=%s\n", model)
 	if qpa != "" {
 		fmt.Fprintf(&b, "export QT_QPA_PLATFORM=%s\n", qpa)
