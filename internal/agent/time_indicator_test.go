@@ -28,9 +28,10 @@ func TestIndicatorFilesInstallWithModes(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	for i := 0; i < 2; i++ { // second run finds everything current
-		if err := installIndicatorFiles(root); err != nil {
-			t.Fatal(err)
+	for i, want := range []bool{true, false} { // second run finds everything current
+		changed, err := installIndicatorFiles(root)
+		if err != nil || changed != want {
+			t.Fatalf("install %d: changed=%v err=%v, want changed=%v", i, changed, err, want)
 		}
 	}
 	for name, target := range indicatorInstall {
@@ -41,5 +42,13 @@ func TestIndicatorFilesInstallWithModes(t *testing.T) {
 		if info.Mode().Perm() != target.mode {
 			t.Errorf("%s mode %v, want %v", target.path, info.Mode().Perm(), target.mode)
 		}
+	}
+}
+
+func TestParseSessionProps(t *testing.T) {
+	// loginctl prints in its own order, whatever -p order was asked for.
+	p := parseSessionProps("Name=metr4202\nRemote=no\nType=wayland\n")
+	if p["Name"] != "metr4202" || p["Remote"] != "no" || p["Type"] != "wayland" {
+		t.Fatal(p)
 	}
 }

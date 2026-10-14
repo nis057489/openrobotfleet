@@ -14,6 +14,7 @@ delivery, a few ms on the lab Wi-Fi.
 """
 
 import os
+import signal
 import socket
 import subprocess
 import threading
@@ -65,9 +66,12 @@ def spin_ros(tracker):
     try:
         import rclpy
         from rclpy.qos import qos_profile_sensor_data
+        from rclpy.signals import SignalHandlerOptions
         from sensor_msgs.msg import LaserScan
 
-        rclpy.init()
+        # rclpy's own SIGTERM handler would only stop ROS, leaving the
+        # indicator running and "systemctl stop" hanging; main() quits GTK.
+        rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
         node = rclpy.create_node("openrobotfleet_time_indicator")
         # Best effort matches both best-effort and reliable publishers.
         node.create_subscription(LaserScan, "/scan", tracker.on_scan, qos_profile_sensor_data)
@@ -123,20 +127,22 @@ class Indicator:
             item.set_sensitive(False)
             menu.append(item)
         menu.append(Gtk.SeparatorMenuItem())
-        sync_laptop = Gtk.MenuItem(label="Sync this laptop's clock now")
-        sync_laptop.connect("activate", lambda _: self.request("resync-time", "Syncing this laptop's clock\u2026", "Laptop clock synced"))
-        menu.append(sync_laptop)
-        fix_robot = Gtk.MenuItem(label="Fix robot: resync its clock and restart its ROS")
-        fix_robot.connect("activate", lambda _: self.request(
+        self.sync_laptop = Gtk.MenuItem(label="")
+        self.sync_laptop.connect("activate", lambda _: self.request("resync-time", "Syncing this laptop's clock\u2026", "Laptop clock synced"))
+        menu.append(self.sync_laptop)
+        self.fix_robot = Gtk.MenuItem(label="")
+        self.fix_robot.connect("activate", lambda _: self.request(
             "fix-robot", "Asking the robot to resync\u2026", "Robot is resyncing and restarting ROS (about 30 s)"))
-        menu.append(fix_robot)
+        menu.append(self.fix_robot)
         self.action_item = Gtk.MenuItem(label="")
         self.action_item.set_sensitive(False)
         menu.append(self.action_item)
-        menu.append(Gtk.SeparatorMenuItem())
-        hint = Gtk.MenuItem(label="After fixing, relaunch nav2/SLAM on this laptop.")
-        hint.set_sensitive(False)
-        menu.append(hint)
+        # Only while out of sync, so the buttons don't suggest a problem.
+        self.hint_sep = Gtk.SeparatorMenuItem()
+        menu.append(self.hint_sep)
+        self.hint = Gtk.MenuItem(label="Out of sync: try the buttons above,\nthen relaunch nav2/SLAM on this laptop.")
+        self.hint.set_sensitive(False)
+        menu.append(self.hint)
         menu.show_all()
         self.action_item.hide()
         self.ind.set_menu(menu)
@@ -182,6 +188,15 @@ class Indicator:
         synced, server = self.ntp
         laptop = f"This laptop: synced to {server}" if synced else f"This laptop: NOT synced ({server or 'no server'})"
         ago = f"{time.time() - last:.1f} s ago" if last else "never"
+        in_sync = icon == "time-green"
+        if in_sync:
+            self.sync_laptop.set_label("Resync this laptop's clock")
+            self.fix_robot.set_label("Resync robot's clock and restart its ROS")
+        else:
+            self.sync_laptop.set_label("Sync this laptop's clock now")
+            self.fix_robot.set_label("Fix robot: resync its clock and restart its ROS")
+        self.hint_sep.set_visible(not in_sync)
+        self.hint.set_visible(not in_sync)
         self.ind.set_icon_full(icon, label)
         self.ind.set_label(label, "Robot −888 ms")
         self.robot_item.set_label(robot)
@@ -194,6 +209,8 @@ def main():
     tracker = ScanOffset()
     threading.Thread(target=spin_ros, args=(tracker,), daemon=True).start()
     Indicator(tracker)
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, Gtk.main_quit)
     Gtk.main()
 
 
