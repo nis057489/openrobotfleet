@@ -30,6 +30,7 @@ var indicatorInstall = map[string]struct {
 	"time-amber.svg":                        {"/usr/local/share/openrobotfleet/icons/time-amber.svg", 0o644},
 	"time-red.svg":                          {"/usr/local/share/openrobotfleet/icons/time-red.svg", 0o644},
 	"time-grey.svg":                         {"/usr/local/share/openrobotfleet/icons/time-grey.svg", 0o644},
+	"time-busy.svg":                         {"/usr/local/share/openrobotfleet/icons/time-busy.svg", 0o644},
 }
 
 // EnsureTimeIndicator installs the laptop top-bar indicator showing whether
