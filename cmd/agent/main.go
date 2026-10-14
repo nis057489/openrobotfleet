@@ -48,6 +48,10 @@ func main() {
 		log.Printf("failed to apply nav2 config: %v", err)
 	}
 
+	if err := agent.RefreshTimeConfig(); err != nil {
+		log.Printf("failed to refresh time config: %v", err)
+	}
+
 	if err := agent.EnsureCameraSetup(cfg); err != nil {
 		log.Printf("failed to set up camera: %v", err)
 	}
