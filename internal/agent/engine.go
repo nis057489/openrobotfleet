@@ -37,6 +37,7 @@ type AgentEngine struct {
 
 	cmdChan       chan Command
 	packages      *rosPackages
+	requests      requestQueue
 	lastIP        string
 	lastHeartbeat time.Time
 	// lastStatusKey is the statusKey of the last status that reached the
@@ -72,6 +73,7 @@ func (e *AgentEngine) Start(ctx context.Context) {
 
 	go watchClock(ctx)
 	go e.packages.watch(ctx)
+	go e.serveLocalControl(ctx)
 
 	// 3. Loop
 	ticker := time.NewTicker(100 * time.Millisecond) // 10Hz Tick
@@ -219,6 +221,10 @@ func (e *AgentEngine) statusKey() string {
 	for _, result := range e.JobManager.Results() {
 		fmt.Fprintf(&b, "|%s:%s", result.ID, result.Status)
 	}
+	// Publish a user's request (local control socket) straight away.
+	if req := e.requests.key(); req != "" {
+		b.WriteString("|req:" + req)
+	}
 	return b.String()
 }
 
@@ -245,6 +251,8 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 		BootID         string `json:"boot_id,omitempty"`
 		// Installed ros-* packages, only when changed or due a resend.
 		ROSPackages map[string]string `json:"ros_packages,omitempty"`
+		// Requests from the local control socket for the controller.
+		Requests []string `json:"requests,omitempty"`
 	}
 
 	s := status{
@@ -263,6 +271,7 @@ func (e *AgentEngine) buildStatusPayload() []byte {
 		RebootRequired: RebootRequired(),
 		BootID:         BootID(),
 		ROSPackages:    e.packages.toSend(),
+		Requests:       e.requests.take(),
 	}
 	if hn, err := os.Hostname(); err == nil && hn != "" {
 		s.Name = hn
@@ -358,6 +367,8 @@ func (e *AgentEngine) mapCommandToAction(ctx context.Context, cmd Command) func(
 			}
 			return nil
 		}
+	case "resync_time":
+		return HandleResyncTime
 	case "restart_ros":
 		return func() error { return HandleRestartROS(cfg) }
 	case "wifi_profile":

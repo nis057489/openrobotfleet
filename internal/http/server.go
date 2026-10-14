@@ -529,6 +529,7 @@ type statusPayload struct {
 	RebootRequired *bool             `json:"reboot_required,omitempty"`
 	BootID         string            `json:"boot_id,omitempty"`
 	ROSPackages    map[string]string `json:"ros_packages,omitempty"`
+	Requests       []string          `json:"requests,omitempty"`
 }
 
 func (s *Server) subscribeStatusUpdates() {
@@ -576,6 +577,7 @@ func (s *Server) subscribeStatusUpdates() {
 		s.Controller.DeliverQueuedJobs(agentID)
 		s.Controller.EnsureTimeConformance(agentID, payload.NTPServer, payload.ClockSynced)
 		s.Controller.EnsureAgentCurrent(agentID, payload.AgentSHA256)
+		s.Controller.HandleDeviceRequests(agentID, payload.Requests)
 
 		// If new robot, fetch ID
 		if dbID == 0 {

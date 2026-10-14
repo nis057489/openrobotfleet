@@ -52,6 +52,8 @@ func main() {
 		log.Printf("failed to refresh time config: %v", err)
 	}
 
+	agent.EnsureTimeIndicator(cfg)
+
 	if err := agent.EnsureCameraSetup(cfg); err != nil {
 		log.Printf("failed to set up camera: %v", err)
 	}

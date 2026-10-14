@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Robot clock sync
+Comment=Shows whether this laptop's clock agrees with its robot's
+Exec=/usr/local/bin/openrobotfleet-time-indicator
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

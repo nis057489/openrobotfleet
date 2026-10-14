@@ -45,6 +45,9 @@ type Controller struct {
 	packageReportsMu sync.RWMutex
 	packageReports   map[string]map[string]string // agent ID -> package -> version
 
+	fixRequestsMu sync.Mutex
+	fixRequests   map[int64]time.Time // robot ID -> last "fix robot" request
+
 	// reinstall replaces reinstallAgent in tests.
 	reinstall func(context.Context, *db.Robot) (time.Time, error)
 }

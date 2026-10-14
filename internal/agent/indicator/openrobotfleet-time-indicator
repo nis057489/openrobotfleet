@@ -1,0 +1,8 @@
+#!/bin/bash
+# Installed by openrobotfleet-agent. Starts the clock-sync indicator in the
+# same ROS domain and DDS setup as this laptop's ROS shells.
+for setup in /opt/ros/*/setup.bash; do
+  [ -f "$setup" ] && source "$setup" && break
+done
+[ -f /etc/openrobotfleet-agent/ros_env.sh ] && source /etc/openrobotfleet-agent/ros_env.sh
+exec python3 /usr/local/lib/openrobotfleet/time_indicator.py
