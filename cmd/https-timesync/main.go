@@ -4,7 +4,16 @@
 // clock (offset and drift, without steps), and the LAN syncs to chronyd over
 // ordinary NTP. The chrony.conf line it expects:
 //
-//	refclock SOCK /var/run/chrony.https.sock refid HTTP poll 6 delay 0.01
+//	refclock SOCK /var/run/chrony.https.sock refid HTTP poll 4 delay 0.01
+//
+// chrony.conf must not have a "local" directive: the router has no RTC and
+// boots on a stale clock, and with "local" chronyd hands that out until it
+// has synced, which devices accept and then jump away from minutes later.
+// Without it, chronyd answers "not synchronised" (which clients ignore) until
+// it locks onto these samples, about a minute after boot with the defaults
+// below. For days with no internet at all, the lab router runs
+// /usr/sbin/chrony-local-fallback from cron, which enables "chronyc local"
+// if there is still no internet time 10 minutes after boot.
 //
 // Build for the router with:
 //
@@ -44,8 +53,9 @@ type sockSample struct {
 func main() {
 	url := flag.String("url", "https://time.akamai.com/?ms", "endpoint returning unix time as seconds with a fractional part")
 	sock := flag.String("sock", "/var/run/chrony.https.sock", "chrony SOCK refclock path")
-	interval := flag.Duration("interval", 16*time.Second, "time between samples")
-	burst := flag.Int("burst", 4, "requests per sample; the one with the shortest round trip is used")
+	// Several samples per 16s chrony poll, so it locks on within a minute.
+	interval := flag.Duration("interval", 4*time.Second, "time between samples")
+	burst := flag.Int("burst", 3, "requests per sample; the one with the shortest round trip is used")
 	once := flag.Bool("once", false, "print one measurement and exit")
 	flag.Parse()
 	log.SetFlags(0)
