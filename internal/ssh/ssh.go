@@ -138,6 +138,10 @@ func InstallAgent(h HostSpec, cfg agent.Config, hostname string, agentBinary []b
 	commands = append(commands,
 		fmt.Sprintf("mkdir -p /home/%s/.ros", owner),
 		fmt.Sprintf("chown -R %s:%s /home/%s/.ros", owner, owner, owner),
+		// The agent picks this up on start and writes the current .bashrc
+		// template (ROS, Gazebo, TURTLEBOT3_MODEL) for the workspace user.
+		fmt.Sprintf("mkdir -p %s", filepath.Dir(agent.PendingBashrcResetPath)),
+		fmt.Sprintf("touch %s", agent.PendingBashrcResetPath),
 	)
 	// Set the hostname before (re)starting the agent so its very first
 	// heartbeat already reports the intended display name, not a stale one.

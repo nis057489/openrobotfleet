@@ -52,6 +52,10 @@ func main() {
 		log.Printf("failed to refresh time config: %v", err)
 	}
 
+	if err := agent.ApplyPendingBashrcReset(cfg); err != nil {
+		log.Printf("failed to apply .bashrc config after install: %v", err)
+	}
+
 	agent.EnsureTimeIndicator(cfg)
 
 	if err := agent.EnsureCameraSetup(cfg); err != nil {

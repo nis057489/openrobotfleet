@@ -358,6 +358,26 @@ func HandleResetBashrc(cfg Config, data ResetBashrcData) error {
 	return nil
 }
 
+// PendingBashrcResetPath is dropped by the SSH installer so the freshly
+// (re)installed agent writes the current .bashrc template once on startup.
+// It's a flag rather than an every-start reset so reboots and agent updates
+// don't clobber students' own edits.
+const PendingBashrcResetPath = "/var/lib/openrobotfleet-agent/reset-bashrc"
+
+// ApplyPendingBashrcReset runs HandleResetBashrc with the default model when
+// the installer left PendingBashrcResetPath behind, then clears the flag. A
+// failure clears it too: retrying on every start can't fix a missing user.
+func ApplyPendingBashrcReset(cfg Config) error {
+	if _, err := os.Stat(PendingBashrcResetPath); err != nil {
+		return nil
+	}
+	resetErr := HandleResetBashrc(cfg, ResetBashrcData{})
+	if err := os.Remove(PendingBashrcResetPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Printf("[agent] clear %s: %v", PendingBashrcResetPath, err)
+	}
+	return resetErr
+}
+
 // aptPackagePattern matches a Debian package name, optionally with an
 // :arch qualifier and/or =version pin (e.g. ros-humble-image-transport,
 // libfoo:arm64, vim=2:8.2.3995-1ubuntu2). '*' and '?' are allowed as apt-get
