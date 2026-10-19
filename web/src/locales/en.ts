@@ -446,7 +446,7 @@ export const en = {
       installCameraSupport: "Install Camera Support",
       installCameraSupportDesc: "Builds and installs camera_ros/libcamera from source, directly on the robot. Takes several minutes on first run; safe to skip if this robot doesn't use the camera.",
       resetBashrc: "Reset .bashrc",
-      resetBashrcDesc: "Restore each device's ~/.bashrc to the Ubuntu default, then add lines to source the ROS setup script (on laptops also Gazebo's and ~/turtlebot3_ws's) and set TURTLEBOT3_MODEL (and QT_QPA_PLATFORM, if chosen). The old file is kept as ~/.bashrc.bak.<timestamp>.",
+      resetBashrcDesc: "Restore each device's ~/.bashrc to the Ubuntu default, then add lines to source the ROS setup script (on laptops also Gazebo's and the students' ~/metr4202_ws, which is created if missing) and set TURTLEBOT3_MODEL (and QT_QPA_PLATFORM, if chosen). The old file is kept as ~/.bashrc.bak.<timestamp>.",
       systemUpgrade: "System Update & Upgrade",
       systemUpgradeDesc: "Refresh the apt package lists and upgrade every installed package (apt update && apt upgrade -y). Can take a while on a slow network.",
       installPackages: "Install Packages",

@@ -288,6 +288,12 @@ const defaultTurtleBot3Model = "waffle_pi"
 // leaves it unset so Qt picks its own platform plugin.
 var qtQPAPlatforms = map[string]bool{"": true, "xcb": true, "wayland": true}
 
+// studentWorkspace is where students put their own packages, relative to the
+// workspace user's home. Only their code goes here: TurtleBot3 itself comes
+// from apt, so a source build can't shadow it (or the turtlebot3_navigation2
+// params files EnsureNav2Config manages).
+const studentWorkspace = "metr4202_ws"
+
 // HandleResetBashrc restores the workspace user's ~/.bashrc from
 // /etc/skel/.bashrc (what `cp /etc/skel/.bashrc ~/` does by hand), then
 // appends the ROS setup source line and TURTLEBOT3_MODEL export students
@@ -328,10 +334,11 @@ func HandleResetBashrc(cfg Config, data ResetBashrcData) error {
 	} else {
 		log.Printf("[agent] no ROS install under /opt/ros; .bashrc won't source a ROS setup script")
 	}
-	// Laptops also run Gazebo and build the course's TurtleBot3 workspace.
+	// Laptops also run Gazebo and build the students' workspace. It has no
+	// install/ until the first colcon build, hence the guard.
 	if cfg.Type == "laptop" {
 		b.WriteString("source /usr/share/gazebo/setup.bash\n")
-		b.WriteString("source ~/turtlebot3_ws/install/setup.bash\n")
+		fmt.Fprintf(&b, "[ -f ~/%[1]s/install/setup.bash ] && source ~/%[1]s/install/setup.bash\n", studentWorkspace)
 	}
 	fmt.Fprintf(&b, "export TURTLEBOT3_MODEL=%s\n", model)
 	if qpa != "" {
@@ -353,6 +360,17 @@ func HandleResetBashrc(cfg Config, data ResetBashrcData) error {
 	gid, _ := strconv.Atoi(u.Gid)
 	if err := os.Chown(path, uid, gid); err != nil {
 		return fmt.Errorf("chown %s: %w", path, err)
+	}
+	if cfg.Type == "laptop" {
+		ws := filepath.Join(u.HomeDir, studentWorkspace)
+		if err := os.MkdirAll(filepath.Join(ws, "src"), 0o755); err != nil {
+			return fmt.Errorf("create %s: %w", ws, err)
+		}
+		for _, dir := range []string{ws, filepath.Join(ws, "src")} {
+			if err := os.Chown(dir, uid, gid); err != nil {
+				return fmt.Errorf("chown %s: %w", dir, err)
+			}
+		}
 	}
 	log.Printf("[agent] reset %s to default (TURTLEBOT3_MODEL=%s QT_QPA_PLATFORM=%s)", path, model, qpa)
 	return nil
