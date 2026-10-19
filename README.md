@@ -448,6 +448,37 @@ OpenRobotFleet is built using:
 
 Agents communicate with the Controller using reliable batch-based execution, allowing commands to complete even when connectivity is intermittent.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    UI["Web dashboard<br/>(React)"] -->|HTTPS| C
+
+    subgraph Backend["Backend (Docker)"]
+        C["Controller<br/>(Go API)"] --- DB[("SQLite<br/>settings, groups, jobs")]
+        C <--> B["MQTT broker<br/>(Mosquitto)"]
+    end
+
+    B <-->|"commands down<br/>status up"| RA
+    B <-->|"commands down<br/>status + requests up"| LA
+
+    subgraph Robot["Robot (Raspberry Pi)"]
+        RA["Agent"] -->|enforces| RS["ROS domain + DDS, clock,<br/>Wi-Fi power save"]
+        RA -->|restarts| ROS["ros.service<br/>(TurtleBot3 bringup)"]
+    end
+
+    subgraph Laptop["Student laptop"]
+        M["Monitor tray icon<br/>(Fix button)"] -->|local socket| LA["Agent"]
+        LA -->|enforces| LS["ROS domain + DDS, nav2 params,<br/>.bashrc, clock, Wi-Fi power save"]
+        LA -->|stops| LROS["Student ROS<br/>(nav2, SLAM, RViz)"]
+    end
+```
+
+* **The Controller owns the settings.** It stores the desired state in SQLite: which group a device is in, its ROS domain and DDS config, packages and so on. It never connects to devices directly. It queues jobs and publishes them through the MQTT broker.
+* **Agents talk only to MQTT.** Each agent (`cmd/agent`, running as root) subscribes to `lab/commands/<agent-id>`. It publishes heartbeats and status to `lab/status/<agent-id>` and acknowledges jobs on `lab/acks/<agent-id>`. Because of that, a device behind NAT or on flaky Wi-Fi only needs an outbound connection to the broker.
+* **Agents enforce the settings locally.** They apply what the Controller sends and re-apply their fixed config whenever they start: ROS environment, nav2 parameters, time sync and Wi-Fi power saving. That way devices drift back to a known state rather than away from it.
+* **ROS restarts.** On a robot, the agent restarts `ros.service`. On a laptop, the **Fix** button in the monitor tray icon goes to the local agent over a Unix socket (`/run/openrobotfleet-agent.sock`). The agent stops the laptop's ROS processes and resyncs its clock. It then adds a `fix_robot` request to its next status message, and the Controller turns that into clock-resync and `restart_ros` jobs for the group's robot.
+
 ---
 
 # Contributing
