@@ -72,6 +72,7 @@ func (e *AgentEngine) Start(ctx context.Context) {
 	e.Tree = e.buildTree()
 
 	go watchClock(ctx)
+	go watchWifiPowerSave(ctx)
 	go e.packages.watch(ctx)
 	go e.serveLocalControl(ctx)
 

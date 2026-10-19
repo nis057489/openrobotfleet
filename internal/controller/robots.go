@@ -141,6 +141,11 @@ func (c *Controller) BroadcastCommand(w http.ResponseWriter, r *http.Request) {
 		if robot.AgentID == "" {
 			continue
 		}
+		// On a laptop, restart_ros stops whatever ROS the student is
+		// running; that's for one laptop at a time, not the whole room.
+		if req.Type == "restart_ros" && robot.Type == "laptop" {
+			continue
+		}
 		job, err := c.queueRobotCommand(r.Context(), robot, agent.Command{Type: req.Type, Data: req.Data})
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "failed to queue command")

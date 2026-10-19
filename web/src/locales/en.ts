@@ -330,6 +330,7 @@ export const en = {
       quickActions: "Quick Actions",
       restartRos: "Restart ROS",
       restartRosDesc: "Restart the ROS 2 daemon",
+      restartRosLaptopDesc: "Stop every ROS process on this laptop (nav2, SLAM, Gazebo, RViz, leftover nodes) and resync its clock, for a clean relaunch",
       rebootSystem: "Reboot System",
       rebootSystemDesc: "Reboot the robot computer",
       factoryReset: "Factory Reset",

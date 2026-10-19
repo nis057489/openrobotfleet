@@ -747,6 +747,9 @@ func EnsureROSServiceOverride() error {
 
 // HandleRestartROS restarts the ROS service via systemd or a custom command.
 func HandleRestartROS(cfg Config) error {
+	if cfg.Type == "laptop" && os.Getenv("ROS_RESTART_CMD") == "" {
+		return restartLaptopROS(cfg)
+	}
 	cmdArgs := customRestartCommand()
 	output, err := runCmd(defaultCmdTimeout, cmdArgs[0], cmdArgs[1:]...)
 	if err != nil {

@@ -214,6 +214,8 @@ class Indicator:
         self.fix_robot = Gtk.MenuItem(label="")
         self.fix_robot.connect("activate", lambda _: self.start_fix())
         menu.append(self.fix_robot)
+        self.fix_warning = self.info(menu)
+        self.fix_warning.set_label("⚠ Also stops nav2, SLAM, RViz and Gazebo on this laptop")
         self.note_item = self.info(menu)
         menu.show_all()
         self.ind.set_menu(menu)
@@ -234,19 +236,22 @@ class Indicator:
         return True
 
     def start_fix(self):
-        """The only action: resyncs this laptop's clock and the robot's, then
-        restarts the robot's ROS, so both end up on the lab time server's
-        time. There is deliberately no laptop-only resync: jumping the laptop's
-        clock alone breaks a running nav2 session without fixing the robot."""
-        self.fix, self.note = {"phase": "syncing-laptop", "since": time.time(), "requested": time.time(),
+        """The only action: stops every ROS process on this laptop (leftover
+        nodes from an earlier launch break nav2 in ways a robot restart never
+        fixes), resyncs this laptop's clock and the robot's, then restarts the
+        robot's ROS, so both end up on the lab time server's time and nav2 is
+        relaunched from a clean slate. There is deliberately no laptop-only
+        resync: jumping the laptop's clock alone breaks a running nav2 session
+        without fixing the robot."""
+        self.fix, self.note = {"phase": "cleaning-laptop", "since": time.time(), "requested": time.time(),
                                "laptop": ""}, ""
 
         def run():
-            laptop = ask_agent("resync-time")
+            laptop = ask_agent("clean-laptop")
             self.tracker.reset()  # the laptop clock may have just jumped
             self.ntp = laptop_ntp()
             if laptop != "ok":
-                self.fix["laptop"] = "This laptop's clock didn't sync: " + laptop.removeprefix("error: ")
+                self.fix["laptop"] = "This laptop: " + laptop.removeprefix("error: ")
             self.fix.update(phase="requesting")
             reply = ask_agent("fix-robot")
             if reply == "ok":
@@ -264,8 +269,8 @@ class Indicator:
         """Follows the robot through its restart; returns the busy message."""
         f = self.fix
         elapsed = now - f["requested"]
-        if f["phase"] == "syncing-laptop":
-            return "Syncing this laptop's clock…"
+        if f["phase"] == "cleaning-laptop":
+            return "Stopping ROS and syncing the clock on this laptop…"
         if f["phase"] == "requesting":
             return "Asking the robot to restart…"
         if f["phase"] == "stopping":
@@ -316,9 +321,10 @@ class Indicator:
         busy = bool(action)
         self.fix_robot.set_sensitive(not busy)
         if s.ok or busy:
-            self.fix_robot.set_label("Resync both clocks and restart the robot's ROS")
+            self.fix_robot.set_label("Restart ROS on this laptop and the robot, resyncing both clocks")
         else:
-            self.fix_robot.set_label("Fix: resync both clocks and restart the robot's ROS")
+            self.fix_robot.set_label("Fix: restart ROS on this laptop and the robot, resyncing both clocks")
+        self.fix_warning.set_visible(not busy)
         note = self.note or ("" if s.ok or busy else "Not ready: try the fix above, then relaunch nav2/SLAM")
         self.note_item.set_label(note)
         self.note_item.set_visible(bool(note))

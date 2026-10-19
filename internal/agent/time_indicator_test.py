@@ -60,11 +60,11 @@ class FixRobotTest(unittest.TestCase):
         ind.fix = {"phase": "stopping", "since": 0.0, "requested": 0.0, "laptop": ""}
         return ind
 
-    def test_laptop_is_synced_first_and_its_failure_reported(self):
+    def test_laptop_is_cleaned_first_and_its_failure_reported(self):
         ind = self.make()
-        ind.fix.update(phase="syncing-laptop")
+        ind.fix.update(phase="cleaning-laptop")
         self.assertIn("this laptop", ind.advance_fix(0.5, last_scan=0.4))
-        ind.fix.update(phase="stopping", laptop="This laptop's clock didn't sync: no server")
+        ind.fix.update(phase="stopping", laptop="This laptop: clock didn't sync: no server")
         ind.advance_fix(5.0, last_scan=1.0)
         ind.advance_fix(6.0, last_scan=5.9)
         ind.advance_fix(15.0, last_scan=14.9)

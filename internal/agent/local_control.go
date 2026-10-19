@@ -79,8 +79,10 @@ func (e *AgentEngine) serveLocalControl(ctx context.Context) {
 }
 
 // handleLocalControl serves one request line: "resync-time" re-syncs this
-// device's clock now; "fix-robot" asks the controller to resync the clock
-// of this laptop's group robot and restart its ROS.
+// device's clock now; "clean-laptop" stops the laptop's ROS processes (see
+// stopLaptopROS) and then re-syncs its clock; "fix-robot" asks the
+// controller to resync the clock of this laptop's group robot and restart
+// its ROS.
 func (e *AgentEngine) handleLocalControl(conn net.Conn) {
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(time.Minute))
@@ -89,6 +91,16 @@ func (e *AgentEngine) handleLocalControl(conn net.Conn) {
 	case "resync-time":
 		if err := HandleResyncTime(); err != nil {
 			fmt.Fprintf(conn, "error: %v\n", err)
+			return
+		}
+		fmt.Fprintln(conn, "ok")
+	case "clean-laptop":
+		if err := stopLaptopROS(e.Config); err != nil {
+			fmt.Fprintf(conn, "error: %v\n", err)
+			return
+		}
+		if err := HandleResyncTime(); err != nil {
+			fmt.Fprintf(conn, "error: clock didn't sync: %v\n", err)
 			return
 		}
 		fmt.Fprintln(conn, "ok")

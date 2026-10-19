@@ -329,6 +329,7 @@ export const zh = {
       quickActions: "快速操作",
       restartRos: "重启 ROS",
       restartRosDesc: "重启 ROS 2 守护进程",
+      restartRosLaptopDesc: "停止此笔记本上的所有 ROS 进程（nav2、SLAM、Gazebo、RViz 及残留节点）并重新同步时钟，以便干净地重新启动",
       rebootSystem: "重启系统",
       rebootSystemDesc: "重启机器人计算机",
       factoryReset: "恢复出厂设置",

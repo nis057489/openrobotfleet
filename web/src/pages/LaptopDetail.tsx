@@ -323,7 +323,7 @@ export function LaptopDetail() {
                                 <div className="flex items-center gap-2 font-medium text-gray-700 mb-1">
                                     <RefreshCw size={16} /> {t("settings.restartRos")}
                                 </div>
-                                <p className="text-xs text-gray-500">{t("settings.restartRosDesc")}</p>
+                                <p className="text-xs text-gray-500">{t("settings.restartRosLaptopDesc")}</p>
                             </button>
                             <div className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                                 <button
