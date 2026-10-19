@@ -336,11 +336,31 @@ func DetectPrimaryMAC(h HostSpec) (string, error) {
 	}
 	defer session.Close()
 
-	out, err := session.Output(`cat /sys/class/net/$(ls /sys/class/net | grep -v '^lo$' | sort | head -1)/address`)
+	// List every interface with its MAC and apply the same selection rules as
+	// agent.DeriveAgentIDFromMAC, so install-time and runtime IDs match. Just
+	// taking the first interface by name broke on hosts where that one has
+	// no hardware address (e.g. tailscale0 sorting before wlp0s20f3).
+	out, err := session.Output(`for i in $(ls /sys/class/net | sort); do echo "$i $(cat /sys/class/net/$i/address 2>/dev/null)"; done`)
 	if err != nil {
 		return "", fmt.Errorf("detect mac address: %w", err)
 	}
-	mac := strings.TrimSpace(string(out))
+	var wired, any string
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 || fields[0] == "lo" || fields[1] == "00:00:00:00:00:00" {
+			continue
+		}
+		if any == "" {
+			any = fields[1]
+		}
+		if wired == "" && strings.HasPrefix(fields[0], "eth") {
+			wired = fields[1]
+		}
+	}
+	mac := wired
+	if mac == "" {
+		mac = any
+	}
 	if mac == "" {
 		return "", fmt.Errorf("no usable network interface found on %s", h.Addr)
 	}
